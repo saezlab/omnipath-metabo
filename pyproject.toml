@@ -33,6 +33,7 @@ python = "^3.9"
 toml = "*"
 pypath-omnipath = "^0.16.16"
 sqlalchemy = "^2.0.35"
+psycopg2 = "^2.9.9"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.0"

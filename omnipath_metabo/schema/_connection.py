@@ -36,3 +36,8 @@ class Connection:
             'postgresql://{user}:{password}@'
             '{host}:{port}/{database}'.format(**self._param)
         )
+
+    def connect(self):
+        self.engine = create_engine(self._uri)
+
+    
