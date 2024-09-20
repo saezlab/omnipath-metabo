@@ -11,3 +11,9 @@ def test_param_dict(dummy_con_param):
     con = _connection.Connection(dummy_con_param)
 
     assert con._param == dummy_con_param
+
+def test_uri(dummy_con_param, dummy_con_uri):
+
+    con = _connection.Connection(dummy_con_param)
+
+    assert con._uri == dummy_con_uri

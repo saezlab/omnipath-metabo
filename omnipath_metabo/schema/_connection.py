@@ -29,6 +29,10 @@ class Connection:
 
                 self._param = yaml.load(fp, Loader = yaml.FullLoader)
 
+    @property
     def _uri(self) -> str:
 
-        return f'postgresql://'
+        return (
+            'postgresql://{user}:{password}@'
+            '{host}:{port}/{database}'.format(**self._param)
+        )

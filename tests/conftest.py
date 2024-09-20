@@ -30,3 +30,9 @@ def dummy_connection_config(testtmp, dummy_con_param):
         fp.write(yaml.dump(dummy_con_param))
 
     return path
+
+
+@pytest.fixture
+def dummy_con_uri():
+
+    return 'postgresql://testuser:testpw@myhost:5432/testdb'
