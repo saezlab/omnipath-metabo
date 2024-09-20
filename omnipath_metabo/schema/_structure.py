@@ -1,5 +1,5 @@
 from sqlalchemy import create_engine, Column, Integer, String
-from ._main import Base
+from ._base import Base
 
 
 class Structure(Base):

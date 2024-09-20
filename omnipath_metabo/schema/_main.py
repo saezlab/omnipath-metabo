@@ -1,10 +1,5 @@
-from sqlalchemy.ext.declarative import declarative_base
-
-
-__all__ = ['Base']
-
-Base = declarative_base()
-
+from . import _structure
+from ._base import Base
 
 def create(con):
 
