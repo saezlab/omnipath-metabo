@@ -16,7 +16,7 @@ class Connection:
         self._parse_param()
 
 
-    def parse_param(self) -> None:
+    def _parse_param(self) -> None:
 
         self._from_file()
 
@@ -25,10 +25,9 @@ class Connection:
 
         if isinstance(self._param, str) and os.path.exists(self._param):
 
-            self._param = yaml.load(
-                closing(open(self._param, 'r')),
-                Loader = yaml.FullLoader,
-            )
+            with closing(open(self._param, 'r')) as fp:
+
+                self._param = yaml.load(fp, Loader = yaml.FullLoader)
 
     def _uri(self) -> str:
 
