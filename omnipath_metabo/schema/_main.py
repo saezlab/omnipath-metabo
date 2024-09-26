@@ -31,8 +31,15 @@ class Database:
 
     def load(self, resource) -> None:
 
-        loader = Loader(resource, self.session)
+        loader = Loader(resource, self.con.session)
         loader.load()
+
+
+    def __del__(self):
+
+        if hasattr(self, 'con'):
+
+            del self.con
 
 
 class Loader():
@@ -44,10 +51,15 @@ class Loader():
 
 
     def load(self):
+
         for row in self.resource:
+
             insert_statement = self.scheme.insert().values(
                 smiles=row['smiles'],
                 accession=row['accession'],
                 inchi=row['inchi']
                 )
+
             self.session.execute(insert_statement)
+
+        self.session.commit()
