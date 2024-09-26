@@ -31,14 +31,14 @@ class Database:
 
     def load(self, resource) -> None:
 
-        loader = Loader(resource, self.con.engine)
+        loader = Loader(resource, self.session)
         loader.load()
 
 
 class Loader():
     #accept scheme and resource.
-    def __init__(self, scheme, resource, session):
-        self.scheme = scheme
+    def __init__(self, resource, session):
+        self.scheme = resource.scheme
         self.resource = resource
         self.session = session
 

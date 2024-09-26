@@ -7,3 +7,8 @@ class Structure(Base):
     id = Column(Integer, primary_key=True)
     name = Column(String)
     structure = Column('mol_structure', String)
+
+
+class Hmdb(Base):
+    scheme = Structure
+    

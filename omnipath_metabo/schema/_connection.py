@@ -39,5 +39,7 @@ class Connection:
 
     def connect(self):
         self.engine = create_engine(self._uri)
+        Session = sessionmaker(bind=self.engine)
+        self.session = Session()
 
     
