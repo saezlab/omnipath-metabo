@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, Integer, String
 from ._base import Base
-
+from pypath.inputs import hmdb
 
 class Structure(Base):
     __tablename__ = 'structures'
@@ -11,4 +11,8 @@ class Structure(Base):
 
 class Hmdb(Base):
     scheme = Structure
-    
+
+df = hm    
+
+ 
+   
