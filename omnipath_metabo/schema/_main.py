@@ -1,12 +1,42 @@
 from . import _structure
 from ._base import Base
+from ._connection import Connection
 
 def create(con):
 
     Base.metadata.create_all(con.engine)
 
+
+class Database:
+
+    def __init__(self, con):
+
+        self.con = con
+        self.connect()
+        self.create()
+
+
+    def connect(self, reconnect: bool = False) -> None:
+
+        if reconnect or not isinstance(self.con, Connection):
+
+            self.con = Connection(**self.con._param)
+            self.con.connect()
+
+
+    def create(self) -> None:
+
+        create(self.con)
+
+
+    def load(self, resource) -> None:
+
+        loader = Loader(resource, self.con.engine)
+        loader.load()
+
+
 class Loader():
-    #accept scheme and resource. 
+    #accept scheme and resource.
     def __init__(self, scheme, resource, session):
         self.scheme = scheme
         self.resource = resource
