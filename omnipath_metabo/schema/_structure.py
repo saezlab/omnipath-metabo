@@ -12,7 +12,11 @@ class Structure(Base):
 class Hmdb(Base):
     scheme = Structure
 
-df = hm    
+    def __init__(self):
 
- 
-   
+        pass
+
+
+    def __iter__(self):
+
+        for met in hmdb.iter_metabolites():
