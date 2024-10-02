@@ -3,7 +3,8 @@ import os
 import yaml
 from contextlib import closing
 
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine 
+from sqlalchemy.orm  import sessionmaker
 
 class Connection:
     def __init__(

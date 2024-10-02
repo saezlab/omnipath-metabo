@@ -20,7 +20,7 @@ class Database:
 
         if reconnect or not isinstance(self.con, Connection):
 
-            self.con = Connection(**self.con._param)
+            self.con = Connection(**self.con)
             self.con.connect()
 
 
@@ -43,7 +43,6 @@ class Database:
 
 
 class Loader():
-    #accept scheme and resource.
     def __init__(self, resource, session):
         self.scheme = resource.scheme
         self.resource = resource
@@ -55,9 +54,9 @@ class Loader():
         for row in self.resource:
 
             insert_statement = self.scheme.insert().values(
-                smiles=row['smiles'],
-                accession=row['accession'],
-                inchi=row['inchi']
+                smiles=row[1],
+                accession=row[0],
+                #inchi=row['inchi']
                 )
 
             self.session.execute(insert_statement)
