@@ -1,3 +1,5 @@
+from sqlalchemy import insert
+
 from . import _structure
 from ._base import Base
 from ._connection import Connection
@@ -53,9 +55,9 @@ class Loader():
 
         for row in self.resource:
 
-            insert_statement = self.scheme.insert().values(
-                smiles=row[1],
-                accession=row[0],
+            insert_statement = insert(self.scheme).values(
+                structure=row[1],
+                name=row[0],
                 #inchi=row['inchi']
                 )
 
