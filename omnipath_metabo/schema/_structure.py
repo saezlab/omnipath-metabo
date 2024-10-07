@@ -13,16 +13,14 @@ class Structure(Base):
 class Hmdb():
     scheme = Structure
 
-    def __init__(self):
-
-        pass
-
-
     def __iter__(self):
 
         for met in hmdb.metabolites_processed('name','smiles'):
-            yield met[0] 
+            yield met[0]
 
+class SwissLipids():
+    scheme = Structure 
 
-
-
+    def __iter__(self):
+        for met in swisslipids.metabolites('name','smiles'):
+            yield met
