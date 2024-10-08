@@ -1,6 +1,7 @@
 from sqlalchemy import create_engine, Column, Integer, String
 from ._base import Base
-from pypath.inputs import hmdb
+from pypath.inputs import hmdb, swisslipids
+
 
 
 class Structure(Base):
@@ -22,5 +23,7 @@ class SwissLipids():
     scheme = Structure 
 
     def __iter__(self):
-        for met in swisslipids.metabolites('name','smiles'):
-            yield met
+        for met in swisslipids.swisslipids_lipids():
+            yield met['Lipid ID'], met['SMILES (pH7.3)']         
+
+#Ramp and LipidMaps

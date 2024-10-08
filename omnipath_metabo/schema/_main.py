@@ -64,3 +64,14 @@ class Loader():
             self.session.execute(insert_statement)
 
         self.session.commit()
+
+"""
+After creating the entries into the database, should create rdkit extension. 
+Then a molindexer should be created to allow for efficient substructure searching. 
+
+Likewise, steps for searching for similar molecules would include the import and use of fingerprinting algorithms and rdkits search functions. 
+
+
+"""
+
+        
