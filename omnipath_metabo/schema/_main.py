@@ -1,4 +1,4 @@
-from sqlalchemy import insert
+from sqlalchemy import insert, text
 
 from . import _structure
 from ._base import Base
@@ -53,23 +53,42 @@ class Loader():
 
     def load(self):
 
-        for row in self.resource:
+        for i, row in enumerate(self.resource):
 
             insert_statement = insert(self.scheme).values(
-                structure=row[1],
+                smiles=row[1],
                 name=row[0],
-                #inchi=row['inchi']
+                
                 )
 
             self.session.execute(insert_statement)
-
+            if i > 1000:
+                break
         self.session.commit()
+        self.update_mol_column()
+
+    def update_mol_column(self):
+        query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
+        self.session.execute(query)
+        self.session.commit()
+
+        
+
 
 """
 After creating the entries into the database, should create rdkit extension. 
 Then a molindexer should be created to allow for efficient substructure searching. 
+The psql commands for this are 
+CREATE EXTENSION IF NOT EXISTS rdkit ;
+-CREATE
+CREATE SCHEMA rdk;
+-CREATE
+select * into mols from (select id,mol_from_smiles(smiles::cstring) m from raw_data) tmp where m is not null;
+-SELECT 270010
+CREATE INDEX molidx ON mols USING gist(m);
+-CREATE INDEX 
 
-Likewise, steps for searching for similar molecules would include the import and use of fingerprinting algorithms and rdkits search functions. 
+One problem is that the 
 
 
 """
