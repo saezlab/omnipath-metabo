@@ -13,7 +13,7 @@ class Structure(Base):
     __tablename__ = 'structures'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    smiles = Column(String)
+    smiles = Column(String, unique = True)
     mol = Column(MolType)
 
 
