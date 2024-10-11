@@ -56,7 +56,7 @@ class SwissLipids():
 
 class LipidMaps():
     scheme = Structure
-
+    name = 'LipidMaps'
     def __iter__(self):
         sdf = lipidmaps.lmsd_sdf()
 
