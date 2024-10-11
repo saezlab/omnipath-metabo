@@ -1,3 +1,4 @@
+import collections
 from sqlalchemy import text, select
 from sqlalchemy.dialects.postgresql import insert
 
@@ -86,9 +87,25 @@ class Loader():
         self.update_mol_column()
 
         select_str_ids = text('SELECT id, smiles FROM structures')
-        self.session.execute(select_str_ids)
-
-        insert_ids = insert(_structure.Identifier).values(
+        strids = {
+            id[1]: id[0]
+            for id in self.session.execute(select_str_ids)
+        }
+        
+        select_res_ids = text('SELECT id, name FROM resources')
+        resid= {
+            id[1]: id[0]
+            for id in self.session.execute(select_res_ids)
+        }
+        resource_key = resid[self.resource.name]
+        insert_ids = insert(_structure.Identifier).values([
+            {'identifier':id, 'structure_id': strids[smiles], 'resource_id': resource_key}
+            for smiles, _ids in ids.items()
+            for id in _ids
+        ])
+        self.session.execute(insert_ids)
+        self.session.commit()
+    
 
         #self.indexer()
 

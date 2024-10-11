@@ -34,7 +34,7 @@ class Identifier(Base):
 class Resource(Base):
     __tablename__ = 'resources'
     id = Column(Integer, primary_key=True)
-    name = Column(String)
+    name = Column(String, unique = True, nullable = False)
     identifier = relationship('Identifier', backref='resource')
 
 
