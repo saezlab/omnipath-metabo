@@ -1,4 +1,4 @@
-from sqlalchemy import insert, text
+from sqlalchemy import insert, text, select
 
 from . import _structure
 from ._base import Base
@@ -36,6 +36,13 @@ class Database:
         loader = Loader(resource, self.con.session)
         loader.load()
 
+    def substructure_search(self, substructure):
+
+        query = f"select name, mol from structures where mol @>'{substructure}'"
+        result = self.con.session.execute(text(query))
+        for row in result:
+            print(f"{row[0]}, {row[1]}")
+        return result
 
     def __del__(self):
 
@@ -66,31 +73,21 @@ class Loader():
                 break
         self.session.commit()
         self.update_mol_column()
+        self.indexer()
 
     def update_mol_column(self):
         query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
         self.session.execute(query)
         self.session.commit()
 
-        
+    def indexer(self):
+        """
+        Creates a index of the mol structures using gist. Allows for substructure searches of the molecules.
+        """
+        query = text("create index molidx on structures using gist(mol)")
+        self.session.execute(query)
+        self.session.commit()
 
 
-"""
-After creating the entries into the database, should create rdkit extension. 
-Then a molindexer should be created to allow for efficient substructure searching. 
-The psql commands for this are 
-CREATE EXTENSION IF NOT EXISTS rdkit ;
--CREATE
-CREATE SCHEMA rdk;
--CREATE
-select * into mols from (select id,mol_from_smiles(smiles::cstring) m from raw_data) tmp where m is not null;
--SELECT 270010
-CREATE INDEX molidx ON mols USING gist(m);
--CREATE INDEX 
-
-One problem is that the 
-
-
-"""
 
         

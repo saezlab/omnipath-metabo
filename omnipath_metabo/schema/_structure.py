@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, Integer, String, types
 from ._base import Base
-from pypath.inputs import hmdb, swisslipids
+from pypath.inputs import hmdb, swisslipids, lipidmaps
 
 class MolType(types.UserDefinedType):
     cache_ok = True
@@ -31,5 +31,14 @@ class SwissLipids():
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
             yield met['Lipid ID'], met['SMILES (pH7.3)']
+"""
+class LipidMaps(): 
+    scheme = Structure
+
+    def __iter__(self):
+        sdf = lipidmaps.structure.
+        for met in sdf.data:
+            yield met['LM_ID'], met['SMILES']
+"""
 
 #Ramp and LipidMaps
