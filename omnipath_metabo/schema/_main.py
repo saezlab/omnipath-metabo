@@ -60,27 +60,36 @@ class Loader():
 
 
     def load(self):
-        
+
         insert_resource = insert(_structure.Resource).values(
             name = self.resource.name
         )
         insert_resource = insert_resource.on_conflict_do_nothing(index_elements=['name'])
         self.session.execute(insert_resource)
+        ids = collections.defaultdict(set)
 
         for i, row in enumerate(self.resource):
 
             insert_statement = insert(self.scheme).values(
                 smiles=row[1],
                 name=row[0],
-                
-                )
+            )
+            ids[row[1]].add(row[0])
 
             insert_statement = insert_statement.on_conflict_do_nothing(index_elements = ['smiles'])
             self.session.execute(insert_statement)
+
             if i > 1000:
                 break
+
         self.session.commit()
         self.update_mol_column()
+
+        select_str_ids = text('SELECT id, smiles FROM structures')
+        self.session.execute(select_str_ids)
+
+        insert_ids = insert(_structure.Identifier).values(
+
         #self.indexer()
 
     def update_mol_column(self):
@@ -98,4 +107,4 @@ class Loader():
 
 
 
-        
+
