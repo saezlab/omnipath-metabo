@@ -1,4 +1,5 @@
-from sqlalchemy import insert, text, select
+from sqlalchemy import text, select
+from sqlalchemy.dialects.postgresql import insert
 
 from . import _structure
 from ._base import Base
@@ -68,12 +69,13 @@ class Loader():
                 
                 )
 
+            insert_statement = insert_statement.on_conflict_do_nothing(index_elements = ['smiles'])
             self.session.execute(insert_statement)
             if i > 1000:
                 break
         self.session.commit()
         self.update_mol_column()
-        self.indexer()
+        #self.indexer()
 
     def update_mol_column(self):
         query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
