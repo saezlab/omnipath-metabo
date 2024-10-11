@@ -40,7 +40,7 @@ class Resource(Base):
 
 class Hmdb():
     scheme = Structure
-
+    name = 'HMDB'
     def __iter__(self):
 
         for met in hmdb.metabolites_processed('name','smiles'):
@@ -48,7 +48,7 @@ class Hmdb():
 
 class SwissLipids():
     scheme = Structure
-
+    name = 'SwissLipids'
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
             yield met['Lipid ID'], met['SMILES (pH7.3)']

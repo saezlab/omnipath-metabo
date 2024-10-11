@@ -60,6 +60,12 @@ class Loader():
 
 
     def load(self):
+        
+        insert_resource = insert(_structure.Resource).values(
+            name = self.resource.name
+        )
+        insert_resource = insert_resource.on_conflict_do_nothing(index_elements=['name'])
+        self.session.execute(insert_resource)
 
         for i, row in enumerate(self.resource):
 
