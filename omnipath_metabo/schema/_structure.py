@@ -1,4 +1,5 @@
-from sqlalchemy import create_engine, Column, Integer, String, types
+from sqlalchemy import create_engine, Column, ForeignKey, Integer, String, types
+from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps
 
@@ -15,6 +16,26 @@ class Structure(Base):
     name = Column(String)
     smiles = Column(String, unique = True)
     mol = Column(MolType)
+    identifier = relationship('Identifier', backref='structure')
+
+
+class Identifier(Base):
+    __tablename__ = 'identifiers'
+    id = Column(Integer, primary_key=True)
+    identifier = Column(String, unique = True)
+    structure_id = Column(
+        Integer,
+        ForeignKey('structures.id'),
+        nullable = False,
+    )
+    resource_id = Column(Integer, ForeignKey('resources.id'), nullable = False)
+
+
+class Resource(Base):
+    __tablename__ = 'resources'
+    id = Column(Integer, primary_key=True)
+    name = Column(String)
+    identifier = relationship('Identifier', backref='resource')
 
 
 class Hmdb():
@@ -32,7 +53,7 @@ class SwissLipids():
         for met in swisslipids.swisslipids_lipids():
             yield met['Lipid ID'], met['SMILES (pH7.3)']
 """
-class LipidMaps(): 
+class LipidMaps():
     scheme = Structure
 
     def __iter__(self):
