@@ -52,14 +52,18 @@ class SwissLipids():
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
             yield met['Lipid ID'], met['SMILES (pH7.3)']
-"""
+
+
 class LipidMaps():
     scheme = Structure
 
     def __iter__(self):
-        sdf = lipidmaps.structure.
-        for met in sdf.data:
-            yield met['LM_ID'], met['SMILES']
-"""
+        sdf = lipidmaps.lmsd_sdf()
+
+        for met in sdf:
+
+            if smiles := met['name'].get('SMILES', None):
+
+                yield met['id'], smiles
 
 #Ramp and LipidMaps
