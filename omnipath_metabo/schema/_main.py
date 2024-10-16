@@ -1,7 +1,7 @@
 import collections
 from sqlalchemy import text, select
 from sqlalchemy.dialects.postgresql import insert
-import psychopg2.extras
+import psycopg2.extras
 
 from . import _structure
 from ._base import Base
@@ -70,15 +70,15 @@ class Loader():
         insert_resource = insert_resource.on_conflict_do_nothing(index_elements=['name'])
         self.session.execute(insert_resource)
         ids = collections.defaultdict(set)
+        row_con = self.con.engine.raw_connection()
 
-        with self.con.raw_connection() as con:
+        with row_con.cursor() as cursor:
 
-            with con.cursor() as cursor:
-
-                query = """
-                INSERT INTO structures (smiles, name) VALUES %s
+            query = """
+                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING 
                 """
-                psychopg2.extras.execute_values(cursor, query, (), page_size = 1000)
+            psycopg2.extras.execute_values(cursor, query, self.resource, page_size = 1000)
+        """
         for i, row in enumerate(self.resource):
 
             insert_statement = insert(self.scheme).values(
@@ -92,7 +92,7 @@ class Loader():
 
             if i > 1000:
                 break
-
+        """
         self.session.commit()
         self.update_mol_column()
 
