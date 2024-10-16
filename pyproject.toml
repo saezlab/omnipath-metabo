@@ -34,6 +34,7 @@ toml = "*"
 pypath-omnipath = { git = "https://github.com/saezlab/pypath.git", branch = "master"}
 sqlalchemy = "^2.0.35"
 psycopg2 = "^2.9.9"
+pypath-common = "^0.2.5"
 
 [tool.poetry.dev-dependencies]
 pytest = ">=6.0"
