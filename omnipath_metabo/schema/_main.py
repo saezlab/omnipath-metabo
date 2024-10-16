@@ -15,6 +15,9 @@ def create(con):
     Base.metadata.create_all(con.engine)
 
 
+TABLES = {'structures', 'identifiers', 'resources'}
+
+
 class Database:
 
     def __init__(self, con):
@@ -56,6 +59,15 @@ class Database:
 
             del self.con
 
+    def wipe(self) -> None:
+
+        for tbl in TABLES:
+
+            query = text(f'DROP TABLE {tbl}')
+
+            self.con.session.execute(query)
+            self.con.session.commit()
+
 
 class Loader():
 
@@ -67,7 +79,7 @@ class Loader():
 
 
     def load(self):
-        
+
         insert_resource = insert(_structure.Resource).values(
             name = self.resource.name
         )
@@ -85,7 +97,7 @@ class Loader():
                 """
             _log("loading insert statments for structures table")
             psycopg2.extras.execute_values(cursor, query, self.resource, page_size = 1000)
-        
+
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
 
