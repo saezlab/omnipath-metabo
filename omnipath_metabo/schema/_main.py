@@ -1,6 +1,7 @@
 import collections
 from sqlalchemy import text, select
 from sqlalchemy.dialects.postgresql import insert
+import psychopg2.extras
 
 from . import _structure
 from ._base import Base
@@ -106,7 +107,10 @@ class Loader():
         self.session.execute(insert_ids)
         self.session.commit()
     
-
+        query = """ 
+        INSERT INTO structures (smiles) VALUES %s
+        """
+        psychopg2.extras.execute_values(query, (), page_size = 1000)
         #self.indexer()
 
     def update_mol_column(self):
