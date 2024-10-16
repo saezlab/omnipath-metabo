@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
 #
-# This file is part of the `omnipath_metabo` Python module
+# This file is part of the `download_manager` Python module
 #
 # Copyright 2024
 # Heidelberg University Hospital
 #
-# File author(s): Macabe Daley (omnipath.db@gmail.com)
+# File author(s): OmniPath team (omnipathdb@gmail.com)
 #
 # Distributed under the GPLv3 license
 # See the file `LICENSE` or read a copy at
@@ -14,7 +14,7 @@
 #
 
 """
-Utilities for processing metabolic data.
+Download manager for Python
 """
 
 __all__ = [
@@ -22,4 +22,5 @@ __all__ = [
     '__author__',
 ]
 
+from ._session import log, _log, session
 from ._metadata import __author__, __version__
