@@ -70,12 +70,12 @@ class Loader():
         insert_resource = insert_resource.on_conflict_do_nothing(index_elements=['name'])
         self.session.execute(insert_resource)
         ids = collections.defaultdict(set)
-        row_con = self.con.engine.raw_connection()
+        raw_con = self.con.engine.raw_connection()
 
-        with row_con.cursor() as cursor:
+        with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING 
+                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING
                 """
             psycopg2.extras.execute_values(cursor, query, self.resource, page_size = 1000)
         """
@@ -93,8 +93,10 @@ class Loader():
             if i > 1000:
                 break
         """
-        self.session.commit()
+        raw_con.commit()
         self.update_mol_column()
+
+        return
 
         select_str_ids = text('SELECT id, smiles FROM structures')
         strids = {
