@@ -1,7 +1,7 @@
 from sqlalchemy import create_engine, Column, ForeignKey, Integer, String, types
 from sqlalchemy.orm import relationship
 from ._base import Base
-from pypath.inputs import hmdb, swisslipids, lipidmaps
+from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
 
 class MolType(types.UserDefinedType):
     cache_ok = True
@@ -66,4 +66,17 @@ class LipidMaps():
 
                 yield met['id'], smiles
 
-#Ramp and LipidMaps
+class Ramp():
+    scheme = Structure
+    name = 'RaMP'
+    def __iter__(self):
+        sqlite_connection = ramp.ramp_raw(['chem_props'], sqlite = True)
+        query = """
+                SELECT ramp_id, iso_smiles FROM chem_props
+                """
+        cursor = sqlite_connection.get_cursor()
+        cursor.execute()
+        connection.commit()
+
+        for row in cursor.fetchall():
+            yield row
