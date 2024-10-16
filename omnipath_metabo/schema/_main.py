@@ -55,6 +55,7 @@ class Database:
 
 
 class Loader():
+
     def __init__(self, resource, con):
         self.scheme = resource.scheme
         self.resource = resource
@@ -71,7 +72,7 @@ class Loader():
         self.session.execute(insert_resource)
         ids = collections.defaultdict(set)
         raw_con = self.con.engine.raw_connection()
-        
+
         with raw_con.cursor() as cursor:
 
             query = """
@@ -117,11 +118,11 @@ class Loader():
 
         with raw_con.cursor() as cursor:
             query = """
-                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s 
+                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s
                     """
             psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
 
-        
+
         raw_con.commit()
 
         #self.indexer()
