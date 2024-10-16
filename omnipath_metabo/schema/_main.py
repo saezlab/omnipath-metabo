@@ -36,7 +36,7 @@ class Database:
 
     def load(self, resource) -> None:
 
-        loader = Loader(resource, self.con.session)
+        loader = Loader(resource, self.con)
         loader.load()
 
     def substructure_search(self, substructure):
@@ -55,10 +55,11 @@ class Database:
 
 
 class Loader():
-    def __init__(self, resource, session):
+    def __init__(self, resource, con):
         self.scheme = resource.scheme
         self.resource = resource
-        self.session = session
+        self.session = con.session
+        self.con = con
 
 
     def load(self):
@@ -70,6 +71,14 @@ class Loader():
         self.session.execute(insert_resource)
         ids = collections.defaultdict(set)
 
+        with self.con.raw_connection() as con:
+
+            with con.cursor() as cursor:
+
+                query = """
+                INSERT INTO structures (smiles, name) VALUES %s
+                """
+                psychopg2.extras.execute_values(cursor, query, (), page_size = 1000)
         for i, row in enumerate(self.resource):
 
             insert_statement = insert(self.scheme).values(
@@ -92,7 +101,7 @@ class Loader():
             id[1]: id[0]
             for id in self.session.execute(select_str_ids)
         }
-        
+
         select_res_ids = text('SELECT id, name FROM resources')
         resid= {
             id[1]: id[0]
@@ -106,11 +115,7 @@ class Loader():
         ])
         self.session.execute(insert_ids)
         self.session.commit()
-    
-        query = """ 
-        INSERT INTO structures (smiles) VALUES %s
-        """
-        psychopg2.extras.execute_values(query, (), page_size = 1000)
+
         #self.indexer()
 
     def update_mol_column(self):
