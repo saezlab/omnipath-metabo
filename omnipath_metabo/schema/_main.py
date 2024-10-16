@@ -71,7 +71,7 @@ class Loader():
         self.session.execute(insert_resource)
         ids = collections.defaultdict(set)
         raw_con = self.con.engine.raw_connection()
-
+        
         with raw_con.cursor() as cursor:
 
             query = """
@@ -96,8 +96,6 @@ class Loader():
         raw_con.commit()
         self.update_mol_column()
 
-        return
-
         select_str_ids = text('SELECT id, smiles FROM structures')
         strids = {
             id[1]: id[0]
@@ -110,13 +108,21 @@ class Loader():
             for id in self.session.execute(select_res_ids)
         }
         resource_key = resid[self.resource.name]
-        insert_ids = insert(_structure.Identifier).values([
-            {'identifier':id, 'structure_id': strids[smiles], 'resource_id': resource_key}
+
+        insert_ids = (
+            (id, strids[smiles], resource_key)
             for smiles, _ids in ids.items()
             for id in _ids
-        ])
-        self.session.execute(insert_ids)
-        self.session.commit()
+        )
+
+        with raw_con.cursor() as cursor:
+            query = """
+                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s 
+                    """
+            psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
+
+        
+        raw_con.commit()
 
         #self.indexer()
 
