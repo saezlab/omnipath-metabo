@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine, Column, ForeignKey, Integer, String, types
+from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types
 from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
@@ -29,6 +29,9 @@ class Identifier(Base):
         nullable = False,
     )
     resource_id = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    authoritative = Column(Boolean)
+    id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
+
 
 
 class Resource(Base):

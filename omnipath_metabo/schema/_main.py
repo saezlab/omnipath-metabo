@@ -126,8 +126,8 @@ class Loader():
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
             query = """
-                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s
-                    """
+                INSERT INTO identifiers (identifier, structure_id, resource_id, id_type) VALUES %s
+                """
             psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
 
 
