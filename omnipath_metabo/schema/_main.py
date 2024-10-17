@@ -63,22 +63,35 @@ class Database:
 
         for tbl in TABLES:
 
-            query = text(f'DROP TABLE {tbl}')
+            query = text(f'DROP TABLE {tbl} CASCADE')
 
             self.con.session.execute(query)
             self.con.session.commit()
+
+    def load_all(self):
+        for db in _structure.__dict__.values():
+            if getattr(db,'scheme',None) is _structure.Structure:
+                h = db
+                self.load(h)
+
 
 
 class Loader():
 
     def __init__(self, resource, con):
-        self.scheme = resource.scheme
-        self.resource = resource
+        self._set_resource(resource)
         self.session = con.session
         self.con = con
 
+    def _set_resource(self, resource):
+        if type(resource) is type:
+            resource = resource()
+        self.scheme = resource.scheme
+        self.resource = resource
 
     def load(self):
+        
+        self.create()
 
         insert_resource = insert(_structure.Resource).values(
             name = self.resource.name
@@ -101,7 +114,7 @@ class Loader():
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
 
-        self.update_mol_column()
+        #vself.update_mol_column()
 
         _log('collecting structure ids')
         select_str_ids = text('SELECT id, smiles FROM structures')
@@ -149,7 +162,10 @@ class Loader():
         query = text("create index molidx on structures using gist(mol)")
         self.session.execute(query)
         self.session.commit()
+        
+    def create(self) -> None:
 
+        create(self.con)
 
 
 
