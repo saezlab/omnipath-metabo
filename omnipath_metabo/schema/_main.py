@@ -95,10 +95,10 @@ class Loader():
 
         insert_resource = insert(_structure.Resource).values(
             name = self.resource.name
-        )
-        insert_resource = insert_resource.on_conflict_do_nothing(index_elements=['name'])
-        self.session.execute(insert_resource)
-        ids = collections.defaultdict(set)
+        ).returning(_structure.Resource.id)
+        insert_resource = insert_resource.on_conflict_do_update(index_elements=['name'])
+        resid = self.session.execute(insert_resource).fetchall()
+        
         _log(f'loading resource {self.resource.name}')
 
         raw_con = self.con.engine.raw_connection()
@@ -106,29 +106,19 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING
+                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING RETURNING id;
                 """
             _log("loading insert statments for structures table")
             psycopg2.extras.execute_values(cursor, query, self.resource, page_size = 1000)
+            strids = cursor.fetchall()
+            
 
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
 
         #vself.update_mol_column()
 
-        _log('collecting structure ids')
-        select_str_ids = text('SELECT id, smiles FROM structures')
-        strids = {
-            id[1]: id[0]
-            for id in self.session.execute(select_str_ids)
-        }
-        _log('structure ids collected, collecting resource ids')
-        select_res_ids = text('SELECT id, name FROM resources')
-        resid= {
-            id[1]: id[0]
-            for id in self.session.execute(select_res_ids)
-        }
-        resource_key = resid[self.resource.name]
+        resource_key = resid[0][0]
         _log('resource ids collected.')
 
         insert_ids = (
@@ -139,8 +129,8 @@ class Loader():
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
             query = """
-                INSERT INTO identifiers (identifier, structure_id, resource_id, id_type) VALUES %s
-                """
+                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s
+                    """
             psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
 
 
