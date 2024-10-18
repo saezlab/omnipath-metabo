@@ -7,6 +7,7 @@ from omnipath_metabo import _log
 from . import _structure
 from ._base import Base
 from ._connection import Connection
+from ..misc._tee import Tee
 
 _log("Hello from main module")
 
@@ -96,7 +97,11 @@ class Loader():
         insert_resource = insert(_structure.Resource).values(
             name = self.resource.name
         ).returning(_structure.Resource.id)
-        insert_resource = insert_resource.on_conflict_do_update(index_elements=['name'])
+        insert_resource = insert_resource.on_conflict_do_update(
+            index_elements=['name'],
+            set_ = {
+                'name':insert_resource.excluded.name
+            })
         resid = self.session.execute(insert_resource).fetchall()
         
         _log(f'loading resource {self.resource.name}')
@@ -106,10 +111,11 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO NOTHING RETURNING id;
+                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO UPDATE SET smiles = excluded.smiles RETURNING id;
                 """
             _log("loading insert statments for structures table")
-            psycopg2.extras.execute_values(cursor, query, self.resource, page_size = 1000)
+            cached_resource = Tee(self.resource, ids = lambda x: x[0])
+            psycopg2.extras.execute_values(cursor, query, cached_resource, page_size = 1000)
             strids = cursor.fetchall()
             
 
@@ -122,9 +128,8 @@ class Loader():
         _log('resource ids collected.')
 
         insert_ids = (
-            (id, strids[smiles], resource_key)
-            for smiles, _ids in ids.items()
-            for id in _ids
+            (name, strid, resource_key)
+            for name, strid in zip(strids, cached_resource.cached['ids'])
         )
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
