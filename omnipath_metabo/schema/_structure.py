@@ -16,19 +16,28 @@ class Structure(Base):
     name = Column(String)
     smiles = Column(String, unique = True)
     mol = Column(MolType)
-    identifier = relationship('Identifier', backref='structure')
+    identifier = relationship(
+        'Identifier', 
+        backref='structure',
+        foreign_keys='Identifier.structure_id'
+    )
 
 
 class Identifier(Base):
     __tablename__ = 'identifiers'
     id = Column(Integer, primary_key=True)
+    #Rather than having the 
     identifier = Column(String, unique = True)
     structure_id = Column(
         Integer,
         ForeignKey('structures.id'),
         nullable = False,
     )
-    resource_id = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    resource_id = Column(
+        Integer, 
+        ForeignKey('resources.id'), 
+        nullable = False
+    )
     authoritative = Column(Boolean)
     id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
 
@@ -38,7 +47,11 @@ class Resource(Base):
     __tablename__ = 'resources'
     id = Column(Integer, primary_key=True)
     name = Column(String, unique = True, nullable = False)
-    identifier = relationship('Identifier', backref='resource')
+    identifier = relationship(
+        'Identifier',
+        backref='resource',
+        foreign_keys='Identifier.resource_id'  # Explicitly define which column is the foreign key
+    )
 
 
 class Hmdb():
