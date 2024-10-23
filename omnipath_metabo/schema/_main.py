@@ -91,7 +91,7 @@ class Loader():
         self.resource = resource
 
     def load(self):
-        
+
         self.create()
 
         insert_resource = insert(_structure.Resource).values(
@@ -103,7 +103,7 @@ class Loader():
                 'name':insert_resource.excluded.name
             })
         resid = self.session.execute(insert_resource).fetchall()
-        
+
         _log(f'loading resource {self.resource.name}')
 
         raw_con = self.con.engine.raw_connection()
@@ -114,13 +114,17 @@ class Loader():
                 INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO nothing;
                 """
             _log("loading insert statments for structures table")
-            cached_resource = Tee(self.resource, ids = lambda x: x[0])
+            cached_resource = Tee(self.resource, ids = lambda x: x[1])
             psycopg2.extras.execute_values(cursor, query, cached_resource, page_size = 1000)
-            strids = cursor.fetchall()
-            
+
 
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
+        return_ids = text("SELECT id, smiles FROM structures")
+        inserted_str = set(cache_resource.ids)
+        strids = {
+
+            self.session.execute(return_ids)
 
         #vself.update_mol_column()
 
@@ -157,7 +161,7 @@ class Loader():
         query = text("create index molidx on structures using gist(mol)")
         self.session.execute(query)
         self.session.commit()
-        
+
     def create(self) -> None:
 
         create(self.con)
