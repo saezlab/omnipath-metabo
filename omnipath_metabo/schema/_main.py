@@ -103,6 +103,7 @@ class Loader():
                 'name':insert_resource.excluded.name
             })
         resid = self.session.execute(insert_resource).fetchall()
+        self.session.commit()
 
         _log(f'loading resource {self.resource.name}')
 
@@ -121,7 +122,7 @@ class Loader():
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
         return_ids = text("SELECT id, smiles FROM structures")
-        inserted_str = set(s[1] for s in cached_resource.struct)
+        inserted_str = set(s[1] for s in cached_resource.cached['struct'])
         strids = {
             smiles : id
             for id, smiles in self.session.execute(return_ids)
@@ -135,13 +136,13 @@ class Loader():
         _log('resource ids collected.')
 
         insert_ids = (
-            (name, strids[smiles], resource_key)
-            for name, smiles in zip(*cached_resource.struct)
+            (name, strids[smiles], resource_key, True, resource_key)
+            for name, smiles in cached_resource.cached['struct']
         )
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
             query = """
-                    INSERT INTO identifiers (identifier, structure_id, resource_id) VALUES %s
+                    INSERT INTO identifiers (identifier, structure_id, resource_id, authoritative, id_type) VALUES %s
                     """
             psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
 
