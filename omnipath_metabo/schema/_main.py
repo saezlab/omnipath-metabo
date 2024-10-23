@@ -114,29 +114,29 @@ class Loader():
                 INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO nothing;
                 """
             _log("loading insert statments for structures table")
-            cached_resource = Tee(self.resource, smiles = lambda x: x[1], ids = lambda x: x[0])
+            cached_resource = Tee(self.resource, struct = lambda x: x)
             psycopg2.extras.execute_values(cursor, query, cached_resource, page_size = 1000)
 
 
         raw_con.commit()
         _log("structures have been inserted, creating mol column")
         return_ids = text("SELECT id, smiles FROM structures")
-        inserted_str = set(cached_resource.smiles)
+        inserted_str = set(s[1] for s in cached_resource.struct)
         strids = {
             smiles : id
             for id, smiles in self.session.execute(return_ids)
-            if smiles in inserted_str 
+            if smiles in inserted_str
         }
 
-            
+
         #vself.update_mol_column()
 
         resource_key = resid[0][0]
         _log('resource ids collected.')
 
         insert_ids = (
-            (name, strid, resource_key)
-            for name, strid in zip(strids, cached_resource.cached['ids'])
+            (name, strids[smiles], resource_key)
+            for name, smiles in zip(*cached_resource.struct)
         )
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
