@@ -111,7 +111,7 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO UPDATE SET smiles = excluded.smiles RETURNING id;
+                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO nothing;
                 """
             _log("loading insert statments for structures table")
             cached_resource = Tee(self.resource, ids = lambda x: x[0])

@@ -14,7 +14,7 @@ class Structure(Base):
     __tablename__ = 'structures'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    smiles = Column(String, unique = True)
+    smiles = Column(String, unique= True) 
     mol = Column(MolType)
     identifier = relationship(
         'Identifier', 
@@ -26,7 +26,6 @@ class Structure(Base):
 class Identifier(Base):
     __tablename__ = 'identifiers'
     id = Column(Integer, primary_key=True)
-    #Rather than having the 
     identifier = Column(String, unique = True)
     structure_id = Column(
         Integer,
@@ -50,7 +49,7 @@ class Resource(Base):
     identifier = relationship(
         'Identifier',
         backref='resource',
-        foreign_keys='Identifier.resource_id'  # Explicitly define which column is the foreign key
+        foreign_keys='Identifier.resource_id'  
     )
 
 
