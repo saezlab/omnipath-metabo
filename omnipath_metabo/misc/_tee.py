@@ -15,6 +15,15 @@ class Tee:
         self.yld = yld
         self.kwargs = kwargs
         self.cached = collections.defaultdict(list)
+        self._setup_callbacks()
+
+
+    def _setup_callbacks(self) -> None:
+
+        self.kwargs = {
+            name: (lambda x: x[val]) if isinstance(val, (int, str)) else val
+            for name, val in self.kwargs.items()
+        }
 
 
     def __iter__(self) -> Generator:
