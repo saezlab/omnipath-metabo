@@ -58,7 +58,7 @@ class Hmdb():
     name = 'HMDB'
     def __iter__(self):
 
-        for met in hmdb.metabolites_processed('name','smiles'):
+        for met in hmdb.metabolites_processed('accession', 'smiles'):
             yield met[0]
 
 class SwissLipids():
@@ -66,7 +66,7 @@ class SwissLipids():
     name = 'SwissLipids'
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
-            yield met['Name'], met['SMILES (pH7.3)']
+            yield met['Lipid ID'], met['SMILES (pH7.3)']
 
 
 class LipidMaps():

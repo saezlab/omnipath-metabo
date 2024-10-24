@@ -105,7 +105,7 @@ class Loader():
         resid = self.session.execute(insert_resource).fetchall()
         self.session.commit()
 
-        _log(f'loading resource {self.resource.name}')
+        _log(f'loading resource {self.resource.name}', level = -1)
 
         raw_con = self.con.engine.raw_connection()
 
@@ -150,7 +150,7 @@ class Loader():
         raw_con.commit()
         _log('identifiers inserted.')
         #self.indexer()
-        _log(f'{self.resource.name} loaded')
+        _log(f'Finished loading {self.resource.name}.', level = -1)
 
     def update_mol_column(self):
         query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
