@@ -14,10 +14,10 @@ class Structure(Base):
     __tablename__ = 'structures'
     id = Column(Integer, primary_key=True)
     name = Column(String)
-    smiles = Column(String, unique= True) 
+    smiles = Column(String, unique= True)
     mol = Column(MolType)
     identifier = relationship(
-        'Identifier', 
+        'Identifier',
         backref='structure',
         foreign_keys='Identifier.structure_id'
     )
@@ -33,8 +33,8 @@ class Identifier(Base):
         nullable = False,
     )
     resource_id = Column(
-        Integer, 
-        ForeignKey('resources.id'), 
+        Integer,
+        ForeignKey('resources.id'),
         nullable = False
     )
     authoritative = Column(Boolean)
@@ -49,7 +49,7 @@ class Resource(Base):
     identifier = relationship(
         'Identifier',
         backref='resource',
-        foreign_keys='Identifier.resource_id'  
+        foreign_keys='Identifier.resource_id'
     )
 
 
@@ -85,13 +85,7 @@ class Ramp():
     scheme = Structure
     name = 'RaMP'
     def __iter__(self):
-        sqlite_connection = ramp.ramp_raw(['chem_props'], sqlite = True)
-        query = """
-                SELECT ramp_id, iso_smiles FROM chem_props
-                """
-        cursor = sqlite_connection.get_cursor()
-        cursor.execute()
-        connection.commit()
 
-        for row in cursor.fetchall():
-            yield row
+        for row in ramp.ramp_iter('chem_props'):
+
+            yield row[0], row[3]
