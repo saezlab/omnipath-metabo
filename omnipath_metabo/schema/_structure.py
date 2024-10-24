@@ -66,7 +66,7 @@ class SwissLipids():
     name = 'SwissLipids'
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
-            yield met['Lipid ID'], met['SMILES (pH7.3)']
+            yield met['Name'], met['SMILES (pH7.3)']
 
 
 class LipidMaps():
@@ -77,7 +77,7 @@ class LipidMaps():
 
         for met in sdf:
 
-            if smiles := met['name'].get('SMILES', None):
+            if smiles := met['id'].get('SMILES', None):
 
                 yield met['id'], smiles
 
