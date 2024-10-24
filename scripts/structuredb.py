@@ -9,6 +9,8 @@ d = {
     'database': 'metabo',
 }
 db = _main.Database(d)
+db.wipe()
+db.load_all()
 
 h = _structure.LipidMaps()
 
