@@ -79,6 +79,10 @@ class LipidMaps():
 
             if smiles := met['id'].get('SMILES', None):
 
+                if met['id'] == 'LMFA08040060':
+
+                    continue
+
                 yield met['id'], smiles
 
 class Ramp():
