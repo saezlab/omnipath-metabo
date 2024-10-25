@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types
+from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types, Numeric
 from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
@@ -58,7 +58,10 @@ class Hmdb():
     name = 'HMDB'
     def __iter__(self):
 
-        for met in hmdb.metabolites_processed('accession', 'smiles'):
+        for met in hmdb.metabolites_processed(
+            'accession',
+            'smiles'
+            ):
             yield met[0]
 
 class SwissLipids():
@@ -77,7 +80,7 @@ class LipidMaps():
 
         for met in sdf:
 
-            if smiles := met['id'].get('SMILES', None):
+            if smiles := met['name'].get('SMILES', None):
 
                 if met['id'] == 'LMFA08040060':
 
