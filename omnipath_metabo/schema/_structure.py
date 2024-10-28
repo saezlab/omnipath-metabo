@@ -26,7 +26,7 @@ class Structure(Base):
 class Identifier(Base):
     __tablename__ = 'identifiers'
     id = Column(Integer, primary_key=True)
-    identifier = Column(String, unique = True)
+    identifier = Column(String)
     structure_id = Column(
         Integer,
         ForeignKey('structures.id'),
