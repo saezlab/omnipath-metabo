@@ -46,6 +46,11 @@ class Database:
         loader = Loader(resource, self.con)
         loader.load()
 
+    def test_load(self, resource) -> None:
+
+        loader = Loader(resource, self.con)
+        loader.new_load()
+
     def substructure_search(self, substructure):
 
         query = f"select name, mol from structures where mol @>'{substructure}'"
@@ -170,6 +175,13 @@ class Loader():
 
         create(self.con)
 
-    
-
-
+    def new_load(self, batch_size = 1000):
+        
+        self.create()
+        
+        #Creat method for populating using iterator. 
+        
+        self.session.scalars(
+            insert(_structure.Structure).on_conflict_do_nothing()
+            [x for x in self.resource] 
+        )
