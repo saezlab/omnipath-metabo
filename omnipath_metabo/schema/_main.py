@@ -169,22 +169,23 @@ class Loader():
         _log('identifiers inserted.')
 
         return_ids = text(
-            "SELECT id, structure_id, identifier, resource_id, id_type "
-            f"FROM identifiers WHERE resource_id = {resource_key}")
+            "SELECT id, structure_id, identifier, resource_id, authoritative, id_type "
+            f"FROM identifiers WHERE resource_id = {resource_key}"
+        )
         identifier_ids = {
             tuple(rest): id
             for id, *rest in self.session.execute(return_ids)
         }
-        print(list(identifier_ids.values())[10])
 
         property_records = (
             (
                 identifier_ids[
-                    (record['structure'][0],
-                     strids[record['structure'][1]],
-                     resource_key,
-                     True,
-                     resource_key
+                    (
+                        strids[record['structure'][1]],
+                        record['structure'][0],
+                        resource_key,
+                        True,
+                        resource_key
                      )
                 ],
             ) + record['properties']
@@ -194,9 +195,13 @@ class Loader():
 
         with raw_con.cursor() as cursor:
             query = """
-                        INSERT INTO properties (identifier_id, mw, monoiso_mass, charge, formula) VALUES %s
+                    INSERT INTO properties (identifier_id, mw, monoiso_mass, charge, formula) VALUES %s
                     """
             psycopg2.extras.execute_values(cursor, query, property_records, page_size = 1000)
+
+
+        raw_con.commit()
+        _log('properties inserted.')
 
 
         #self.indexer()
