@@ -124,14 +124,19 @@ class Loader():
             cached_resource = Tee(
                 self.resource,
                 struct = lambda x: x,
+                yld = lambda x: x['structure'],
             )
             psycopg2.extras.execute_values(cursor, query, cached_resource, page_size = 1000)
 
 
         raw_con.commit()
-        _log("structures have been inserted, creating mol column")
+        _log("structures have been inserted")
+
         return_ids = text("SELECT id, smiles FROM structures")
-        inserted_str = set(s[1] for s in cached_resource.cached['struct'])
+        inserted_str = {
+            s['structure'][1]
+            for s in cached_resource.cached['struct']
+        }
         strids = {
             smiles : id
             for id, smiles in self.session.execute(return_ids)
@@ -146,8 +151,11 @@ class Loader():
 
         insert_ids = (
             (name, strids[smiles], resource_key, True, resource_key)
-            for name, smiles in cached_resource.cached['struct']
+            for name, smiles in (
+                r['structure'] for r in cached_resource.cached['struct']
+            )
         )
+
         _log('inserting identifiers.')
         with raw_con.cursor() as cursor:
             query = """
@@ -159,7 +167,6 @@ class Loader():
         raw_con.commit()
         _log('identifiers inserted.')
 
-        _log("structures have been inserted, creating mol column")
         return_ids = text(
             "SELECT id, structure_id, identifier, resource_id, id_type "
             f"FROM identifiers WHERE resource_id = {resid}")
@@ -171,11 +178,11 @@ class Loader():
         inserted_str = {
             (strid_to_smile[s[1]], s[2], s[3], s[4])
             for s in cached_resource.cached['struct'])
-        
+
         property_records = (
             (
                 identifier_ids[
-                    (record['structure'][0], 
+                    (record['structure'][0],
                      strids[record['structure'][1]],
                      resid,
                      True,
@@ -192,18 +199,21 @@ class Loader():
                         INSERT INTO properties (identifier_id, mw, monoiso_mass, charge, formula) VALUES %s
                     """
             psycopg2.extras.execute_values(cursor, query, inserted_str, page_size = 1000)
-        
-        
+
+
         #self.indexer()
-        
-        
+
+
         _log(f'Finished loading {self.resource.name}.', level = -1)
 
     def update_mol_column(self):
+
+        log("Creating mol column")
         query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
         self.session.execute(query)
         self.session.commit()
         _log('Finished creating mol column.')
+
 
     def indexer(self):
         """
