@@ -10,8 +10,6 @@ d = {
 }
 db = _main.Database(d)
 db.wipe()
-db.load_all()
-
-h = _structure.LipidMaps()
-
-db.load(h)
+ramp = _structure.Ramp()
+# db.load_all()
+db.load(ramp)
