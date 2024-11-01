@@ -49,6 +49,11 @@ class Identifier(Base):
             unique = True,
         ),
     )
+    properties = relationship(
+        'Properties',
+        backref='properties',
+        foreign_keys='Properties.identifier_id'
+    )
 
 
 
