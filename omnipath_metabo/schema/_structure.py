@@ -1,4 +1,4 @@
-from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types, Numeric
+from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types, Numeric, Index
 from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
@@ -39,6 +39,7 @@ class Identifier(Base):
     )
     authoritative = Column(Boolean)
     id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    __table_args__ = (Index('identifers_unique','identifier', 'structure_id', 'resource_id', 'id_type', unique = True),)
 
 
 
@@ -52,7 +53,7 @@ class Resource(Base):
         foreign_keys='Identifier.resource_id'
     )
 
-class MolecularWeight(Base):
+class Properties(Base):
     __tablename__ = 'properties'
     id = Column(Integer, primary_key=True)
     identifier_id = Column(Integer, ForeignKey('identifiers.id'), nullable = False)
@@ -60,6 +61,7 @@ class MolecularWeight(Base):
     monoiso_mass = Column(Numeric)
     charge = Column(Numeric)
     formula = Column(String)
+
 
 class Hmdb():
     scheme = Structure
@@ -103,4 +105,4 @@ class Ramp():
 
         for row in ramp.ramp_iter('chem_props'):
 
-            yield row[0], row[3]
+            yield {'structure': (row[0], row[3]), 'properties':(row[7], row[8], None, row[10])}
