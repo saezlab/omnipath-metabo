@@ -171,7 +171,32 @@ class Loader():
         inserted_str = {
             (strid_to_smile[s[1]], s[2], s[3], s[4])
             for s in cached_resource.cached['struct'])
+        
+        property_records = (
+            (
+                identifier_ids[
+                    (record['structure'][0], 
+                     strids[record['structure'][1]],
+                     resid,
+                     True,
+                     resid
+                     )
+                ],
+            ) + record['properties']
+
+            for record in cached_resource.cache['struct']
+        )
+
+        with raw_con.cursor() as cursor:
+            query = """
+                        INSERT INTO properties (identifier_id, mw, monoiso_mass, charge, formula) VALUES %s
+                    """
+            psycopg2.extras.execute_values(cursor, query, inserted_str, page_size = 1000)
+        
+        
         #self.indexer()
+        
+        
         _log(f'Finished loading {self.resource.name}.', level = -1)
 
     def update_mol_column(self):
