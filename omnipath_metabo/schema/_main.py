@@ -3,6 +3,7 @@ from sqlalchemy import text, select
 from sqlalchemy.dialects.postgresql import insert
 import psycopg2.extras
 from omnipath_metabo import _log
+import itertools
 
 from . import _structure
 from ._base import Base
@@ -175,13 +176,3 @@ class Loader():
 
         create(self.con)
 
-    def new_load(self, batch_size = 1000):
-        
-        self.create()
-        
-        #Creat method for populating using iterator. 
-        
-        self.session.scalars(
-            insert(_structure.Structure).on_conflict_do_nothing()
-            [x for x in self.resource] 
-        )

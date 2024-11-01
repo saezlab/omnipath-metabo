@@ -52,7 +52,14 @@ class Resource(Base):
         foreign_keys='Identifier.resource_id'
     )
 
-
+"""class MolecularWeight(Base):
+    __tablename__ - 'molecular weights'
+    identifier_id = Column(Integer, ForeignKey('identifiers.id'), nullable = False)
+    resource_id = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    mw = Column(Numeric)
+    #charge_state = Column()
+    #
+"""
 class Hmdb():
     scheme = Structure
     name = 'HMDB'
