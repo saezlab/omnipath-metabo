@@ -160,6 +160,7 @@ class Loader():
         with raw_con.cursor() as cursor:
             query = """
                     INSERT INTO identifiers (identifier, structure_id, resource_id, authoritative, id_type) VALUES %s
+                    ON CONFLICT DO NOTHING
                     """
             psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
 
@@ -169,36 +170,33 @@ class Loader():
 
         return_ids = text(
             "SELECT id, structure_id, identifier, resource_id, id_type "
-            f"FROM identifiers WHERE resource_id = {resid}")
-        strid_to_smile = {reversed(it) for it in strids.items()}
+            f"FROM identifiers WHERE resource_id = {resource_key}")
         identifier_ids = {
-            rest: id
+            tuple(rest): id
             for id, *rest in self.session.execute(return_ids)
         }
-        inserted_str = {
-            (strid_to_smile[s[1]], s[2], s[3], s[4])
-            for s in cached_resource.cached['struct'])
+        print(list(identifier_ids.values())[10])
 
         property_records = (
             (
                 identifier_ids[
                     (record['structure'][0],
                      strids[record['structure'][1]],
-                     resid,
+                     resource_key,
                      True,
-                     resid
+                     resource_key
                      )
                 ],
             ) + record['properties']
 
-            for record in cached_resource.cache['struct']
+            for record in cached_resource.cached['struct']
         )
 
         with raw_con.cursor() as cursor:
             query = """
                         INSERT INTO properties (identifier_id, mw, monoiso_mass, charge, formula) VALUES %s
                     """
-            psycopg2.extras.execute_values(cursor, query, inserted_str, page_size = 1000)
+            psycopg2.extras.execute_values(cursor, query, property_records, page_size = 1000)
 
 
         #self.indexer()
