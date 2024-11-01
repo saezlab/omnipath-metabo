@@ -39,7 +39,15 @@ class Identifier(Base):
     )
     authoritative = Column(Boolean)
     id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
-    __table_args__ = (Index('identifers_unique','identifier', 'structure_id', 'resource_id', 'id_type', unique = True),)
+    __table_args__ = (
+        Index(
+            name = 'identifers_unique','identifier',
+            'structure_id',
+            'resource_id',
+            'id_type',
+            unique = True,
+        ),
+    )
 
 
 
