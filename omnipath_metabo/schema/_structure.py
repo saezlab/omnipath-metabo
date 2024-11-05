@@ -84,16 +84,30 @@ class Hmdb():
 
         for met in hmdb.metabolites_processed(
             'accession',
-            'smiles'
+            'smiles',
+            'average_molecular_weight',
+            'monisotopic_molecular_weight',
+            'chemical_formula'
             ):
-            yield met[0]
+            yield {
+                'structure':(met[0][0], met[0][1]), 
+                'properties': (met[0][2], met[0][3], None, met[0][4])
+            }
 
 class SwissLipids():
     scheme = Structure
     name = 'SwissLipids'
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
-            yield met['Lipid ID'], met['SMILES (pH7.3)']
+                if met['Mass (pH7.3)'] == '':
+                    mass = 0
+                else:
+                    mass = met['Mass (pH7.3)']
+
+        yield {
+            'structure':(met['Lipid ID'], met['SMILES (pH7.3)']),
+            'properties':(mass, 0, met['Charge (pH7.3)'],met['Formula (pH7.3)'])
+            }
 
 
 class LipidMaps():
@@ -110,7 +124,10 @@ class LipidMaps():
 
                     continue
 
-                yield met['id'], smiles
+                yield {
+                    'structure':(met['id'], smiles),
+                    'properties':(met['annot'].get('EXACT_MASS', None), None, None, met['name'].get('FORMULA', None) )
+                }
 
 class Ramp():
     scheme = Structure
