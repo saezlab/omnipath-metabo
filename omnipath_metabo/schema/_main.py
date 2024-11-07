@@ -80,17 +80,17 @@ class Database:
             if getattr(db,'scheme',None) is _structure.Structure:
                 h = db
                 self.load(h)
-        
+
         self.chem_properties_populate()
         self.update_mol_column()
 
 
-# Change the method for updating is_polymer to use InchI. 
+# Change the method for updating is_polymer to use InchI.
     def chem_properties_populate(self):
         _log('Querying mol structures', level=-1)
         query = text(r"""
             UPDATE identifiers
-            SET 
+            SET
                 is_polymer = (structures.smiles ~ '.*\)n.*'),
                 has_conformation = (structures.smiles ~ '.*[\\/]=.*'),
                 has_stereo = (structures.smiles ~ '.*@.*'),
@@ -109,6 +109,7 @@ class Database:
         self.con.session.execute(q1)
         self.con.session.commit()
         _log('Finished creating mol column.', level  =-1)
+
 
 class Loader():
 

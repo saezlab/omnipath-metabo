@@ -12,9 +12,10 @@ class MolType(types.UserDefinedType):
 
 class Structure(Base):
     __tablename__ = 'structures'
-    id = Column(Integer, primary_key=True)
+    id = Column(Integer, primary_key = True)
     name = Column(String)
-    smiles = Column(String, unique= True)
+    smiles = Column(String)
+    inchi = Column(String, unique = True)
     mol = Column(MolType)
     identifier = relationship(
         'Identifier',
@@ -102,12 +103,15 @@ class Hmdb():
             'smiles',
             'average_molecular_weight',
             'monisotopic_molecular_weight',
-            'chemical_formula'
+            'chemical_formula',
+            'inchi',
             ):
+
             yield {
-                'structure':(met[0][0], met[0][1]), 
+                'structure':(met[0][0], met[0][1], met[0][5]),
                 'properties': (met[0][2], met[0][3], None, met[0][4])
             }
+
 
 class SwissLipids():
     scheme = Structure
@@ -120,7 +124,11 @@ class SwissLipids():
                     mass = met['Mass (pH7.3)']
 
             yield {
-                'structure':(met['Lipid ID'], met['SMILES (pH7.3)']),
+                'structure': (
+                    met['Lipid ID'],
+                    met['SMILES (pH7.3)'],
+                    met['InChi (pH7.3)'],
+                ),
                 'properties':(mass, 0, met['Charge (pH7.3)'],met['Formula (pH7.3)'])
                 }
 
@@ -140,7 +148,7 @@ class LipidMaps():
                     continue
 
                 yield {
-                    'structure':(met['id'], smiles),
+                    'structure':(met['id'], smiles, met['name']['INCHI']),
                     'properties':(met['annot'].get('EXACT_MASS', None), None, None, met['name'].get('FORMULA', None) )
                 }
 
@@ -152,6 +160,6 @@ class Ramp():
         for row in ramp.ramp_iter('chem_props'):
 
             yield {
-                'structure': (row[0], row[3]), 
+                'structure': (row[0], row[3], row[6]),
                 'properties':(row[7], row[8], None, row[10])
                 }
