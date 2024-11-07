@@ -9,6 +9,7 @@ from sqlalchemy import (
     Numeric,
     Index,
     UniqueConstraint,
+    func
 )
 from sqlalchemy.orm import relationship
 from ._base import Base
@@ -26,7 +27,7 @@ class Structure(Base):
     id = Column(Integer, primary_key = True)
     name = Column(String)
     smiles = Column(String)
-    inchi = Column(String(4096), unique = True)
+    inchi = Column(String(4096), unique= True)
     mol = Column(MolType)
     identifier = relationship(
         'Identifier',
@@ -34,11 +35,7 @@ class Structure(Base):
         foreign_keys='Identifier.structure_id'
     )
     __table_args__ = (
-        UniqueConstraint(
-            'inchi',
-            name = 'uq_inchi',
-            postgresql_using = 'hash'  # Specify the index type here
-        ),
+        Index('inchi_large_index', func.md5(inchi), unique=True ),
     )
 
 
