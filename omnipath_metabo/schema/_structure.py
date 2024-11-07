@@ -39,6 +39,10 @@ class Identifier(Base):
     )
     authoritative = Column(Boolean)
     id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    is_polymer = Column(Boolean)
+    has_stereo = Column(Boolean)
+    has_conformation = Column(Boolean)
+    complete_formula = Column(Boolean)
     __table_args__ = (
         Index(
             'identifers_unique',
@@ -75,6 +79,17 @@ class Properties(Base):
     monoiso_mass = Column(Numeric)
     charge = Column(Numeric)
     formula = Column(String)
+
+class Mappings(Base):
+    __tablename__ = 'mappings'
+    id = Column(Integer, primary_key= True)
+    structure_id = Column(Integer, ForeignKey('structures.id'), nullable = False)
+    resource_name = Column(String)
+    hmdb_id = Column(String)
+    ramp_id = Column(String)
+    lipidmaps_id = Column(String)
+    swisslipids_id = Column(String)
+
 
 
 class Hmdb():
@@ -136,4 +151,7 @@ class Ramp():
 
         for row in ramp.ramp_iter('chem_props'):
 
-            yield {'structure': (row[0], row[3]), 'properties':(row[7], row[8], None, row[10])}
+            yield {
+                'structure': (row[0], row[3]), 
+                'properties':(row[7], row[8], None, row[10])
+                }
