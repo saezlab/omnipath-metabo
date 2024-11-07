@@ -91,7 +91,7 @@ class Database:
         query = text(r"""
             UPDATE identifiers
             SET
-                is_polymer = (structures.smiles ~ '.*\)n.*'),
+                is_polymer = (structures.inchi ~ '.*\)n.*'),
                 has_conformation = (structures.smiles ~ '.*[\\/]=.*'),
                 has_stereo = (structures.smiles ~ '.*@.*'),
                 complete_formula = NOT (structures.smiles ~ '.*\*.*')
@@ -146,7 +146,7 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles) VALUES %s ON CONFLICT (smiles) DO nothing;
+                INSERT INTO structures (name, smiles, inchi) VALUES %s ON CONFLICT (inchi) DO nothing;
                 """
             _log("loading insert statments for structures table")
             cached_resource = Tee(

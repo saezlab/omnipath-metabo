@@ -118,10 +118,10 @@ class SwissLipids():
     name = 'SwissLipids'
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
-                if met['Mass (pH7.3)'] == '':
-                    mass = 0
-                else:
-                    mass = met['Mass (pH7.3)']
+            if met['Mass (pH7.3)'] == '':
+                mass = 0
+            else:
+                mass = met['Mass (pH7.3)']
 
             yield {
                 'structure': (
