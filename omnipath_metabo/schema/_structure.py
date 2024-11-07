@@ -119,10 +119,10 @@ class SwissLipids():
                 else:
                     mass = met['Mass (pH7.3)']
 
-        yield {
-            'structure':(met['Lipid ID'], met['SMILES (pH7.3)']),
-            'properties':(mass, 0, met['Charge (pH7.3)'],met['Formula (pH7.3)'])
-            }
+            yield {
+                'structure':(met['Lipid ID'], met['SMILES (pH7.3)']),
+                'properties':(mass, 0, met['Charge (pH7.3)'],met['Formula (pH7.3)'])
+                }
 
 
 class LipidMaps():

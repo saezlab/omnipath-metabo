@@ -50,7 +50,7 @@ class Database:
     def test_load(self, resource) -> None:
 
         loader = Loader(resource, self.con)
-        loader.new_load()
+        loader.load()
 
     def substructure_search(self, substructure):
 
@@ -80,8 +80,35 @@ class Database:
             if getattr(db,'scheme',None) is _structure.Structure:
                 h = db
                 self.load(h)
+        
+        self.chem_properties_populate()
+        self.update_mol_column()
 
 
+# Change the method for updating is_polymer to use InchI. 
+    def chem_properties_populate(self):
+        _log('Querying mol structures', level=-1)
+        query = text(r"""
+            UPDATE identifiers
+            SET 
+                is_polymer = (structures.smiles ~ '.*\)n.*'),
+                has_conformation = (structures.smiles ~ '.*[\\/]=.*'),
+                has_stereo = (structures.smiles ~ '.*@.*'),
+                complete_formula = NOT (structures.smiles ~ '.*\*.*')
+            FROM structures
+            WHERE identifiers.structure_id = structures.id;
+        """)
+        self.con.session.execute(query)
+        self.con.session.commit()
+        _log('Finished updating columns', level=-1)
+
+    def update_mol_column(self):
+
+        _log("Creating mol column", level =-1)
+        q1 = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
+        self.con.session.execute(q1)
+        self.con.session.commit()
+        _log('Finished creating mol column.', level  =-1)
 
 class Loader():
 
@@ -209,13 +236,7 @@ class Loader():
 
         _log(f'Finished loading {self.resource.name}.', level = -1)
 
-    def update_mol_column(self):
 
-        log("Creating mol column")
-        query = text("update structures set mol = mol_from_smiles(smiles::cstring) where mol is null")
-        self.session.execute(query)
-        self.session.commit()
-        _log('Finished creating mol column.')
 
 
     def indexer(self):
