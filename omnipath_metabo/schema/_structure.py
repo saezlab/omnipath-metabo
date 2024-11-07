@@ -1,4 +1,15 @@
-from sqlalchemy import Boolean, create_engine, Column, ForeignKey, Integer, String, types, Numeric, Index
+from sqlalchemy import (
+    Boolean,
+    create_engine,
+    Column,
+    ForeignKey,
+    Integer,
+    String,
+    types,
+    Numeric,
+    Index,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
@@ -15,12 +26,19 @@ class Structure(Base):
     id = Column(Integer, primary_key = True)
     name = Column(String)
     smiles = Column(String)
-    inchi = Column(String, unique = True)
+    inchi = Column(String(4096), unique = True)
     mol = Column(MolType)
     identifier = relationship(
         'Identifier',
         backref='structure',
         foreign_keys='Identifier.structure_id'
+    )
+    __table_args__ = (
+        UniqueConstraint(
+            'inchi',
+            name = 'uq_inchi',
+            postgresql_using = 'hash'  # Specify the index type here
+        ),
     )
 
 

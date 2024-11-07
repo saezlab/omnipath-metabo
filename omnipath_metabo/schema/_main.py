@@ -190,7 +190,7 @@ class Loader():
                     INSERT INTO identifiers (identifier, structure_id, resource_id, authoritative, id_type) VALUES %s
                     ON CONFLICT DO NOTHING
                     """
-            psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 1000)
+            psycopg2.extras.execute_values(cursor, query, insert_ids, page_size = 100)
 
 
         raw_con.commit()
