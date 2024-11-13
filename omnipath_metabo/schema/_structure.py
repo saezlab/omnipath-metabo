@@ -51,8 +51,8 @@ class Identifier(Base):
     )
     authoritative = Column(Boolean)
     id_type = Column(
-        Integer, 
-        ForeignKey('resources.id'), 
+        Integer,
+        ForeignKey('resources.id'),
         nullable = False)
     is_polymer = Column(Boolean)
     has_stereo = Column(Boolean)
@@ -102,13 +102,15 @@ class Mappings(Base):
     resource_id = Column(String)
     chebi_id = Column(String)
     pubchem_id = Column(String)
-    
+
 
 
 
 class Hmdb():
     scheme = Structure
     name = 'HMDB'
+    id_fields = sorted(f'{s}_id' for s in hmdb.ID_FIELDS)
+
     def __iter__(self):
 
         for met in hmdb.metabolites_processed(
@@ -118,7 +120,7 @@ class Hmdb():
             'monisotopic_molecular_weight',
             'chemical_formula',
             'inchi',
-            *sorted(f'{s}_id' for s in hmdb.ID_FIELDS) 
+            *self.id_fields,
             ):
 
             yield {

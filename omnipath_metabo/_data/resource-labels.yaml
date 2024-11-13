@@ -1,0 +1,15 @@
+HMDB:
+  - kegg_id: KEGG
+  - bigg_id: BIGG
+  - pbd_id: PBD
+  - wikipedia: WikiPedia
+  - chemspiter: ChemSpider
+  - fbonto: FBOnto
+  - chebi: ChEBI
+  - biocyc_id: BioCyc
+  - drugbank_id: DrugBank
+  - foodb_id: FoodDB
+  - metlin_id: Metlin
+  - pubchem_compound_id: PubChem
+  - phenol_explorer_id: Phenol-Explorer
+  - vmh_id: Virtual Metbolic Human
