@@ -34,10 +34,6 @@ class Structure(Base):
         backref='structure',
         foreign_keys='Identifier.structure_id'
     )
-    #__table_args__ = (
-    #    Index('inchi_large_index', func.md5(inchi), unique=True ),
-    #)
-
 
 class Identifier(Base):
     __tablename__ = 'identifiers'
@@ -54,7 +50,10 @@ class Identifier(Base):
         nullable = False
     )
     authoritative = Column(Boolean)
-    id_type = Column(Integer, ForeignKey('resources.id'), nullable = False)
+    id_type = Column(
+        Integer, 
+        ForeignKey('resources.id'), 
+        nullable = False)
     is_polymer = Column(Boolean)
     has_stereo = Column(Boolean)
     has_conformation = Column(Boolean)
@@ -119,6 +118,7 @@ class Hmdb():
             'monisotopic_molecular_weight',
             'chemical_formula',
             'inchi',
+            *sorted(f'{s}_id' for s in hmdb.ID_FIELDS) 
             ):
 
             yield {
