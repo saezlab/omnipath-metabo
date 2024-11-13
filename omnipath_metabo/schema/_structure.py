@@ -26,17 +26,17 @@ class Structure(Base):
     __tablename__ = 'structures'
     id = Column(Integer, primary_key = True)
     name = Column(String)
-    smiles = Column(String)
-    inchi = Column(String(4096), unique= True)
+    smiles = Column(String, unique= True)
+    inchi = Column(String(4096))
     mol = Column(MolType)
     identifier = relationship(
         'Identifier',
         backref='structure',
         foreign_keys='Identifier.structure_id'
     )
-    __table_args__ = (
-        Index('inchi_large_index', func.md5(inchi), unique=True ),
-    )
+    #__table_args__ = (
+    #    Index('inchi_large_index', func.md5(inchi), unique=True ),
+    #)
 
 
 class Identifier(Base):
@@ -100,11 +100,10 @@ class Mappings(Base):
     __tablename__ = 'mappings'
     id = Column(Integer, primary_key= True)
     structure_id = Column(Integer, ForeignKey('structures.id'), nullable = False)
-    resource_name = Column(String)
-    hmdb_id = Column(String)
-    ramp_id = Column(String)
-    lipidmaps_id = Column(String)
-    swisslipids_id = Column(String)
+    resource_id = Column(String)
+    chebi_id = Column(String)
+    pubchem_id = Column(String)
+    
 
 
 
@@ -137,14 +136,18 @@ class SwissLipids():
                 mass = 0
             else:
                 mass = met['Mass (pH7.3)']
+            if met['Charge (pH7.3)'] == '':
+                charge = 0
+            else:
+                charge = met['Charge (pH7.3)']
 
             yield {
                 'structure': (
                     met['Lipid ID'],
                     met['SMILES (pH7.3)'],
-                    met['InChi (pH7.3)'],
+                    met['InChI (pH7.3)'],
                 ),
-                'properties':(mass, 0, met['Charge (pH7.3)'],met['Formula (pH7.3)'])
+                'properties':(mass, 0, charge, met['Formula (pH7.3)'])
                 }
 
 

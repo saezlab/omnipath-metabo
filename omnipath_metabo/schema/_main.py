@@ -146,7 +146,9 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles, inchi) VALUES %s ON CONFLICT (inchi) DO nothing;
+                INSERT INTO structures (name, smiles, inchi) VALUES %s 
+                ON CONFLICT (smiles) 
+                DO NOTHING; 
                 """
             _log("loading insert statments for structures table")
             cached_resource = Tee(
@@ -179,7 +181,7 @@ class Loader():
 
         insert_ids = (
             (name, strids[smiles], resource_key, True, resource_key)
-            for name, smiles in (
+            for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
         )
