@@ -180,11 +180,11 @@ class Loader():
         _log('resource ids collected.')
 
         insert_ids = (
-            (name, strids[smiles], resource_key, True, resource_key)
+            (_id, strids[smiles], resource_key, i==0, _resource_id(resource_key, i-1))
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
-            for _id in itertools.chain((name, ), cached_resource.cached['struct']['identifiers'])
+            for i, _id in enumerate(itertools.chain((name, ), cached_resource.cached['struct']['identifiers']))
         )
 
         _log('inserting identifiers.')
