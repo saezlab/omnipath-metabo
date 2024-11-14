@@ -105,11 +105,23 @@ class Mappings(Base):
 
 
 
+class ResourceBase:
 
-class Hmdb():
+    @classmethod
+    def _resource_label(cls) -> str:
+
+        return [
+            _id_types().get(cls.name, {}).get(label, label)
+            for label in cls.id_fields
+        ]
+
+
+
+class Hmdb(ResourceBase):
     scheme = Structure
     name = 'HMDB'
     id_fields = sorted(f'{s}_id' for s in hmdb.ID_FIELDS)
+    id_types = ResourceBase._resource_label()
 
     def __iter__(self):
 
@@ -185,8 +197,10 @@ class Ramp():
                 'properties':(row[7], row[8], None, row[10])
                 }
 
-def _id_types():
+
+def _id_types() -> dict[str, dict]:
+
     if 'ID_TYPES' not in globals():
         globals()['ID_TYPES'] = _data.load('resource-labels')
-    
+
     return globals()['ID_TYPES']
