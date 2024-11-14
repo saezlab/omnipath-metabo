@@ -106,6 +106,8 @@ class Mappings(Base):
 
 
 class ResourceBase:
+    def __init__(self):
+        self.id_types = self._resource_label()
 
     @classmethod
     def _resource_label(cls) -> str:
@@ -121,10 +123,8 @@ class Hmdb(ResourceBase):
     scheme = Structure
     name = 'HMDB'
     id_fields = sorted(f'{s}_id' for s in hmdb.ID_FIELDS)
-    id_types = ResourceBase._resource_label()
 
     def __iter__(self):
-
         for met in hmdb.metabolites_processed(
             'accession',
             'smiles',

@@ -130,7 +130,7 @@ class Loader():
         self.create()
 
         insert_resource = insert(_structure.Resource).values(
-            name = self.resource.name
+            name = self.resource.id_types
         ).returning(_structure.Resource.id)
         insert_resource = insert_resource.on_conflict_do_update(
             index_elements=['name'],
@@ -139,6 +139,9 @@ class Loader():
             })
         resid = self.session.execute(insert_resource).fetchall()
         self.session.commit()
+        resource_key = dict(zip(resource_labels, resid))
+        self._resource_ids = resource_ids
+
 
         _log(f'loading resource {self.resource.name}', level = -1)
 
@@ -176,9 +179,6 @@ class Loader():
 
 
         #vself.update_mol_column()
-
-        resource_key = resid[0][0]
-        self._resource_ids = resource_ids
         _log('resource ids collected.')
 
         insert_ids = (
