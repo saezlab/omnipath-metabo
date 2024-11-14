@@ -14,6 +14,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import relationship
 from ._base import Base
 from pypath.inputs import hmdb, swisslipids, lipidmaps, ramp
+from .. import data as _data
 
 class MolType(types.UserDefinedType):
     cache_ok = True

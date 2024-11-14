@@ -9,7 +9,6 @@ from . import _structure
 from ._base import Base
 from ._connection import Connection
 from ..misc._tee import Tee
-from .. import data as _data
 
 _log("Hello from main module")
 
@@ -129,25 +128,25 @@ class Loader():
 
         self.create()
 
-        resource_labels = self.resource.id_types
+        resource_labels = [self.resource.name] + self.resource.id_types
 
         insert_resource = (
             insert(_structure.Resource).
             values(name = resource_labels).
-            returning(_structure.Resource.id).
-            on_conflict_do_update(
+            returning(_structure.Resource.id))
+    
+        insert_resource = insert_resource.on_conflict_do_update(
                 index_elements=['name'],
                 set_ = {
                     'name':insert_resource.excluded.name
                 }
             )
-        )
 
         resids = self.session.execute(insert_resource).fetchall()
         self.session.commit()
         resource_key = {
             label: _id[0]
-            for label, _id in zip(resource_labels, resid)
+            for label, _id in zip(resource_labels, resids)
         }
 
         _log(f'loading resource {self.resource.name}', level = -1)
@@ -189,7 +188,7 @@ class Loader():
         _log('resource ids collected.')
 
         insert_ids = (
-            (_id, strids[smiles], resource_key, i==0, self._id_type(resource_key, i-1))
+            (_id, strids[smiles], resource_key, i==0, resource_labels[i])
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
