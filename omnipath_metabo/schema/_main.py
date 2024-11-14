@@ -129,19 +129,26 @@ class Loader():
 
         self.create()
 
-        insert_resource = insert(_structure.Resource).values(
-            name = self.resource.id_types
-        ).returning(_structure.Resource.id)
-        insert_resource = insert_resource.on_conflict_do_update(
-            index_elements=['name'],
-            set_ = {
-                'name':insert_resource.excluded.name
-            })
-        resid = self.session.execute(insert_resource).fetchall()
-        self.session.commit()
-        resource_key = dict(zip(resource_labels, resid))
-        self._resource_ids = resource_ids
+        resource_labels = self.resource.id_types
 
+        insert_resource = (
+            insert(_structure.Resource).
+            values(name = resource_labels).
+            returning(_structure.Resource.id).
+            on_conflict_do_update(
+                index_elements=['name'],
+                set_ = {
+                    'name':insert_resource.excluded.name
+                }
+            )
+        )
+
+        resids = self.session.execute(insert_resource).fetchall()
+        self.session.commit()
+        resource_key = {
+            label: _id[0]
+            for label, _id in zip(resource_labels, resid)
+        }
 
         _log(f'loading resource {self.resource.name}', level = -1)
 
