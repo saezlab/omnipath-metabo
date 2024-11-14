@@ -9,6 +9,7 @@ from . import _structure
 from ._base import Base
 from ._connection import Connection
 from ..misc._tee import Tee
+from .. import data as _data
 
 _log("Hello from main module")
 
@@ -118,7 +119,7 @@ class Loader():
         self.session = con.session
         self.con = con
 
-    def _set_resource(self, resource):
+    def _set_resource(self, resource: str | type):
         if type(resource) is type:
             resource = resource()
         self.scheme = resource.scheme
@@ -146,9 +147,9 @@ class Loader():
         with raw_con.cursor() as cursor:
 
             query = """
-                INSERT INTO structures (name, smiles, inchi) VALUES %s 
-                ON CONFLICT (smiles) 
-                DO NOTHING; 
+                INSERT INTO structures (name, smiles, inchi) VALUES %s
+                ON CONFLICT (smiles)
+                DO NOTHING;
                 """
             _log("loading insert statments for structures table")
             cached_resource = Tee(
@@ -177,10 +178,11 @@ class Loader():
         #vself.update_mol_column()
 
         resource_key = resid[0][0]
+        self._resource_ids = resource_ids
         _log('resource ids collected.')
 
         insert_ids = (
-            (_id, strids[smiles], resource_key, i==0, _resource_id(resource_key, i-1))
+            (_id, strids[smiles], resource_key, i==0, self._id_type(resource_key, i-1))
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
@@ -254,4 +256,11 @@ class Loader():
     def create(self) -> None:
 
         create(self.con)
+
+
+    def _id_type(self, id_idx: int) -> int:
+
+        self.resource.name
+        self.resource.id_fields[id_idx]
+
 

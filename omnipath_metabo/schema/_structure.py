@@ -49,7 +49,7 @@ class Identifier(Base):
         ForeignKey('resources.id'),
         nullable = False
     )
-    authoritative = Column(Boolean)    
+    authoritative = Column(Boolean)
     id_type = Column(
         Integer,
         ForeignKey('resources.id'),
