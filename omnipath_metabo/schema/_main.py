@@ -82,7 +82,7 @@ class Database:
                 self.load(h)
 
         self.chem_properties_populate()
-        self.update_mol_column()
+        #self.update_mol_column()
 
 
 # Change the method for updating is_polymer to use InchI.
@@ -91,7 +91,7 @@ class Database:
         query = text(r"""
             UPDATE identifiers
             SET
-                is_polymer = (structures.inchi ~ '.*\)n.*'),
+                is_polymer = (structures.inchi ~ '.*\\p.*'),
                 has_conformation = (structures.smiles ~ '.*[\\/]=.*'),
                 has_stereo = (structures.smiles ~ '.*@.*'),
                 complete_formula = NOT (structures.smiles ~ '.*\*.*')
@@ -184,6 +184,7 @@ class Loader():
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
+            for _id in itertools.chain((name, ), cached_resource.cached['struct']['identifiers'])
         )
 
         _log('inserting identifiers.')

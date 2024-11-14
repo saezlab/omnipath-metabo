@@ -49,7 +49,7 @@ class Identifier(Base):
         ForeignKey('resources.id'),
         nullable = False
     )
-    authoritative = Column(Boolean)
+    authoritative = Column(Boolean)    
     id_type = Column(
         Integer,
         ForeignKey('resources.id'),
@@ -126,7 +126,7 @@ class Hmdb():
             yield {
                 'structure':(met[0][0], met[0][1], met[0][5]),
                 'properties': (met[0][2], met[0][3], None, met[0][4]),
-                'identifier': [(i,) for i in met[0][6:]]
+                'identifiers': met[0][6:]
             }
 
 
