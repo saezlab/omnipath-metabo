@@ -132,9 +132,9 @@ class Loader():
 
         insert_resource = (
             insert(_structure.Resource).
-            values(name = resource_labels).
+            values([{'name': l} for l in resource_labels]).
             returning(_structure.Resource.id))
-    
+
         insert_resource = insert_resource.on_conflict_do_update(
                 index_elements=['name'],
                 set_ = {

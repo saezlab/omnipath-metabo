@@ -1,7 +1,7 @@
 HMDB:
   kegg_id: KEGG
   bigg_id: BIGG
-  pbd_id: PBD
+  pdb_id: PBD
   wikipedia_id: WikiPedia
   chemspider_id: ChemSpider
   fbonto_id: FBOnto
@@ -11,5 +11,6 @@ HMDB:
   foodb_id: FoodDB
   metlin_id: Metlin
   pubchem_compound_id: PubChem
-  phenol_explorer_id: Phenol-Explorer
+  phenol_explorer_compound_id: Phenol-Explorer
   vmh_id: Virtual Metbolic Human
+  knapsack_id: Knapsack
