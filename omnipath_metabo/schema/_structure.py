@@ -186,9 +186,11 @@ class LipidMaps():
                     'properties':(met['annot'].get('EXACT_MASS', None), None, None, met['name'].get('FORMULA', None) )
                 }
 
-class Ramp():
+class Ramp(ResourceBase):
     scheme = Structure
     name = 'RaMP'
+    id_fields = sorted(ramp.ramp_id_types())
+
     def __iter__(self):
 
         for row in ramp.ramp_iter('chem_props'):
