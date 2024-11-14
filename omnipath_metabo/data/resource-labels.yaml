@@ -2,10 +2,10 @@ HMDB:
   kegg_id: KEGG
   bigg_id: BIGG
   pbd_id: PBD
-  wikipedia: WikiPedia
-  chemspiter: ChemSpider
-  fbonto: FBOnto
-  chebi: ChEBI
+  wikipedia_id: WikiPedia
+  chemspider_id: ChemSpider
+  fbonto_id: FBOnto
+  chebi_id: ChEBI
   biocyc_id: BioCyc
   drugbank_id: DrugBank
   foodb_id: FoodDB

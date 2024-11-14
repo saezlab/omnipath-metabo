@@ -184,3 +184,9 @@ class Ramp():
                 'structure': (row[0], row[3], row[6]),
                 'properties':(row[7], row[8], None, row[10])
                 }
+
+def _id_types():
+    if 'ID_TYPES' not in globals():
+        globals()['ID_TYPES'] = _data.load('resource-labels')
+    
+    return globals()['ID_TYPES']
