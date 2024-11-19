@@ -197,9 +197,26 @@ class Ramp(ResourceBase):
 
             yield {
                 'structure': (row[0], row[3], row[6]),
-                'properties':(row[7], row[8], None, row[10])
+                'properties':(row[7], row[8], None, row[10]),
+                'identifiers': (row[2])
                 }
 
+    '''Alternative possibility
+    source_data = {
+        row[]:row[] for row in ramp.ramp_iter('source')
+    }
+    for chem_props_row in ramp.ramp_iter('chem_props'):
+        source_row = source_data.get(chem_props_row[0])
+
+        yield {
+            'structure':(chem_props_row[0], chem_props_row[3], chem_props_row[6]),
+            'properties':(chem_props_row[7], chem_props_row[8], None, chem_props_row[10]),
+            'identifiers': source_row
+        }
+
+
+
+    '''
 
 def _id_types() -> dict[str, dict]:
 
