@@ -190,9 +190,13 @@ class Ramp(ResourceBase):
     def __iter__(self):
 
         source_ids = {
-            key: list(group.itertuples())
-            for key, group in ramp.ramp_raw('source', return_df= True)[('sourceId', 'IDtype')].groupby('rampId')
-            }
+            key: [t[:2] for t in group.itertuples(index = False)]
+            for key, group in (
+                ramp.
+                ramp_raw( 'source', return_df= True)[['sourceId', 'IDtype', 'rampId']].
+                groupby('rampId')
+            )
+        }
 
         for row in ramp.ramp_iter('chem_props'):
 
