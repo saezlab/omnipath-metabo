@@ -139,7 +139,7 @@ class Hmdb(ResourceBase):
             yield {
                 'structure':(met[0][0], met[0][1], met[0][5]),
                 'properties': (met[0][2], met[0][3], None, met[0][4]),
-                'identifiers': met[0][6:]
+                'identifiers': list(zip(met[0][6:], self.id_fields)),
             }
 
 
@@ -191,12 +191,12 @@ class Ramp(ResourceBase):
     name = 'RaMP'
 
     def __iter__(self):
- 
+
         source_ids = {
-            key: list(group.itertuples()) 
+            key: list(group.itertuples())
             for key, group in ramp.ramp_raw('source', return_df= True)[('sourceId', 'IDtype')].groupby('rampId')
             }
-        
+
         for row in ramp.ramp_iter('chem_props'):
 
             yield {
