@@ -4,6 +4,7 @@ from sqlalchemy.dialects.postgresql import insert
 import psycopg2.extras
 from omnipath_metabo import _log
 import itertools
+from pypath_common import _misc
 
 from . import _structure
 from ._base import Base
@@ -117,6 +118,7 @@ class Loader():
         self._set_resource(resource)
         self.session = con.session
         self.con = con
+        self._resource_ids = {}
 
     def _set_resource(self, resource: str | type):
         if type(resource) is type:
@@ -127,6 +129,8 @@ class Loader():
     def load(self):
 
         self.create()
+
+        resource_key = self._resource_id(self.resource.name)
 
 
         _log(f'loading resource {self.resource.name}', level = -1)
@@ -169,7 +173,13 @@ class Loader():
         _log('resource ids collected.', level = -1)
 
         insert_ids = (
-            (_id, strids[smiles], resource_key, id_type == self.resource.name, resource.id_types.get(id_type, id_type)
+            (
+                _id, 
+                strids[smiles], 
+                resource_key, 
+                id_type == self.resource.name, 
+                self._resource_id(self.resource.id_types.get(id_type, id_type))
+            )
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
@@ -237,7 +247,7 @@ class Loader():
 
         name = _misc.to_set(name)
 
-        if new_names := name - set(self._resource_ids.keys()):
+        if new_names := sorted(name - set(self._resource_ids.keys())):
 
             insert_resource = (
                 insert(_structure.Resource).
@@ -257,15 +267,13 @@ class Loader():
 
             self._resource_ids.update({
                 label: _id[0]
-                for label, _id in zip(resource_labels, resids)
+                for label, _id in zip(new_names, resids)
             })
 
-            self._resource_ids[name] = resource_key
-
         return (
-            [self._resource_ids[n] for n in names]
-                if len(names) > 1 else
-            self._resource_ids[name]
+            [self._resource_ids[n] for n in name]
+                if len(name) > 1 else
+            self._resource_ids[_misc.first(name)]
         )
 
 
