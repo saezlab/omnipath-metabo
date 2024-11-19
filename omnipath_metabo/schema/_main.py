@@ -128,24 +128,6 @@ class Loader():
 
         self.create()
 
-        insert_resource = (
-            insert(_structure.Resource).
-            values([{'name': l} for l in resource_labels]).
-            returning(_structure.Resource.id))
-
-        insert_resource = insert_resource.on_conflict_do_update(
-                index_elements=['name'],
-                set_ = {
-                    'name':insert_resource.excluded.name
-                }
-            )
-
-        resids = self.session.execute(insert_resource).fetchall()
-        self.session.commit()
-        resource_key = {
-            label: _id[0]
-            for label, _id in zip(resource_labels, resids)
-        }
 
         _log(f'loading resource {self.resource.name}', level = -1)
 
@@ -192,7 +174,7 @@ class Loader():
                 r['structure'] for r in cached_resource.cached['struct']
             )
             for _id, id_type in itertools.chain(
-                (name, self.resource.name), 
+                (name, self.resource.name),
                 cached_resource.cached['struct']['identifiers']
                 )
         )
@@ -251,6 +233,40 @@ class Loader():
         _log(f'Finished loading {self.resource.name}.', level = -1)
 
 
+    def _resource_id(self, name: str | list[str]) -> int:
+
+        name = _misc.to_set(name)
+
+        if new_names := name - set(self._resource_ids.keys()):
+
+            insert_resource = (
+                insert(_structure.Resource).
+                values([{'name': l} for l in new_names]).
+                returning(_structure.Resource.id)
+            )
+
+            insert_resource = insert_resource.on_conflict_do_update(
+                    index_elements=['name'],
+                    set_ = {
+                        'name':insert_resource.excluded.name
+                    }
+                )
+
+            resids = self.session.execute(insert_resource).fetchall()
+            self.session.commit()
+
+            self._resource_ids.update({
+                label: _id[0]
+                for label, _id in zip(resource_labels, resids)
+            })
+
+            self._resource_ids[name] = resource_key
+
+        return (
+            [self._resource_ids[n] for n in names]
+                if len(names) > 1 else
+            self._resource_ids[name]
+        )
 
 
     def indexer(self):
