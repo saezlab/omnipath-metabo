@@ -128,8 +128,6 @@ class Loader():
 
         self.create()
 
-        resource_labels = [self.resource.name] + self.resource.id_types
-
         insert_resource = (
             insert(_structure.Resource).
             values([{'name': l} for l in resource_labels]).
@@ -189,11 +187,14 @@ class Loader():
         _log('resource ids collected.', level = -1)
 
         insert_ids = (
-            (_id, strids[smiles], resource_key, i==0, resource_labels[i])
+            (_id, strids[smiles], resource_key, id_type == self.resource.name, resource.id_types.get(id_type, id_type)
             for name, smiles, _ in (
                 r['structure'] for r in cached_resource.cached['struct']
             )
-            for i, _id in enumerate(itertools.chain((name, ), cached_resource.cached['struct']['identifiers']))
+            for _id, id_type in itertools.chain(
+                (name, self.resource.name), 
+                cached_resource.cached['struct']['identifiers']
+                )
         )
 
         _log('inserting identifiers.', level =-1)
