@@ -189,7 +189,6 @@ class LipidMaps():
 class Ramp(ResourceBase):
     scheme = Structure
     name = 'RaMP'
-    id_fields = sorted(ramp.ramp_id_types())
 
     def __iter__(self):
 
@@ -201,9 +200,9 @@ class Ramp(ResourceBase):
                 'identifiers': (row[2])
                 }
 
-    '''Alternative possibility
+    '''Alternative possibility without editing 
     source_data = {
-        row[]:row[] for row in ramp.ramp_iter('source')
+        row[1]:row[0] for row in ramp.ramp_iter('source')
     }
     for chem_props_row in ramp.ramp_iter('chem_props'):
         source_row = source_data.get(chem_props_row[0])

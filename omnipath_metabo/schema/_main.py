@@ -168,9 +168,10 @@ class Loader():
             )
             psycopg2.extras.execute_values(cursor, query, cached_resource, page_size = 1000)
 
+        type(cached_resource)
 
         raw_con.commit()
-        _log("structures have been inserted")
+        _log("structures have been inserted", level = -1)
 
         return_ids = text("SELECT id, smiles FROM structures")
         inserted_str = {
@@ -185,7 +186,7 @@ class Loader():
 
 
         #vself.update_mol_column()
-        _log('resource ids collected.')
+        _log('resource ids collected.', level = -1)
 
         insert_ids = (
             (_id, strids[smiles], resource_key, i==0, resource_labels[i])
@@ -195,7 +196,7 @@ class Loader():
             for i, _id in enumerate(itertools.chain((name, ), cached_resource.cached['struct']['identifiers']))
         )
 
-        _log('inserting identifiers.')
+        _log('inserting identifiers.', level =-1)
         with raw_con.cursor() as cursor:
             query = """
                     INSERT INTO identifiers (identifier, structure_id, resource_id, authoritative, id_type) VALUES %s
