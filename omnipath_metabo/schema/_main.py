@@ -180,12 +180,11 @@ class Loader():
                 id_type == self.resource.name,
                 self._resource_id(self.resource.id_types.get(id_type, id_type))
             )
-            for name, smiles, _ in (
-                r['structure'] for i, r in enumerate(cached_resource.cached['struct'])
-            )
+            for i, r in enumerate(cached_resource.cached['struct'])
+            for name, smiles, _ in [r['structure']]
             for _id, id_type in itertools.chain(
-                (name, self.resource.name),
-                cached_resource.cached['struct'][i]['identifiers']
+                [(name, self.resource.name)],
+                r['identifiers']
             )
         )
 

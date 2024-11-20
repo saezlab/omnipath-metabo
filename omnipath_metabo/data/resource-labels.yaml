@@ -14,3 +14,13 @@ HMDB:
   phenol_explorer_compound_id: Phenol-Explorer
   vmh_id: Virtual Metbolic Human
   knapsack_id: Knapsack
+RaMP:
+  chebi: ChEBI
+  kegg: KEGG
+  wikidata: WikiData
+  chemspider: ChemSpider
+  hmdb: HMDB
+  lipidbank: LipidBank
+  LIPIDMAPS: LIPID MAPS
+  pubchem: PubChem
+  swisslipids: SwissLipids
