@@ -167,6 +167,20 @@ class SwissLipids():
 class LipidMaps():
     scheme = Structure
     name = 'LipidMaps'
+    id_fields = [
+        ('name','SYSTEMATIC_NAME'),
+        ('name', 'PUBCHEM_CID'),
+        ('name', 'CHEBI_ID'),
+        ('name', 'HMDB_ID'),
+        ('name','SWISSLIPIDS_ID'),
+        ('name','SYNONYMS'),
+        ('name','ABBREVIATION')
+        ('annot','KEGG_ID'),
+        ('annot','LIPIDBANK_ID'),
+        ('annot','PLANTFA_ID'),
+        ('annot','NAME')
+    ]
+
     def __iter__(self):
         sdf = lipidmaps.lmsd_sdf()
 
@@ -180,7 +194,11 @@ class LipidMaps():
 
                 yield {
                     'structure':(met['id'], smiles, met['name']['INCHI']),
-                    'properties':(met['annot'].get('EXACT_MASS', None), None, None, met['name'].get('FORMULA', None) )
+                    'properties':(met['annot'].get('EXACT_MASS', None), 
+                                  None, 
+                                  None, 
+                                  met['name'].get('FORMULA', None)),
+                    'identifiers':(met['PUBCHEM_CID'], met['CHEBI_ID'])
                 }
 
 class Ramp(ResourceBase):
