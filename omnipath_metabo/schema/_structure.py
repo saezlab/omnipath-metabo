@@ -113,7 +113,7 @@ class ResourceBase:
     @classmethod
     def _resource_label(cls) -> str:
 
-        return _id_types().get(cls.name, {})
+        return _id_types().get(cls.name.lower(), {})
 
 
 
