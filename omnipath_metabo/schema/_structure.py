@@ -140,9 +140,17 @@ class Hmdb(ResourceBase):
             }
 
 
-class SwissLipids():
+class SwissLipids(ResourceBase):
     scheme = Structure
     name = 'SwissLipids'
+    id_fields = [
+        'CHEBI',
+        'LIPID MAPS',
+        'HMDB',
+        'MetaNetX',
+        'Synonyms*'
+        ]
+
     def __iter__(self):
         for met in swisslipids.swisslipids_lipids():
             if met['Mass (pH7.3)'] == '':
@@ -160,7 +168,12 @@ class SwissLipids():
                     met['SMILES (pH7.3)'],
                     met['InChI (pH7.3)'],
                 ),
-                'properties':(mass, 0, charge, met['Formula (pH7.3)'])
+                'properties':(mass, 0, charge, met['Formula (pH7.3)']),
+                'identifiers':[
+                    (name, key)
+                    for key in self.id_fields
+                    if (name := met[key])
+                ]
                 }
 
 

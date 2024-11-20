@@ -35,3 +35,9 @@ lipidmaps:
   LIPIDBANK_ID: LipidBank
   PLANTFA_ID: PlantFAdb
   NAME: Name
+swisslipids:
+  CHEBI: ChEBI
+  LIPID MAPS: LIPID MAPS
+  HMDB: HMDB
+  MetaNetX: MetaNetX
+  Synonyms*: Synonym 
