@@ -43,10 +43,10 @@ class Database:
         create(self.con)
 
 
-    def load(self, resource) -> None:
+    def load(self, resource: str, limit: int = None) -> None:
 
         loader = Loader(resource, self.con)
-        loader.load()
+        loader.load(limit = limit)
 
     def test_load(self, resource) -> None:
 
