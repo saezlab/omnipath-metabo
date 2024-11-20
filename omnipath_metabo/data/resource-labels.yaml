@@ -1,4 +1,4 @@
-HMDB:
+hmdb:
   kegg_id: KEGG
   bigg_id: BIGG
   pdb_id: PBD
@@ -14,7 +14,7 @@ HMDB:
   phenol_explorer_compound_id: Phenol-Explorer
   vmh_id: Virtual Metbolic Human
   knapsack_id: Knapsack
-RaMP:
+ramp:
   chebi: ChEBI
   kegg: KEGG
   wikidata: WikiData
@@ -24,3 +24,14 @@ RaMP:
   LIPIDMAPS: LIPID MAPS
   pubchem: PubChem
   swisslipids: SwissLipids
+lipidmaps:
+  SYSTEMATIC_NAME: IUPAC
+  CHEBI_ID: ChEBI
+  HMDB_ID: HMDB
+  SWISSLIPIDS_ID: SwissLipids
+  SYNONYMS: Synonym
+  ABBREVIATION: Lipid Short
+  KEGG_ID: KEGG
+  LIPIDBANK_ID: LipidBank
+  PLANTFA_ID: PlantFAdb
+  NAME: Name
