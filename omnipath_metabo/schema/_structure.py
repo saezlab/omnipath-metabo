@@ -199,8 +199,10 @@ class LipidMaps():
                                   None,
                                   met['name'].get('FORMULA', None)),
                     'identifiers': [
-                        (met.get(k[0], {}).get(k[1], None), k[1])
+                        (name, k[1])
                         for k in self.id_fields
+                        for name in names.split('; ')
+                            if (names := met.get(k[0], {}).get(k[1], None)) is not None
                     ]
                 }
 
