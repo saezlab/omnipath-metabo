@@ -194,11 +194,14 @@ class LipidMaps():
 
                 yield {
                     'structure':(met['id'], smiles, met['name']['INCHI']),
-                    'properties':(met['annot'].get('EXACT_MASS', None), 
-                                  None, 
-                                  None, 
+                    'properties':(met['annot'].get('EXACT_MASS', None),
+                                  None,
+                                  None,
                                   met['name'].get('FORMULA', None)),
-                    'identifiers':(met['PUBCHEM_CID'], met['CHEBI_ID'])
+                    'identifiers': [
+                        (met.get(k[0], {}).get(k[1], None), k[1])
+                        for k in self.id_fields
+                    ]
                 }
 
 class Ramp(ResourceBase):
