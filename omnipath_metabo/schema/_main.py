@@ -126,7 +126,7 @@ class Loader():
         self.scheme = resource.scheme
         self.resource = resource
 
-    def load(self):
+    def load(self, limit: int = None):
 
         self.create()
 
@@ -146,7 +146,7 @@ class Loader():
                 """
             _log("loading insert statments for structures table")
             cached_resource = Tee(
-                self.resource,
+                itertools.islice(self.resource, limit),
                 struct = lambda x: x,
                 yld = lambda x: x['structure'],
             )
