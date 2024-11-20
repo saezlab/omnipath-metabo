@@ -164,7 +164,7 @@ class SwissLipids():
                 }
 
 
-class LipidMaps():
+class LipidMaps(ResourceBase):
     scheme = Structure
     name = 'LipidMaps'
     id_fields = [
@@ -174,11 +174,11 @@ class LipidMaps():
         ('name', 'HMDB_ID'),
         ('name','SWISSLIPIDS_ID'),
         ('name','SYNONYMS'),
-        ('name','ABBREVIATION')
+        ('name','ABBREVIATION'),
         ('annot','KEGG_ID'),
         ('annot','LIPIDBANK_ID'),
         ('annot','PLANTFA_ID'),
-        ('annot','NAME')
+        ('annot','NAME'),
     ]
 
     def __iter__(self):
@@ -201,8 +201,8 @@ class LipidMaps():
                     'identifiers': [
                         (name, k[1])
                         for k in self.id_fields
+                        if (names := met.get(k[0], {}).get(k[1], None)) is not None
                         for name in names.split('; ')
-                            if (names := met.get(k[0], {}).get(k[1], None)) is not None
                     ]
                 }
 
