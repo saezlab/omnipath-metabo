@@ -24,6 +24,7 @@ ramp:
   LIPIDMAPS: LIPID MAPS
   pubchem: PubChem
   swisslipids: SwissLipids
+  plantfa: PlantFAdb
 lipidmaps:
   SYSTEMATIC_NAME: IUPAC
   CHEBI_ID: ChEBI
@@ -35,9 +36,10 @@ lipidmaps:
   LIPIDBANK_ID: LipidBank
   PLANTFA_ID: PlantFAdb
   NAME: Name
+  PUBCHEM_CID: PubChem
 swisslipids:
   CHEBI: ChEBI
   LIPID MAPS: LIPID MAPS
   HMDB: HMDB
   MetaNetX: MetaNetX
-  Synonyms*: Synonym 
+  Synonyms*: Synonym

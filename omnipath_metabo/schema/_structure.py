@@ -170,7 +170,7 @@ class SwissLipids(ResourceBase):
 
 class LipidMaps(ResourceBase):
     scheme = Structure
-    name = 'LipidMaps'
+    name = 'LIPID MAPS'
     id_fields = [
         ('name','SYSTEMATIC_NAME'),
         ('name', 'PUBCHEM_CID'),
