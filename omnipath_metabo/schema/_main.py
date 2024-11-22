@@ -77,7 +77,8 @@ class Database:
             self.con.session.commit()
 
     def load_all(self):
-        for db in _structure.__dict__.values():
+
+        for db in list(_structure.__dict__.values()):
             if getattr(db,'scheme',None) is _structure.Structure:
                 h = db
                 self.load(h)
