@@ -30,6 +30,10 @@ class Structure(Base):
     smiles = Column(String, unique= True)
     inchi = Column(String(4096))
     mol = Column(MolType)
+    is_polymer = Column(Boolean)
+    has_stereo = Column(Boolean)
+    has_conformation = Column(Boolean)
+    complete_formula = Column(Boolean)
     identifier = relationship(
         'Identifier',
         backref='structure',
@@ -55,10 +59,6 @@ class Identifier(Base):
         Integer,
         ForeignKey('resources.id'),
         nullable = False)
-    is_polymer = Column(Boolean)
-    has_stereo = Column(Boolean)
-    has_conformation = Column(Boolean)
-    complete_formula = Column(Boolean)
     __table_args__ = (
         Index(
             'identifers_unique',

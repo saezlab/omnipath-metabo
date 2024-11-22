@@ -18,7 +18,7 @@ def create(con):
     Base.metadata.create_all(con.engine)
 
 
-TABLES = {'structures', 'identifiers', 'resources'}
+TABLES = {'structures', 'identifiers', 'resources', 'properties'}
 
 
 class Database:
@@ -90,14 +90,12 @@ class Database:
     def chem_properties_populate(self):
         _log('Querying mol structures', level=-1)
         query = text(r"""
-            UPDATE identifiers
+            UPDATE structures
             SET
-                is_polymer = (structures.inchi ~ '.*\\p.*'),
-                has_conformation = (structures.smiles ~ '.*[\\/]=.*'),
-                has_stereo = (structures.smiles ~ '.*@.*'),
-                complete_formula = NOT (structures.smiles ~ '.*\*.*')
-            FROM structures
-            WHERE identifiers.structure_id = structures.id;
+                is_polymer = (inchi ~ '.*\\p.*'),
+                has_conformation = (smiles ~ '.*[\\/]=.*'),
+                has_stereo = (smiles ~ '.*@.*'),
+                complete_formula = NOT (smiles ~ '.*\*.*')
         """)
         self.con.session.execute(query)
         self.con.session.commit()
