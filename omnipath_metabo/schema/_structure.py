@@ -96,15 +96,6 @@ class Properties(Base):
     charge = Column(Numeric)
     formula = Column(String)
 
-class Mappings(Base):
-    __tablename__ = 'mappings'
-    id = Column(Integer, primary_key= True)
-    structure_id = Column(Integer, ForeignKey('structures.id'), nullable = False)
-    resource_id = Column(String)
-    chebi_id = Column(String)
-    pubchem_id = Column(String)
-
-
 
 class ResourceBase:
     def __init__(self):
@@ -225,12 +216,11 @@ class Ramp(ResourceBase):
 
     def __iter__(self):
 
+        ramp_df = ramp.ramp_raw('source', return_df = True, prefixes = False)
         source_ids = {
             key: [t[:2] for t in group.itertuples(index = False)]
             for key, group in (
-                ramp.
-                ramp_raw( 'source', return_df= True)[['sourceId', 'IDtype', 'rampId']].
-                groupby('rampId')
+                ramp_df[['sourceId', 'IDtype', 'rampId']].groupby('rampId')
             )
         }
 
@@ -240,7 +230,7 @@ class Ramp(ResourceBase):
                 'structure': (row[0], row[3], row[6]),
                 'properties':(row[7], row[8], None, row[10]),
                 'identifiers': source_ids.get(row[0], [])
-                }
+            }
 
 
 def _id_types() -> dict[str, dict]:
