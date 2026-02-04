@@ -1,0 +1,62 @@
+Plasma membrane	e	c				
+Mitochondria	m	c				
+"ER; Plasma membrane"	e	c				
+"ER; Plasma membrane"	r	c				
+"Endosome; Plasma membrane"	e	c				
+"Endosome; Golgi; Lysosome"	g	c				
+"Endosome; Golgi; Lysosome"	l	c				
+"Endosome; Lysosome; Plasma membrane"	l	c				
+"Endosome; Lysosome; Plasma membrane"	e	c				
+"Granules; Phagosome"	v	c				
+"Cytoplasm; Plasma membrane"	e	c				
+Lysosome	l	c				
+"Nucleus; Plasma membrane"	n	c				
+"Nucleus; Plasma membrane"	e	c				
+"Plasma membrane; Unknown"	e	c				
+"Lysosome; Plasma membrane"	l	c				
+"Lysosome; Plasma membrane"	e	c				
+Vesicles	v	c				
+"Granules; Lysosome; Vesicles"	v	c				
+"Plasma membrane; Mitochondria"	e	c				
+"Plasma membrane; Mitochondria"	m	c				
+"ER; Plasma membrane; Vesicles"	r	c				
+"ER; Plasma membrane; Vesicles"	v	c				
+"ER; Plasma membrane; Vesicles"	e	c				
+"Mitochondria; Plasma membrane"	m	c				
+"Mitochondria; Plasma membrane"	e	c				
+Golgi	g	c				
+Peroxisome	x	c				
+"Golgi; Mitochondria; Plasma membrane"	g	c				
+"Golgi; Mitochondria; Plasma membrane"	e	c				
+"Golgi; Mitochondria; Plasma membrane"	m	c				
+"Lysosome; Mitochondria; Plasma membrane"	l	c				
+"Lysosome; Mitochondria; Plasma membrane"	m	c				
+"Lysosome; Mitochondria; Plasma membrane"	e	c				
+"Plasma membrane; Vesicles"	e	c				
+"Plasma membrane; Vesicles"	v	c				
+ER	r	c				
+"Golgi; Plasma membrane"	g	c				
+"Golgi; Plasma membrane"	e	c				
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles"	r	c				
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles"	l	c				
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles"	m	c				
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles"	v	c				
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles"	e	c				
+"Granules; Vesicles"	v	c				
+"Golgi; Granules; Plasma membrane"	g	c				
+"Golgi; Granules; Plasma membrane"	e	c		Cytosol	c	c
+"ER; Golgi"	g	c		Nucleus	n	c
+"ER; Golgi"	r	c		Membrane	e	c
+Granules	v	c		Endoplasmic reticulum	r	c
+"ER; Unknown"	r	c		Golgi apparatus	g	c
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles"	e	c		Endoplasmic reticulum-Golgi	eg	c
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles"	v	c		vesicle	v	c
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles"	g	c		Lysosome	l	c
+"ER; Lysosome"	r	c		Mitochondrion	m	c
+"ER; Lysosome"	l	c		Peroxisome	x	c
+"Golgi; Vesicles"	v	c		extracellular	e	c
+"Golgi; Vesicles"	g	c				
+"Perinuclear compartment; Plasma membrane"	e	c				
+"Endosome; Plasma membrane; Vesicles"	v	c				
+"Endosome; Plasma membrane; Vesicles"	e	c				
+"Intracellular membranes; Plasma membrane"	e	c				
