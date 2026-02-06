@@ -13,7 +13,7 @@
 # https://opensource.org/license/bsd-3-clause
 #
 
-"""COSMOS PKN data source processors."""
+"""COSMOS PKN data resource processors."""
 
 __all__ = [
     'tcdb_interactions',

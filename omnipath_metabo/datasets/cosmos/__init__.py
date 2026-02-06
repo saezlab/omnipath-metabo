@@ -22,8 +22,8 @@ data sources including TCDB, SLC, BRENDA, MRCLinksDB, and Rhea.
 
 __all__ = [
     'build',
-    'sources',
+    'resources',
 ]
 
-from . import sources
+from . import resources
 from ._build import build

@@ -31,7 +31,7 @@ from typing import TYPE_CHECKING
 import pandas as pd
 
 from .network import add_reverse_reactions, create_node_mappings
-from .sources import (
+from .resources import (
     brenda_regulations,
     mrclinksdb_interactions,
     rhea_reactions,
