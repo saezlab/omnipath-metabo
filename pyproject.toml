@@ -16,6 +16,9 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Bio-Informatics"
 ]
 dependencies = [
+    "pandas>=2.0",
+    "pypath-omnipath>=0.16",
+    "pypath-common>=0.2",
 ]
 description = "Metabolite, compound, reaction and interaction prior-knowledge for systems biology"
 license = "BSD-3-Clause"

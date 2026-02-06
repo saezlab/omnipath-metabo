@@ -13,13 +13,10 @@
 # https://opensource.org/license/bsd-3-clause
 #
 
-"""Metabolite, compound, reaction and interaction prior-knowledge for systems biology"""
+"""Curated, branded prior-knowledge datasets."""
 
 __all__ = [
-    '__version__',
-    '__author__',
-    'datasets',
+    'cosmos',
 ]
 
-from ._metadata import __author__, __version__
-from . import datasets
+from . import cosmos

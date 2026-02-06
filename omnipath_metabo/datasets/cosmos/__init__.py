@@ -13,13 +13,17 @@
 # https://opensource.org/license/bsd-3-clause
 #
 
-"""Metabolite, compound, reaction and interaction prior-knowledge for systems biology"""
+"""
+COSMOS prior-knowledge network builder.
+
+This module contains all logic for building the COSMOS PKN from multiple
+data sources including TCDB, SLC, BRENDA, MRCLinksDB, and Rhea.
+"""
 
 __all__ = [
-    '__version__',
-    '__author__',
-    'datasets',
+    'build',
+    'sources',
 ]
 
-from ._metadata import __author__, __version__
-from . import datasets
+from . import sources
+from ._build import build
