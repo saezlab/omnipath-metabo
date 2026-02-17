@@ -57,11 +57,9 @@ Usage — test individual resources::
     len(mrc)
     mrc[:3]
 
-    # Collect all into a DataFrame
-    import pandas as pd
-    from omnipath_metabo.datasets.cosmos._record import Interaction
-    all_records = stitch + slc + brenda + tcdb + mrc
-    df = pd.DataFrame(all_records, columns=Interaction._fields)
+    # Or use build() to collect all into a single DataFrame
+    from omnipath_metabo.datasets.cosmos import build
+    df = build()
     df
 """
 

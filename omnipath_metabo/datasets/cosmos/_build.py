@@ -18,114 +18,99 @@ COSMOS PKN builder.
 
 This module provides the main entry point for building the COSMOS
 prior-knowledge network by combining data from multiple sources.
+
+Resource categories:
+
+1. Metabolite-protein interactions (current)
+2. GEMs (genome-scale metabolic models)
+3. PPIs (protein-protein interactions)
+4. GRNs (gene regulatory networks)
+5. Kinase-substrate networks
 """
 
 from __future__ import annotations
 
-__all__ = [
-    'build',
-]
+__all__ = ['build']
 
+from itertools import chain
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .network import node_mappings, reverse_reactions
+from ._record import Interaction
 from .resources import (
     brenda_regulations,
     mrclinksdb_interactions,
-    rhea_reactions,
     slc_interactions,
+    stitch_interactions,
     tcdb_interactions,
 )
 
 if TYPE_CHECKING:
-    from typing import Sequence
+    from collections.abc import Sequence
 
 
-DEFAULT_SOURCES = ('tcdb', 'slc', 'brenda', 'mrclinksdb')
+PROCESSORS = {
+    'stitch': stitch_interactions,
+    'tcdb': tcdb_interactions,
+    'slc': slc_interactions,
+    'brenda': brenda_regulations,
+    'mrclinksdb': mrclinksdb_interactions,
+}
+
+DEFAULT_ARGS: dict[str, dict] = {
+    'stitch': {'ncbi_tax_id': 9606, 'score_threshold': 700},
+    'tcdb': {'ncbi_tax_id': 9606},
+    'slc': {},
+    'brenda': {'organisms': ['human']},
+    'mrclinksdb': {'organism': 'human'},
+}
+
+DEFAULT_SOURCES = tuple(PROCESSORS)
 
 
 def build(
     sources: Sequence[str] | None = None,
-    ncbi_tax_id: int = 9606,
-    include_reverse: bool = True,
-) -> dict[str, pd.DataFrame]:
+    **kwargs,
+) -> pd.DataFrame:
     """
     Build the COSMOS prior-knowledge network from multiple sources.
 
+    Calls each requested resource processor, collects the yielded
+    :class:`Interaction` records, and returns them as a single
+    DataFrame.
+
     Args:
-        sources: List of source names to include. Options are:
-            'tcdb', 'slc', 'brenda', 'mrclinksdb', 'rhea'.
-            Defaults to all sources except 'rhea' (requires lipinet).
-        ncbi_tax_id: NCBI taxonomy ID (default: 9606 for human).
-        include_reverse: Whether to add reverse reaction edges.
+        sources:
+            Resource names to include. Defaults to all available:
+            ``('stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb')``.
+        **kwargs:
+            Override default arguments for individual processors.
+            Pass a dict keyed by argument name, e.g.
+            ``build(stitch={'score_threshold': 400})``.
 
     Returns:
-        Dictionary containing:
-        - 'edges': Combined edge table from all sources
-        - 'gene_mapping': Gene node mappings
-        - 'metabolite_mapping': Metabolite node mappings
-        - 'sources': Dictionary of individual source DataFrames
+        DataFrame with one row per interaction, columns matching
+        :class:`Interaction` fields.
     """
 
     if sources is None:
         sources = DEFAULT_SOURCES
 
-    source_dfs = {}
-    source_processors = {
-        'tcdb': lambda: tcdb_interactions(ncbi_tax_id=ncbi_tax_id),
-        'slc': slc_interactions,
-        'brenda': brenda_regulations,
-        'mrclinksdb': lambda: mrclinksdb_interactions(
-            organism='human' if ncbi_tax_id == 9606 else str(ncbi_tax_id)
-        ),
-        'rhea': lambda: rhea_reactions(ncbi_tax_id=ncbi_tax_id),
-    }
+    generators = []
 
-    # Process each requested source
-    for source_name in sources:
+    for name in sources:
 
-        if source_name not in source_processors:
+        if name not in PROCESSORS:
             raise ValueError(
-                f"Unknown source: {source_name}. "
-                f"Available sources: {list(source_processors.keys())}"
+                f'Unknown source: {name!r}. '
+                f'Available: {list(PROCESSORS)}'
             )
 
-        # Skip SLC for non-human species
-        if source_name == 'slc' and ncbi_tax_id != 9606:
-            continue
+        args = {**DEFAULT_ARGS.get(name, {}), **kwargs.get(name, {})}
+        generators.append(PROCESSORS[name](**args))
 
-        source_dfs[source_name] = source_processors[source_name]()
-
-    # Combine transporter-like sources (TCDB, SLC, MRCLinksDB)
-    transporter_sources = ['tcdb', 'slc', 'mrclinksdb']
-    transporter_dfs = [
-        source_dfs[s]
-        for s in transporter_sources
-        if s in source_dfs and not source_dfs[s].empty
-    ]
-
-    if transporter_dfs:
-
-        combined = pd.concat(transporter_dfs, ignore_index=True)
-        combined = combined.drop_duplicates()
-        combined['mor'] = 1
-
-        if include_reverse:
-            edges = reverse_reactions(combined)
-        else:
-            edges = combined
-
-    else:
-        edges = pd.DataFrame(columns=['Source', 'Target', 'database'])
-
-    # Create node mappings
-    mappings = node_mappings(edges)
-
-    return {
-        'edges': edges,
-        'gene_mapping': mappings['gene_mapping'],
-        'metabolite_mapping': mappings['metabolite_mapping'],
-        'sources': source_dfs,
-    }
+    return pd.DataFrame(
+        chain.from_iterable(generators),
+        columns=Interaction._fields,
+    )
