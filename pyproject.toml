@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=2.0",
-    "pypath-omnipath>=0.16",
+    "pypath-omnipath @ git+https://github.com/saezlab/pypath.git@master",
     "pypath-common>=0.2",
 ]
 description = "Metabolite, compound, reaction and interaction prior-knowledge for systems biology"
@@ -81,6 +81,9 @@ skip = [
   "docs/references.md",
   "docs/notebooks/example.ipynb",
 ]
+
+[tool.hatch.metadata]
+allow-direct-references = true
 
 [tool.hatch.build.targets.wheel]
 packages = [ "omnipath_metabo" ]
