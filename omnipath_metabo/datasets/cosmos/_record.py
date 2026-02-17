@@ -57,5 +57,5 @@ class Interaction(NamedTuple):
     mor: int
     """Mode of regulation: 1 (stimulation), -1 (inhibition), 0 (unknown)."""
 
-    location: str | None = None
-    """Subcellular compartment abbreviation, if applicable."""
+    locations: tuple[str, ...] = ()
+    """Subcellular compartment abbreviations (e.g. ``('e', 'r')``)."""

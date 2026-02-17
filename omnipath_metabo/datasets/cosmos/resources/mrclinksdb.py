@@ -77,16 +77,18 @@ def mrclinksdb_interactions(
             location_mapping,
         )
 
-        for abbrev in abbreviations:
-            yield Interaction(
-                source=pubchem,
-                target=receptor,
-                source_type='small_molecule',
-                target_type='protein',
-                id_type_a='pubchem',
-                id_type_b='uniprot',
-                interaction_type='signaling',
-                resource='MRCLinksDB',
-                mor=0,
-                location=abbrev,
-            )
+        if not abbreviations:
+            continue
+
+        yield Interaction(
+            source=pubchem,
+            target=receptor,
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a='pubchem',
+            id_type_b='uniprot',
+            interaction_type='signaling',
+            resource='MRCLinksDB',
+            mor=0,
+            locations=tuple(sorted(abbreviations)),
+        )

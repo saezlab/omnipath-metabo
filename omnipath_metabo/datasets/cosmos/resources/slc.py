@@ -24,6 +24,7 @@ from __future__ import annotations
 
 __all__ = ['slc_interactions']
 
+import re
 from collections.abc import Generator
 
 from .._record import Interaction
@@ -32,6 +33,10 @@ from .._record import Interaction
 def slc_interactions() -> Generator[Interaction, None, None]:
     """
     Yield SLC transporter-substrate interactions as uniform records.
+
+    Compound location strings (e.g. ``"ER; Plasma membrane"``) are split
+    into individual locations and each is mapped to a compartment code.
+    The resulting record contains all unique codes as a tuple.
 
     Note: SLC data is only available for human (NCBI taxonomy ID 9606).
 
@@ -54,7 +59,14 @@ def slc_interactions() -> Generator[Interaction, None, None]:
         if not chebi or not localization or localization in ('', 'Unknown', 'None'):
             continue
 
-        if localization not in location_mapping:
+        parts = re.split(r';\s*', localization)
+        codes = {
+            location_mapping[part]
+            for part in parts
+            if part in location_mapping
+        }
+
+        if not codes:
             continue
 
         yield Interaction(
@@ -67,5 +79,5 @@ def slc_interactions() -> Generator[Interaction, None, None]:
             interaction_type='transport',
             resource='SLC',
             mor=0,
-            location=location_mapping[localization],
+            locations=tuple(sorted(codes)),
         )
