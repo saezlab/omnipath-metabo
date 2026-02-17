@@ -1,0 +1,91 @@
+location,abbreviation
+Cytoplasm,c
+Cytosol,c
+Nucleus,n
+Nucleoplasm,n
+Nucleus membrane,n
+Nucleus inner membrane,n
+Nucleus outer membrane,n
+Nucleus envelope,n
+Nucleus speckle,n
+Nucleus matrix,n
+Nuclear pore complex,n
+Nucleolus,n
+Membrane,e
+Cell inner membrane,e
+Cell membrane,e
+Apical cell membrane,e
+Basolateral cell membrane,e
+Basal cell membrane,e
+Lateral cell membrane,e
+Apicolateral cell membrane,e
+Membrane raft,e
+Cell surface,e
+Endoplasmic reticulum,r
+Endoplasmic reticulum membrane,r
+Endoplasmic reticulum lumen,r
+Rough endoplasmic reticulum,r
+Rough endoplasmic reticulum membrane,r
+Smooth endoplasmic reticulum membrane,r
+Golgi apparatus,g
+Golgi apparatus membrane,g
+Golgi apparatus lumen,g
+Golgi stack membrane,g
+cis-Golgi network,g
+cis-Golgi network membrane,g
+trans-Golgi network,g
+trans-Golgi network membrane,g
+Endoplasmic reticulum-Golgi intermediate compartment,eg
+Endoplasmic reticulum-Golgi intermediate compartment membrane,eg
+Endomembrane system,eg
+Cytoplasmic vesicle,v
+Cytoplasmic vesicle membrane,v
+Secretory vesicle,v
+Secretory vesicle membrane,v
+Secretory vesicle lumen,v
+Synaptic vesicle,v
+Synaptic vesicle membrane,v
+Vesicle,v
+Early endosome,v
+Early endosome membrane,v
+Late endosome,v
+Late endosome membrane,v
+Endosome,v
+Endosome membrane,v
+Endosome lumen,v
+Recycling endosome,v
+Recycling endosome membrane,v
+Multivesicular body,v
+Multivesicular body membrane,v
+Multivesicular body lumen,v
+Lysosome,l
+Lysosome membrane,l
+Lysosome lumen,l
+Autophagosome,l
+Autophagosome membrane,l
+Autolysosome,l
+Preautophagosomal structure membrane,l
+Mitochondrion,m
+Mitochondrion membrane,m
+Mitochondrion inner membrane,m
+Mitochondrion outer membrane,m
+Mitochondrion matrix,m
+Mitochondrion intermembrane space,m
+Mitochondrion nucleoid,m
+Peroxisome,x
+Peroxisome membrane,x
+Peroxisome matrix,x
+Sarcoplasmic reticulum membrane,e
+Sarcolemma,e
+Sarcoplasm,c
+T-tubule,e
+Clathrin-coated vesicle,e
+Clathrin-coated vesicle membrane,e
+Clathrin-coated pit,e
+Coated pit,e
+COPI-coated vesicle membrane,e
+COPII-coated vesicle membrane,e
+Caveola,e
+Phagocytic cup,e
+Phagosome,e
+Phagosome membrane,e

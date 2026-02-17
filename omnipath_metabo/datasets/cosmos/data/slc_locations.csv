@@ -1,0 +1,63 @@
+location,abbreviation
+Plasma membrane,e
+Mitochondria,m
+"ER; Plasma membrane",e
+"ER; Plasma membrane",r
+"Endosome; Plasma membrane",e
+"Endosome; Golgi; Lysosome",g
+"Endosome; Golgi; Lysosome",l
+"Endosome; Lysosome; Plasma membrane",l
+"Endosome; Lysosome; Plasma membrane",e
+"Granules; Phagosome",v
+"Cytoplasm; Plasma membrane",e
+Lysosome,l
+"Nucleus; Plasma membrane",n
+"Nucleus; Plasma membrane",e
+"Plasma membrane; Unknown",e
+"Lysosome; Plasma membrane",l
+"Lysosome; Plasma membrane",e
+Vesicles,v
+"Granules; Lysosome; Vesicles",v
+"Plasma membrane; Mitochondria",e
+"Plasma membrane; Mitochondria",m
+"ER; Plasma membrane; Vesicles",r
+"ER; Plasma membrane; Vesicles",v
+"ER; Plasma membrane; Vesicles",e
+"Mitochondria; Plasma membrane",m
+"Mitochondria; Plasma membrane",e
+Golgi,g
+Peroxisome,x
+"Golgi; Mitochondria; Plasma membrane",g
+"Golgi; Mitochondria; Plasma membrane",e
+"Golgi; Mitochondria; Plasma membrane",m
+"Lysosome; Mitochondria; Plasma membrane",l
+"Lysosome; Mitochondria; Plasma membrane",m
+"Lysosome; Mitochondria; Plasma membrane",e
+"Plasma membrane; Vesicles",e
+"Plasma membrane; Vesicles",v
+ER,r
+"Golgi; Plasma membrane",g
+"Golgi; Plasma membrane",e
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles",r
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles",l
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles",m
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles",v
+"ER; Lysosome; Mitochondria; Plasma membrane; Vesicles",e
+"Granules; Vesicles",v
+"Golgi; Granules; Plasma membrane",g
+"Golgi; Granules; Plasma membrane",e
+"ER; Golgi",g
+"ER; Golgi",r
+Granules,v
+"ER; Unknown",r
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles",e
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles",v
+"Golgi; Perinuclear compartment; Plasma membrane; Vesicles",g
+"ER; Lysosome",r
+"ER; Lysosome",l
+"Golgi; Vesicles",v
+"Golgi; Vesicles",g
+"Perinuclear compartment; Plasma membrane",e
+"Endosome; Plasma membrane; Vesicles",v
+"Endosome; Plasma membrane; Vesicles",e
+"Intracellular membranes; Plasma membrane",e
