@@ -110,6 +110,7 @@ The `datasets/` module will host other branded prior-knowledge compilations in t
 future (e.g., tissue-specific networks, disease-focused datasets). Each dataset
 gets its own submodule containing all necessary build logic and temporary solutions.
 
+
 ### 1.3 Incorporate COSMOS PKN Scripts
 
 Refactor scripts from `scripts_exploration/` into the `datasets/cosmos/` submodule:
@@ -284,3 +285,12 @@ Development dependencies:
 - Future branded datasets in `datasets/` can use either the temporary approach
   or the proper infrastructure depending on availability
 - Web API development (Phase 5) will follow established OmniPath patterns
+
+## Phase 2: Resource Client Expansion
+### 2.1 STITCH
+We have two versions of STITCH clients, one is the old one stored in pypath pypath-tool/pypath/inputs/stitch.py, and the other one is updated and stored in pypath-tool/pypath/inputs/new_stitch/. Compare their difference first, tell me which parts of functions are updated, if it is necessary to use new_stitch. Generate your investigation in a seperate markdown file named "STITCH_report.md". 
+Then let's create a new STITCH COSMOS PKN build script by refering to scripts in Phase 1 using new_stitch. First I want to see outcome of new_stitch.interactions(). Save your investigation in STITCH_data_overview.md, and help me create a csv file with 5000 lines. 
+At the moment, we don't add surfix, but in future we will add it when we know more about data. keep Gene__ and Metab__ prefixes same as before. Please normalize orientation: Always put chemical as source, protein as target. And don't create reverse reactions. Put score as a parameter and set 700 as default, use final_score column. Put mode as another parameter and set only keep activation and inhibition as default. Don't consider stereospecificity at present. Set species as a parameter and 9606 as default. For mor column, keep the same as original table: activation = 1, inhibition = -1, unknown = 0.
+
+
+
