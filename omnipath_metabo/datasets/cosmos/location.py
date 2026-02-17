@@ -14,83 +14,195 @@
 #
 
 """
-Subcellular location parsing and mapping for COSMOS PKN.
+Subcellular location lookup and mapping for COSMOS PKN.
 
-This module provides utilities for parsing UniProt location strings
-and mapping them to standardized compartment abbreviations.
+This module provides utilities for querying UniProt subcellular locations
+and mapping them to standardized compartment abbreviations used in
+genome-scale metabolic models (e.g., BIGG database conventions).
+
+Compartment abbreviations:
+    - c: Cytoplasm/Cytosol
+    - n: Nucleus
+    - e: Extracellular/Cell membrane
+    - r: Endoplasmic reticulum
+    - g: Golgi apparatus
+    - m: Mitochondrion
+    - l: Lysosome
+    - x: Peroxisome
+    - v: Vesicle
+    - eg: ER-Golgi intermediate compartment
 """
 
 from __future__ import annotations
 
 __all__ = [
-    'parse_uniprot_locations',
-    'load_location_mapping',
+    'uniprot_locations',
+    'locations_to_abbreviations',
+    'tcdb_locations',
+    'tcdb_routes',
+    'slc_locations',
+    'slc_routes',
 ]
 
-import re
-from pathlib import Path
+from functools import cache
 from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from .data import data_path
+
 if TYPE_CHECKING:
-    from typing import Sequence
+    from collections.abc import Iterable
+
+    from pypath.inputs.uniprot import UniprotLocation
 
 
-def parse_uniprot_locations(location_string: str | None) -> pd.DataFrame:
+def uniprot_locations(
+    organism: int = 9606,
+    reviewed: bool = True,
+) -> dict[str, set[UniprotLocation]]:
     """
-    Parse UniProt location strings and extract location and features.
+    Query UniProt for subcellular location annotations.
+
+    Uses the pypath UniProt API client to fetch location data for all
+    proteins of the specified organism.
 
     Args:
-        location_string: UniProt location string in the format
-            `{UniprotLocation(location='...', features=...)}`.
+        organism: NCBI taxonomy ID (default: 9606 for human).
+        reviewed: If True, only query reviewed (SwissProt) proteins.
 
     Returns:
-        DataFrame with 'location' and 'features' columns.
+        Dictionary mapping UniProt IDs to sets of UniprotLocation
+        namedtuples. Each namedtuple has `location` (compartment name)
+        and `features` (additional annotations like membrane topology).
+
+    Examples:
+        Get locations for human proteins:
+
+        >>> locations = uniprot_locations(organism=9606)
+        >>> 'P00533' in locations  # EGFR
+        True
     """
 
-    if pd.isna(location_string) or not isinstance(location_string, str):
-        return pd.DataFrame(columns=['location', 'features'])
+    from pypath.inputs.uniprot import uniprot_locations as _uniprot_locations
 
-    pattern = r"UniprotLocation\(location='([^']+)', features=([^)]+)\)"
-    cleaned = re.sub(r'^\{|\}$', '', str(location_string))
-    matches = re.findall(pattern, cleaned)
-
-    if not matches:
-        return pd.DataFrame(columns=['location', 'features'])
-
-    return pd.DataFrame([
-        {
-            'location': m[0],
-            'features': re.sub(r"\('|'\)|'|,\s*$|^\(|\)$", '', m[1]),
-        }
-        for m in matches
-    ])
+    return _uniprot_locations(organism=organism, reviewed=reviewed)
 
 
-def load_location_mapping(
-    filepath: str | Path,
-    sep: str = ';',
-    columns: Sequence[str] | None = None,
-) -> pd.DataFrame:
+def locations_to_abbreviations(
+    locations: Iterable[UniprotLocation],
+    location_mapping: dict[str, str],
+) -> set[str]:
     """
-    Load and clean location abbreviation mapping from a file.
+    Map UniProt location namedtuples to compartment abbreviations.
 
     Args:
-        filepath: Path to the CSV/TSV file containing location mappings.
-        sep: Column separator.
-        columns: Column names to assign if file has no header.
+        locations: Iterable of UniprotLocation namedtuples from
+            UniProt location data.
+        location_mapping: Dict mapping location names to abbreviations.
 
     Returns:
-        DataFrame with location mapping (typically 'location' and
-        'abbreviation' columns).
+        Set of compartment abbreviations that match the input locations.
+
+    Examples:
+        >>> mapping = tcdb_locations()
+        >>> from collections import namedtuple
+        >>> Loc = namedtuple('UniprotLocation', ['location', 'features'])
+        >>> locs = [Loc('Cytoplasm', None), Loc('Cell membrane', ('Multi-pass',))]
+        >>> abbrevs = locations_to_abbreviations(locs, mapping)
+        >>> 'c' in abbrevs
+        True
+        >>> 'e' in abbrevs
+        True
     """
 
-    df = pd.read_csv(filepath, sep=sep, header=None if columns else 0)
-    df = df.iloc[:, :2]
-    df.columns = columns or df.columns[:2]
+    return {
+        location_mapping[loc.location]
+        for loc in locations
+        if loc.location in location_mapping
+    }
 
-    if 'location' in df.columns:
-        df['location'] = df['location'].str.strip()
 
-    return df
+@cache
+def tcdb_locations() -> dict[str, str]:
+    """
+    TCDB location name to abbreviation mapping.
+
+    Returns:
+        Dict mapping location names (e.g., 'Cytoplasm') to
+        compartment abbreviations (e.g., 'c').
+
+    Examples:
+        >>> mapping = tcdb_locations()
+        >>> mapping['Cytoplasm']
+        'c'
+        >>> mapping['Mitochondrion']
+        'm'
+    """
+
+    df = pd.read_csv(data_path('tcdb_locations.csv'))
+    return {loc: abbrev for loc, abbrev in zip(df['location'], df['abbreviation'])}
+
+
+@cache
+def tcdb_routes() -> list[tuple[str, str]]:
+    """
+    TCDB transport routes between compartments.
+
+    Transport routes define the possible directions of metabolite
+    transport between subcellular compartments.
+
+    Returns:
+        List of (from, to) tuples representing transport routes.
+
+    Examples:
+        >>> routes = tcdb_routes()
+        >>> ('e', 'c') in routes  # Extracellular to cytosol
+        True
+    """
+
+    df = pd.read_csv(data_path('tcdb_routes.csv'))
+    return [(row['from'], row['to']) for _, row in df.iterrows()]
+
+
+@cache
+def slc_locations() -> dict[str, str]:
+    """
+    SLC location name to abbreviation mapping.
+
+    The SLC (Solute Carrier) table uses different location naming
+    conventions than TCDB, often with compound locations separated
+    by semicolons.
+
+    Returns:
+        Dict mapping location names (e.g., 'Plasma membrane') to
+        compartment abbreviations (e.g., 'e').
+
+    Examples:
+        >>> mapping = slc_locations()
+        >>> mapping['Plasma membrane']
+        'e'
+        >>> mapping['Lysosome']
+        'l'
+    """
+
+    df = pd.read_csv(data_path('slc_locations.csv'))
+    return {loc: abbrev for loc, abbrev in zip(df['location'], df['abbreviation'])}
+
+
+@cache
+def slc_routes() -> list[tuple[str, str]]:
+    """
+    SLC transport routes between compartments.
+
+    Returns:
+        List of (from, to) tuples representing transport routes.
+
+    Examples:
+        >>> routes = slc_routes()
+        >>> any(to == 'c' for _, to in routes)  # Cytosol is a destination
+        True
+    """
+
+    df = pd.read_csv(data_path('slc_routes.csv'))
+    return [(row['from'], row['to']) for _, row in df.iterrows()]

@@ -21,9 +21,9 @@ from pathlib import Path
 DATA_DIR = Path(__file__).parent
 
 
-def get_data_path(filename: str) -> Path:
+def data_path(filename: str) -> Path:
     """
-    Get the path to a data file in the COSMOS data directory.
+    Path to a data file in the COSMOS data directory.
 
     Args:
         filename: Name of the data file.

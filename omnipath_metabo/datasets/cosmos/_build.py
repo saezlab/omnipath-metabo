@@ -30,7 +30,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
-from .network import add_reverse_reactions, create_node_mappings
+from .network import node_mappings, reverse_reactions
 from .resources import (
     brenda_regulations,
     mrclinksdb_interactions,
@@ -113,7 +113,7 @@ def build(
         combined['mor'] = 1
 
         if include_reverse:
-            edges = add_reverse_reactions(combined)
+            edges = reverse_reactions(combined)
         else:
             edges = combined
 
@@ -121,7 +121,7 @@ def build(
         edges = pd.DataFrame(columns=['Source', 'Target', 'database'])
 
     # Create node mappings
-    mappings = create_node_mappings(edges)
+    mappings = node_mappings(edges)
 
     return {
         'edges': edges,

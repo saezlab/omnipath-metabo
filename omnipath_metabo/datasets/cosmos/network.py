@@ -23,11 +23,11 @@ and handling reaction directionality.
 from __future__ import annotations
 
 __all__ = [
-    'add_gene_prefix',
-    'add_metab_prefix',
+    'gene_prefix',
+    'metab_prefix',
     'strip_prefix',
-    'add_reverse_reactions',
-    'create_node_mappings',
+    'reverse_reactions',
+    'node_mappings',
 ]
 
 import re
@@ -43,7 +43,7 @@ GENE_PREFIX = 'Gene__'
 METAB_PREFIX = 'Metab__'
 
 
-def add_gene_prefix(identifier: str) -> str:
+def gene_prefix(identifier: str) -> str:
     """
     Add the Gene__ prefix to a protein identifier.
 
@@ -57,7 +57,7 @@ def add_gene_prefix(identifier: str) -> str:
     return f'{GENE_PREFIX}{identifier}'
 
 
-def add_metab_prefix(
+def metab_prefix(
     identifier: str,
     compartment: str | None = None,
 ) -> str:
@@ -98,7 +98,7 @@ def strip_prefix(identifier: str) -> str:
     return result
 
 
-def add_reverse_reactions(
+def reverse_reactions(
     table: pd.DataFrame,
     source_col: str = 'Source',
     target_col: str = 'Target',
@@ -187,7 +187,7 @@ def add_reverse_reactions(
     return pd.DataFrame(table_extended_list)
 
 
-def create_node_mappings(
+def node_mappings(
     edges: pd.DataFrame,
     source_col: str = 'Source',
     target_col: str = 'Target',
