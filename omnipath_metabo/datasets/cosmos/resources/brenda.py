@@ -22,55 +22,58 @@ activators and inhibitors.
 
 from __future__ import annotations
 
-__all__ = [
-    'brenda_regulations',
-]
+__all__ = ['brenda_regulations']
 
+from collections.abc import Generator
 from typing import TYPE_CHECKING
 
-import pandas as pd
-from pypath.inputs.brenda._main import allosteric_regulation
-
-from ..network import add_gene_prefix, add_metab_prefix
+from .._record import Interaction
 
 if TYPE_CHECKING:
-    from typing import Sequence
+    from collections.abc import Sequence
 
 
 def brenda_regulations(
     organisms: Sequence[str] | None = None,
-) -> pd.DataFrame:
+) -> Generator[Interaction, None, None]:
     """
-    Generate BRENDA allosteric regulation data for specified organisms.
+    Yield BRENDA allosteric regulation interactions as uniform records.
 
     Args:
-        organisms: List of organism names (e.g., ['human', 'mouse']).
-            Defaults to ['human'].
+        organisms:
+            List of organism names (e.g. ``['human']``).
+            Defaults to ``['human']``.
 
-    Returns:
-        DataFrame with columns: compound, protein_id, action, id_type, pubmeds.
+    Yields:
+        :class:`Interaction` records with *source_type*
+        ``'small_molecule'`` and *target_type* ``'protein'``.
     """
+
+    from pypath.inputs.brenda._main import allosteric_regulation
 
     if organisms is None:
         organisms = ['human']
-
-    records = []
 
     for record in allosteric_regulation(organisms=organisms, limit=None):
 
         if not record.protein:
             continue
 
-        for protein_id in record.protein:
-            records.append({
-                'compound': add_metab_prefix(record.compound),
-                'protein_id': add_gene_prefix(protein_id),
-                'action': record.action,
-                'id_type': record.id_type,
-                'pubmeds': record.pubmeds,
-            })
+        mor = (
+            1 if record.action == 'activating' else
+            -1 if record.action == 'inhibiting' else
+            0
+        )
 
-    return pd.DataFrame(
-        records,
-        columns=['compound', 'protein_id', 'action', 'id_type', 'pubmeds'],
-    )
+        for protein_id in record.protein:
+            yield Interaction(
+                source=record.compound,
+                target=protein_id,
+                source_type='small_molecule',
+                target_type='protein',
+                id_type_a=record.id_type,
+                id_type_b='uniprot',
+                interaction_type='regulation',
+                resource='BRENDA',
+                mor=mor,
+            )

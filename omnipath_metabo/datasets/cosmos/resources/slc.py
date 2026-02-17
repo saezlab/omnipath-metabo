@@ -22,67 +22,50 @@ interactions with subcellular localization information.
 
 from __future__ import annotations
 
-__all__ = [
-    'slc_interactions',
-]
+__all__ = ['slc_interactions']
 
-import pandas as pd
-from pypath.inputs import slc
+from collections.abc import Generator
 
-from ..data import get_data_path
-from ..location import load_location_mapping
-from ..network import add_gene_prefix, add_metab_prefix
+from .._record import Interaction
 
 
-def slc_interactions() -> pd.DataFrame:
+def slc_interactions() -> Generator[Interaction, None, None]:
     """
-    Fetch and process SLC interaction data.
+    Yield SLC transporter-substrate interactions as uniform records.
 
     Note: SLC data is only available for human (NCBI taxonomy ID 9606).
 
-    Returns:
-        DataFrame with columns: Source (metabolite with location),
-        Target (protein), database.
+    Yields:
+        :class:`Interaction` records with *source_type*
+        ``'small_molecule'`` and *target_type* ``'protein'``.
     """
 
-    # Load location abbreviation mapping
-    abb_data = load_location_mapping(
-        get_data_path('location_abb_slc.txt'),
-        sep='\t',
-        columns=['localization', 'abbreviation'],
-    )
+    from pypath.inputs import slc
 
-    # Collect SLC interaction data
-    data = pd.DataFrame([
-        {
-            'transporter': r.transporter.uniprot,
-            'substrate': r.substrate.chebi,
-            'localization': r.localization,
-        }
-        for r in slc.slc_interactions()
-        if (
-            r.substrate.chebi
-            and r.localization
-            and r.localization not in ('', 'Unknown', 'None')
+    from ..location import slc_locations
+
+    location_mapping = slc_locations()
+
+    for r in slc.slc_interactions():
+
+        chebi = r.substrate.chebi
+        localization = r.localization
+
+        if not chebi or not localization or localization in ('', 'Unknown', 'None'):
+            continue
+
+        if localization not in location_mapping:
+            continue
+
+        yield Interaction(
+            source=chebi,
+            target=r.transporter.uniprot,
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a='chebi',
+            id_type_b='uniprot',
+            interaction_type='transport',
+            resource='SLC',
+            mor=0,
+            location=location_mapping[localization],
         )
-    ])
-
-    if data.empty:
-        return pd.DataFrame(columns=['Source', 'Target', 'database'])
-
-    # Merge with location abbreviations and filter
-    result = (
-        data
-        .merge(abb_data, on='localization', how='left')
-        .dropna(subset=['abbreviation'])
-    )
-
-    # Add prefixes and format columns
-    result['Source'] = result.apply(
-        lambda row: add_metab_prefix(row['substrate'], row['abbreviation']),
-        axis=1,
-    )
-    result['Target'] = result['transporter'].apply(add_gene_prefix)
-    result['database'] = 'SLC'
-
-    return result[['Source', 'Target', 'database']]

@@ -23,106 +23,71 @@ transporter-metabolite interactions.
 
 from __future__ import annotations
 
-__all__ = [
-    'tcdb_interactions',
-]
+__all__ = ['tcdb_interactions']
 
-import pandas as pd
-from pypath.inputs.tcdb import _substrates as tcdb_substrates
-from pypath.utils import reflists
+from collections.abc import Generator
 
-from ..data import get_data_path
-from ..location import load_location_mapping, parse_uniprot_locations
-from ..network import add_gene_prefix, add_metab_prefix
+from .._record import Interaction
 
 
-def tcdb_interactions(ncbi_tax_id: int = 9606) -> pd.DataFrame:
+def tcdb_interactions(
+    ncbi_tax_id: int = 9606,
+) -> Generator[Interaction, None, None]:
     """
-    Fetch and process TCDB substrate data for a specific species.
+    Yield TCDB transporter-substrate interactions as uniform records.
 
     TCDB is a multi-species database where entries from different species
     are mixed together. This function extracts species-specific interactions
-    based on protein UniProt IDs.
+    based on protein UniProt IDs and queries UniProt for their subcellular
+    locations.
 
     Args:
-        ncbi_tax_id: NCBI taxonomy ID (default: 9606 for human).
+        ncbi_tax_id:
+            NCBI taxonomy ID (default: 9606 for human).
 
-    Returns:
-        DataFrame with columns: Source (metabolite with location),
-        Target (protein), database.
+    Yields:
+        :class:`Interaction` records with *source_type*
+        ``'small_molecule'`` and *target_type* ``'protein'``.
     """
 
-    # Load location abbreviation mapping
-    abb_data = load_location_mapping(
-        get_data_path('location_abb_tcdb.csv'),
-        sep=';',
-        columns=['location', 'abbreviation'],
+    from pypath.inputs.tcdb import _substrates as tcdb_substrates
+    from pypath.utils import reflists
+
+    from ..location import (
+        locations_to_abbreviations,
+        tcdb_locations,
+        uniprot_locations,
     )
 
-    # Get species-specific protein set
+    location_mapping = tcdb_locations()
     species_proteins = set(
         reflists.get_reflist('uniprot', ncbi_tax_id=ncbi_tax_id)
     )
+    all_locations = uniprot_locations(organism=ncbi_tax_id, reviewed=True)
 
-    # Collect species-specific protein substrate data
-    data = pd.DataFrame([
-        {
-            'Source': r.transporter_uniprot,
-            'Target': r.substrate_id,
-            'substrate_name': r.substrate_name,
-            'location': r.location,
-        }
-        for r in tcdb_substrates.tcdb_substrate()
-        if r.transporter_uniprot in species_proteins
-    ])
+    for r in tcdb_substrates.tcdb_substrate():
 
-    if data.empty:
-        return pd.DataFrame(columns=['Source', 'Target', 'database'])
+        if r.transporter_uniprot not in species_proteins:
+            continue
 
-    # Parse and map locations to abbreviations
-    location_results = [
-        parse_uniprot_locations(loc).assign(original_row=str(idx))
-        for idx, loc in enumerate(data['location'])
-    ]
-    location_results = [df for df in location_results if not df.empty]
+        if r.transporter_uniprot not in all_locations:
+            continue
 
-    if location_results:
-
-        final_result = (
-            pd.concat(location_results, ignore_index=True)
-            .merge(abb_data, on='location', how='left')
-            .dropna(subset=['abbreviation'])
-        )
-        location_summary = (
-            final_result
-            .groupby('original_row')['abbreviation']
-            .apply(lambda x: list(x.unique()))
-            .reset_index(name='locations')
+        abbreviations = locations_to_abbreviations(
+            all_locations[r.transporter_uniprot],
+            location_mapping,
         )
 
-    else:
-        location_summary = pd.DataFrame(columns=['original_row', 'locations'])
-
-    # Create final TCDB dataframe
-    result = (
-        data
-        .assign(row_id=data.index.astype(str))
-        .merge(
-            location_summary,
-            left_on='row_id',
-            right_on='original_row',
-            how='left',
-        )
-        .dropna(subset=['locations'])
-        .explode('locations')
-    )
-
-    # Add prefixes and format columns
-    result['Source'] = result.apply(
-        lambda row: add_metab_prefix(row['Target'], row['locations']),
-        axis=1,
-    )
-    result['Target'] = result['Source_x'].apply(add_gene_prefix)
-    result['database'] = 'TCDB'
-
-    return result[['Source', 'Target', 'database']]
+        for abbrev in abbreviations:
+            yield Interaction(
+                source=r.substrate_id,
+                target=r.transporter_uniprot,
+                source_type='small_molecule',
+                target_type='protein',
+                id_type_a='tcdb',
+                id_type_b='uniprot',
+                interaction_type='transport',
+                resource='TCDB',
+                mor=0,
+                location=abbrev,
+            )

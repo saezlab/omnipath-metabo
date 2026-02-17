@@ -30,14 +30,8 @@ __all__ = [
 import re
 from io import StringIO
 from itertools import zip_longest
-from typing import TYPE_CHECKING
 
 import pandas as pd
-import pypath.share.curl as curl
-import pypath.utils.reflists as reflists
-
-if TYPE_CHECKING:
-    from typing import Literal
 
 
 def _smart_split(equation_side: str) -> list[str]:
@@ -185,6 +179,9 @@ def rhea_reactions(
     Returns:
         DataFrame with columns: source, target, weight.
     """
+
+    import pypath.share.curl as curl
+    import pypath.utils.reflists as reflists
 
     if rhea_nodes is None:
         # Try to import lipinet for Rhea parsing

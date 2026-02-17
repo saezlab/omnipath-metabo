@@ -22,118 +22,71 @@ subcellular localization information.
 
 from __future__ import annotations
 
-__all__ = [
-    'mrclinksdb_interactions',
-]
+__all__ = ['mrclinksdb_interactions']
 
-import pandas as pd
-from pypath.inputs.mrclinksdb import _interactions
+from collections.abc import Generator
 
-from ..data import get_data_path
-from ..location import load_location_mapping, parse_uniprot_locations
-from ..network import add_gene_prefix, add_metab_prefix
+from .._record import Interaction
 
 
-def mrclinksdb_interactions(organism: str = 'human') -> pd.DataFrame:
+def mrclinksdb_interactions(
+    organism: str = 'human',
+) -> Generator[Interaction, None, None]:
     """
-    Process MRCLinksDB interactions for a specific organism.
+    Yield MRCLinksDB receptor-metabolite interactions as uniform records.
 
     Args:
-        organism: Organism name (e.g., 'human', 'mouse').
+        organism:
+            Organism name (e.g. ``'human'``, ``'mouse'``).
 
-    Returns:
-        DataFrame with columns: Source (metabolite with location),
-        Target (protein), database.
+    Yields:
+        :class:`Interaction` records with *source_type*
+        ``'small_molecule'`` and *target_type* ``'protein'``.
     """
 
-    # Load location abbreviation mapping (reuse TCDB mapping)
-    abb_data = load_location_mapping(
-        get_data_path('location_abb_tcdb.csv'),
-        sep=';',
-        columns=['location', 'abbreviation'],
+    from pypath.inputs.mrclinksdb import _interactions
+
+    from ..location import (
+        locations_to_abbreviations,
+        tcdb_locations,
+        uniprot_locations,
     )
 
-    # Fetch interactions from pypath
-    interactions = list(
-        _interactions.mrclinksdb_interaction(organism=organism)
+    location_mapping = tcdb_locations()
+
+    ncbi_tax_id = 9606 if organism == 'human' else None
+    all_locations = (
+        uniprot_locations(organism=ncbi_tax_id, reviewed=True)
+        if ncbi_tax_id
+        else {}
     )
 
-    # Convert to DataFrame
-    data = pd.DataFrame([
-        {
-            'Target': rec.pubchem,
-            'Source': str(rec.receptor_uniprot),
-            'location': rec.receptor_location,
-        }
-        for rec in interactions
-    ])
+    for rec in _interactions.mrclinksdb_interaction(organism=organism):
 
-    if data.empty:
-        return pd.DataFrame(columns=['Source', 'Target', 'database'])
+        receptor = str(rec.receptor_uniprot)
+        pubchem = rec.pubchem
 
-    # Parse locations for each row
-    all_parsed_locations = []
-
-    for idx, row in data.iterrows():
-
-        parsed = parse_uniprot_locations(row['location'])
-
-        if parsed.empty:
+        if not receptor or not pubchem:
             continue
 
-        for _, loc_row in parsed.iterrows():
-            all_parsed_locations.append({
-                'location': loc_row['location'],
-                'features': loc_row['features'],
-                'original_row': str(idx),
-            })
+        if receptor not in all_locations:
+            continue
 
-    if not all_parsed_locations:
-        return pd.DataFrame(columns=['Source', 'Target', 'database'])
-
-    final_result = pd.DataFrame(all_parsed_locations)
-
-    # Merge with abbreviation data and filter
-    final_result = (
-        final_result
-        .merge(abb_data, on='location', how='left')
-        .dropna(subset=['abbreviation'])
-    )
-
-    # Group by original row to get unique locations
-    location_summary = (
-        final_result
-        .groupby('original_row')['abbreviation']
-        .apply(lambda x: list(x.unique()))
-        .reset_index(name='locations')
-    )
-
-    # Merge back with original data
-    data['row_id'] = data.index.astype(str)
-    result_table = (
-        data
-        .merge(
-            location_summary,
-            left_on='row_id',
-            right_on='original_row',
-            how='left',
+        abbreviations = locations_to_abbreviations(
+            all_locations[receptor],
+            location_mapping,
         )
-        .dropna(subset=['locations'])
-        .explode('locations')
-        .reset_index(drop=True)
-    )
 
-    # Create Gene/Metab identifiers
-    result_table['Source_new'] = result_table.apply(
-        lambda row: add_metab_prefix(row['Target'], row['locations']),
-        axis=1,
-    )
-    result_table['Target_new'] = result_table.apply(
-        lambda row: add_gene_prefix(row['Source']),
-        axis=1,
-    )
-    result_table['database'] = 'MRCLinksDB'
-
-    return result_table[['Source_new', 'Target_new', 'database']].rename(
-        columns={'Source_new': 'Source', 'Target_new': 'Target'}
-    )
+        for abbrev in abbreviations:
+            yield Interaction(
+                source=pubchem,
+                target=receptor,
+                source_type='small_molecule',
+                target_type='protein',
+                id_type_a='pubchem',
+                id_type_b='uniprot',
+                interaction_type='signaling',
+                resource='MRCLinksDB',
+                mor=0,
+                location=abbrev,
+            )
