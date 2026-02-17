@@ -87,7 +87,7 @@ def mrclinksdb_interactions(
             target_type='protein',
             id_type_a='pubchem',
             id_type_b='uniprot',
-            interaction_type='signaling',
+            interaction_type='ligand_receptor',
             resource='MRCLinksDB',
             mor=0,
             locations=tuple(sorted(abbreviations)),

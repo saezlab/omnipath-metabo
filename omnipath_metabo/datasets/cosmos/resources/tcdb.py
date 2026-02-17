@@ -90,6 +90,6 @@ def tcdb_interactions(
             id_type_b='uniprot',
             interaction_type='transport',
             resource='TCDB',
-            mor=0,
+            mor=1,
             locations=tuple(sorted(abbreviations)),
         )

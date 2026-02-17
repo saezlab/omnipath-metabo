@@ -98,8 +98,8 @@ def stitch_interactions(
             source_type='small_molecule',
             target_type='protein',
             id_type_a='pubchem',
-            id_type_b='uniprot',
-            interaction_type='signaling',
+            id_type_b='ensp',
+            interaction_type='unknown',
             resource='STITCH',
             mor=mor,
         )

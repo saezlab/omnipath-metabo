@@ -60,8 +60,8 @@ def brenda_regulations(
             continue
 
         mor = (
-            1 if record.action == 'activating' else
-            -1 if record.action == 'inhibiting' else
+            1 if record.action == 'activator' else
+            -1 if record.action == 'inhibitor' else
             0
         )
 
@@ -71,9 +71,9 @@ def brenda_regulations(
                 target=protein_id,
                 source_type='small_molecule',
                 target_type='protein',
-                id_type_a=record.id_type,
-                id_type_b='uniprot',
-                interaction_type='regulation',
+                id_type_a='synonym',
+                id_type_b=record.id_type,
+                interaction_type='allosteric_regulation',
                 resource='BRENDA',
                 mor=mor,
             )

@@ -78,6 +78,6 @@ def slc_interactions() -> Generator[Interaction, None, None]:
             id_type_b='uniprot',
             interaction_type='transport',
             resource='SLC',
-            mor=0,
+            mor=1,
             locations=tuple(sorted(codes)),
         )
