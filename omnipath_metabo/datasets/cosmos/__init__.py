@@ -65,8 +65,11 @@ Usage — test individual resources::
 
 __all__ = [
     'build',
+    'config',
+    'default_config',
     'resources',
 ]
 
 from . import resources
 from ._build import build
+from ._config import config, default_config

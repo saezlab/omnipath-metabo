@@ -30,7 +30,9 @@ from collections.abc import Generator
 from .._record import Interaction
 
 
-def slc_interactions() -> Generator[Interaction, None, None]:
+def slc_interactions(
+    organism: int = 9606,
+) -> Generator[Interaction, None, None]:
     """
     Yield SLC transporter-substrate interactions as uniform records.
 
@@ -39,11 +41,19 @@ def slc_interactions() -> Generator[Interaction, None, None]:
     The resulting record contains all unique codes as a tuple.
 
     Note: SLC data is only available for human (NCBI taxonomy ID 9606).
+    For other organisms this generator yields nothing.
+
+    Args:
+        organism:
+            NCBI taxonomy ID (default: 9606 for human).
 
     Yields:
         :class:`Interaction` records with *source_type*
         ``'small_molecule'`` and *target_type* ``'protein'``.
     """
+
+    if organism != 9606:
+        return
 
     from pypath.inputs import slc
 

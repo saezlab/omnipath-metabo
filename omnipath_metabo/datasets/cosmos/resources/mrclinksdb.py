@@ -28,16 +28,21 @@ from collections.abc import Generator
 
 from .._record import Interaction
 
+ORGANISM_NAMES = {
+    9606: 'human',
+    10090: 'mouse',
+}
+
 
 def mrclinksdb_interactions(
-    organism: str = 'human',
+    organism: int = 9606,
 ) -> Generator[Interaction, None, None]:
     """
     Yield MRCLinksDB receptor-metabolite interactions as uniform records.
 
     Args:
         organism:
-            Organism name (e.g. ``'human'``, ``'mouse'``).
+            NCBI taxonomy ID (default: 9606 for human).
 
     Yields:
         :class:`Interaction` records with *source_type*
@@ -52,16 +57,11 @@ def mrclinksdb_interactions(
         uniprot_locations,
     )
 
+    organism_name = ORGANISM_NAMES.get(organism, str(organism))
     location_mapping = tcdb_locations()
+    all_locations = uniprot_locations(organism=organism, reviewed=True)
 
-    ncbi_tax_id = 9606 if organism == 'human' else None
-    all_locations = (
-        uniprot_locations(organism=ncbi_tax_id, reviewed=True)
-        if ncbi_tax_id
-        else {}
-    )
-
-    for rec in _interactions.mrclinksdb_interaction(organism=organism):
+    for rec in _interactions.mrclinksdb_interaction(organism=organism_name):
 
         receptor = str(rec.receptor_uniprot)
         pubchem = rec.pubchem

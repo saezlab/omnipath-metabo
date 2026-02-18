@@ -36,7 +36,7 @@ if TYPE_CHECKING:
 
 
 def stitch_interactions(
-    ncbi_tax_id: int = 9606,
+    organism: int = 9606,
     score_threshold: int = 700,
     mode: str | Sequence[str] | None = ('activation', 'inhibition'),
 ) -> Generator[Interaction, None, None]:
@@ -44,7 +44,7 @@ def stitch_interactions(
     Yield STITCH chemical-protein interactions as uniform records.
 
     Args:
-        ncbi_tax_id:
+        organism:
             NCBI taxonomy ID (default: 9606 for human).
         score_threshold:
             Minimum ``final_score`` for interactions.
@@ -67,7 +67,7 @@ def stitch_interactions(
     if mode is not None:
         allowed = (mode,) if isinstance(mode, str) else tuple(mode)
 
-    for rec in interactions(ncbi_tax_id=ncbi_tax_id):
+    for rec in interactions(ncbi_tax_id=organism):
 
         if rec.final_score < score_threshold:
             continue

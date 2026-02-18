@@ -25,24 +25,24 @@ from __future__ import annotations
 __all__ = ['brenda_regulations']
 
 from collections.abc import Generator
-from typing import TYPE_CHECKING
 
 from .._record import Interaction
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+ORGANISM_NAMES = {
+    9606: 'human',
+    10090: 'mouse',
+}
 
 
 def brenda_regulations(
-    organisms: Sequence[str] | None = None,
+    organism: int = 9606,
 ) -> Generator[Interaction, None, None]:
     """
     Yield BRENDA allosteric regulation interactions as uniform records.
 
     Args:
-        organisms:
-            List of organism names (e.g. ``['human']``).
-            Defaults to ``['human']``.
+        organism:
+            NCBI taxonomy ID (default: 9606 for human).
 
     Yields:
         :class:`Interaction` records with *source_type*
@@ -51,10 +51,12 @@ def brenda_regulations(
 
     from pypath.inputs.brenda._main import allosteric_regulation
 
-    if organisms is None:
-        organisms = ['human']
+    organism_name = ORGANISM_NAMES.get(organism, str(organism))
 
-    for record in allosteric_regulation(organisms=organisms, limit=None):
+    for record in allosteric_regulation(
+        organisms=[organism_name],
+        limit=None,
+    ):
 
         if not record.protein:
             continue

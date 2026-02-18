@@ -1,0 +1,27 @@
+# COSMOS PKN default configuration
+#
+# This built-in config provides defaults for all resource processors
+# and pipeline steps. It will be replaced by a dedicated multi-package
+# config system that loads and merges settings from multiple locations.
+
+# NCBI taxonomy ID for the target organism (applies to all resources)
+organism: 9606
+
+# Resources listed here are active by default. Set a resource to
+# `false` to disable it. Each resource inherits the top-level
+# `organism` unless overridden in its own section.
+resources:
+
+  stitch:
+    score_threshold: 700
+    mode:
+      - activation
+      - inhibition
+
+  tcdb: {}
+
+  slc: {}
+
+  brenda: {}
+
+  mrclinksdb: {}

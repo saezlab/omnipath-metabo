@@ -37,6 +37,7 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ._config import config
 from ._record import Interaction
 from .resources import (
     brenda_regulations,
@@ -47,7 +48,7 @@ from .resources import (
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from pathlib import Path
 
 
 PROCESSORS = {
@@ -58,19 +59,9 @@ PROCESSORS = {
     'mrclinksdb': mrclinksdb_interactions,
 }
 
-DEFAULT_ARGS: dict[str, dict] = {
-    'stitch': {'ncbi_tax_id': 9606, 'score_threshold': 700},
-    'tcdb': {'ncbi_tax_id': 9606},
-    'slc': {},
-    'brenda': {'organisms': ['human']},
-    'mrclinksdb': {'organism': 'human'},
-}
-
-DEFAULT_SOURCES = tuple(PROCESSORS)
-
 
 def build(
-    sources: Sequence[str] | None = None,
+    *args: dict | Path | str,
     **kwargs,
 ) -> pd.DataFrame:
     """
@@ -78,37 +69,46 @@ def build(
 
     Calls each requested resource processor, collects the yielded
     :class:`Interaction` records, and returns them as a single
-    DataFrame.
+    DataFrame.  The ``resources`` dict in the config controls both
+    which resources are active and their parameters.  The top-level
+    ``organism`` is injected into each resource unless overridden.
 
     Args:
-        sources:
-            Resource names to include. Defaults to all available:
-            ``('stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb')``.
+        *args:
+            Configuration overrides as dicts or YAML file paths.
         **kwargs:
-            Override default arguments for individual processors.
-            Pass a dict keyed by argument name, e.g.
-            ``build(stitch={'score_threshold': 400})``.
+            Top-level config keys.  Resource names are accepted as
+            shorthand, e.g.::
+
+                build(stitch={'score_threshold': 400})
+                build(tcdb=False, slc=False)
+                build(organism=10090)
 
     Returns:
         DataFrame with one row per interaction, columns matching
         :class:`Interaction` fields.
     """
 
-    if sources is None:
-        sources = DEFAULT_SOURCES
+    cfg = config(*args, **kwargs)
+    organism = cfg.get('organism', 9606)
+    resources = cfg.get('resources', {})
 
     generators = []
 
-    for name in sources:
+    for name, params in resources.items():
+
+        if params is False:
+            continue
 
         if name not in PROCESSORS:
             raise ValueError(
-                f'Unknown source: {name!r}. '
+                f'Unknown resource: {name!r}. '
                 f'Available: {list(PROCESSORS)}'
             )
 
-        args = {**DEFAULT_ARGS.get(name, {}), **kwargs.get(name, {})}
-        generators.append(PROCESSORS[name](**args))
+        resource_args = params if isinstance(params, dict) else {}
+        resource_args.setdefault('organism', organism)
+        generators.append(PROCESSORS[name](**resource_args))
 
     return pd.DataFrame(
         chain.from_iterable(generators),

@@ -31,7 +31,7 @@ from .._record import Interaction
 
 
 def tcdb_interactions(
-    ncbi_tax_id: int = 9606,
+    organism: int = 9606,
 ) -> Generator[Interaction, None, None]:
     """
     Yield TCDB transporter-substrate interactions as uniform records.
@@ -42,7 +42,7 @@ def tcdb_interactions(
     locations.
 
     Args:
-        ncbi_tax_id:
+        organism:
             NCBI taxonomy ID (default: 9606 for human).
 
     Yields:
@@ -61,9 +61,9 @@ def tcdb_interactions(
 
     location_mapping = tcdb_locations()
     species_proteins = set(
-        reflists.get_reflist('uniprot', ncbi_tax_id=ncbi_tax_id)
+        reflists.get_reflist('uniprot', ncbi_tax_id=organism)
     )
-    all_locations = uniprot_locations(organism=ncbi_tax_id, reviewed=True)
+    all_locations = uniprot_locations(organism=organism, reviewed=True)
 
     for r in tcdb_substrates.tcdb_substrate():
 

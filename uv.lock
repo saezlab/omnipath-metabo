@@ -1757,13 +1757,14 @@ wheels = [
 
 [[package]]
 name = "omnipath-metabo"
-version = "0.0.1"
+version = "0.0.2"
 source = { editable = "." }
 dependencies = [
     { name = "pandas", version = "2.3.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.11' or python_full_version >= '3.14'" },
     { name = "pandas", version = "3.0.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.11' and python_full_version < '3.14'" },
     { name = "pypath-common" },
     { name = "pypath-omnipath" },
+    { name = "pyyaml" },
 ]
 
 [package.optional-dependencies]
@@ -1803,6 +1804,7 @@ requires-dist = [
     { name = "pypath-omnipath", git = "https://github.com/saezlab/pypath.git?rev=master" },
     { name = "pytest", marker = "extra == 'tests'", specifier = ">=6.0" },
     { name = "pytest-cov", marker = "extra == 'tests'" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "ruff", marker = "extra == 'tests'" },
     { name = "twine", marker = "extra == 'dev'" },
 ]
