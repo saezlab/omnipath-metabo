@@ -193,13 +193,13 @@ class TestSlcLocations:
 
         assert result['Lysosome'] == 'l'
 
-    def test_has_compound_locations(self):
-        """Contains compound location names with semicolons."""
+    def test_individual_locations_only(self):
+        """Contains only individual location names (no semicolons)."""
 
         result = slc_locations()
-        compound_locs = [loc for loc in result if ';' in loc]
 
-        assert len(compound_locs) > 0
+        assert all(';' not in loc for loc in result)
+        assert len(result) >= 5
 
 
 class TestSlcRoutes:
