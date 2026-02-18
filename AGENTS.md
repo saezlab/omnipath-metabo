@@ -275,6 +275,34 @@ Development dependencies:
 
 ---
 
+## Architecture Repository (saezverse)
+
+A central coordination repository for cross-package architecture and design
+decisions is available at `/home/denes/arch` (remote: saezlab/arch).
+
+**When to use it:**
+- Before making architectural choices that affect multiple packages, check
+  `human/decisions/` for relevant ADRs
+- When planning cross-repo work (e.g., pypath + omnipath-metabo), create a
+  planning document in `ai/` following the `YYYY-MM-topic.md` naming convention
+- Check `human/plans/` for roadmaps and specifications relevant to the current task
+- Check `human/packages/` for descriptions of how packages relate to each other
+- Check `human/guidelines/` for coding style conventions
+
+**Structure:**
+- `human/` — authoritative, human-reviewed documents (may edit for formatting/clarity)
+- `ai/` — AI-generated working documents (create freely with YAML front matter)
+- `skills/` — reusable instruction sets for AI assistants
+- See `AGENTS.md` in that repo for full instructions
+
+**Key documents for this package:**
+- `human/plans/omnipath-metabo-cosmos.md` — COSMOS PKN build plan
+- `human/plans/omnipath-metabo.md` — overall package roadmap
+- `human/packages/omnipath-metabo.md` — package description
+- `human/plans/cosmos-gem-integration.md` — GEM integration cross-repo plan
+
+---
+
 ## Notes
 
 - This plan prioritizes functionality over database integration
