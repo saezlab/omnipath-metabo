@@ -7,6 +7,10 @@
 # NCBI taxonomy ID for the target organism (applies to all resources)
 organism: 9606
 
+# Translate IDs to unified types: metabolites → ChEBI, proteins → ENSG.
+# Disable for faster builds or when raw IDs are needed.
+translate_ids: true
+
 # Resources listed here are active by default. Set a resource to
 # `false` to disable it. Each resource inherits the top-level
 # `organism` unless overridden in its own section.

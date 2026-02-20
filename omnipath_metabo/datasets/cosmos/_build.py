@@ -26,6 +26,10 @@ Resource categories:
 3. PPIs (protein-protein interactions)
 4. GRNs (gene regulatory networks)
 5. Kinase-substrate networks
+
+ID unification (when ``translate_ids`` is ``True``):
+    - Metabolite source IDs → ChEBI (via UniChem or PubChem REST API)
+    - Protein target IDs → Ensembl gene IDs, ENSG (via pypath BioMart)
 """
 
 from __future__ import annotations
@@ -92,6 +96,7 @@ def build(
     cfg = config(*args, **kwargs)
     organism = cfg.get('organism', 9606)
     resources = cfg.get('resources', {})
+    translate = cfg.get('translate_ids', True)
 
     generators = []
 
@@ -110,7 +115,13 @@ def build(
         resource_args.setdefault('organism', organism)
         generators.append(PROCESSORS[name](**resource_args))
 
-    return pd.DataFrame(
+    df = pd.DataFrame(
         chain.from_iterable(generators),
         columns=Interaction._fields,
     )
+
+    if translate:
+        from ._translate import translate_pkn
+        df = translate_pkn(df, organism=organism)
+
+    return df
