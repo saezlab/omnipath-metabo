@@ -272,8 +272,8 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     # ``resource`` column (format: ``'GEM:<gem-name>'``).
 
     def _gem_name(resource: str) -> str:
-        """Extract GEM name from a resource string like 'GEM:Human-GEM'."""
-        return resource.split(':', 1)[-1] if resource.startswith('GEM:') else ''
+        """Extract GEM name from 'GEM:Human-GEM' or 'GEM_transporter:Human-GEM'."""
+        return resource.split(':', 1)[-1] if resource.startswith('GEM') and ':' in resource else ''
 
     def _translate_entity(entity_id, id_type, entity_type, organism, resource):
 
