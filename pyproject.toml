@@ -17,7 +17,7 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=2.0",
-    "pypath-omnipath @ git+https://github.com/saezlab/pypath.git@master",
+    "pypath-omnipath @ file:///Users/priscilla/biotools/pypath",
     "pyyaml>=6.0",
     "pypath-common>=0.2",
 ]
