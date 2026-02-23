@@ -66,7 +66,7 @@ def _transport_reaction_ids(gem_name: str) -> frozenset[str]:
     from pypath.inputs.metatlas._gem import metatlas_gem_yaml_reactions
 
     return frozenset(
-        rxn.reaction_id
+        rxn.id
         for rxn in metatlas_gem_yaml_reactions(gem=gem_name)
         if rxn.subsystem == 'Transport reactions'
     )
