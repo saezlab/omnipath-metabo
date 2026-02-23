@@ -45,6 +45,7 @@ from ._config import config
 from ._record import Interaction
 from .resources import (
     brenda_regulations,
+    gem_interactions,
     mrclinksdb_interactions,
     slc_interactions,
     stitch_interactions,
@@ -61,6 +62,7 @@ PROCESSORS = {
     'slc': slc_interactions,
     'brenda': brenda_regulations,
     'mrclinksdb': mrclinksdb_interactions,
+    'gem': gem_interactions,
 }
 
 

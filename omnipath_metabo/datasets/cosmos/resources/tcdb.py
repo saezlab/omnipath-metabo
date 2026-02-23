@@ -86,7 +86,7 @@ def tcdb_interactions(
             target=r.transporter_uniprot,
             source_type='small_molecule',
             target_type='protein',
-            id_type_a='tcdb',
+            id_type_a='chebi',
             id_type_b='uniprot',
             interaction_type='transport',
             resource='TCDB',

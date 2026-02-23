@@ -59,3 +59,6 @@ class Interaction(NamedTuple):
 
     locations: tuple[str, ...] = ()
     """Subcellular compartment abbreviations (e.g. ``('e', 'r')``)."""
+
+    attrs: dict = {}
+    """Arbitrary extra attributes (e.g. ``{'reverse': True, 'reaction_id': 'MAR00001'}``)."""

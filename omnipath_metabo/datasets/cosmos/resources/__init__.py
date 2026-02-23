@@ -17,6 +17,7 @@
 
 __all__ = [
     'brenda_regulations',
+    'gem_interactions',
     'mrclinksdb_interactions',
     'rhea_reactions',
     'slc_interactions',
@@ -25,6 +26,7 @@ __all__ = [
 ]
 
 from .brenda import brenda_regulations
+from .gem import gem_interactions
 from .mrclinksdb import mrclinksdb_interactions
 from .rhea import rhea_reactions
 from .slc import slc_interactions

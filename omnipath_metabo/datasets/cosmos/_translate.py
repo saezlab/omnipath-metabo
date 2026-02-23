@@ -16,18 +16,24 @@
 """
 ID translation for COSMOS PKN interactions.
 
-Translates all metabolite (source) IDs to ChEBI and all protein (target)
-IDs to Ensembl gene IDs (ENSG).
+Translates all metabolite IDs to ChEBI and all protein IDs to Ensembl
+gene IDs (ENSG).  Translation is direction-aware: GEM resources produce
+enzyme→metabolite edges where the protein is the *source*, so
+``source_type``/``target_type`` columns are checked rather than assuming
+a fixed metabolite-source / protein-target convention.
 
-Translation strategies by source id_type:
+Translation strategies by metabolite id_type:
     - ``'chebi'``: identity (TCDB, SLC are already ChEBI)
     - ``'pubchem'``: UniChem PubChem→ChEBI bulk mapping (STITCH, MRCLinksDB)
     - ``'synonym'``: name→PubChem CID via PubChem REST API, then CID→ChEBI (BRENDA)
+    - ``'metatlas'``: GEM metabolites.tsv ``metsNoComp`` → ``metChEBIID``
+      mapping; loaded once per GEM name from the ``resource`` column.
 
-Translation strategies by target id_type:
+Translation strategies by protein id_type:
     - ``'uniprot'``: pypath ``uniprot → ensg`` via BioMart (TCDB, SLC, MRCLinksDB)
     - ``'ensp'``: two-hop ``ensp → uniprot → ensg`` (STITCH)
     - ``'genesymbol'``: pypath ``genesymbol → ensg`` (BRENDA fallback proteins)
+    - ``'ensembl'``: identity — GEM enzyme IDs are already Ensembl gene IDs
 """
 
 from __future__ import annotations
@@ -102,14 +108,51 @@ def _name_to_chebi(name: str) -> str | None:
         return None
 
 
-def _to_chebi(source_id: str, id_type: str) -> str | None:
+@cache
+def _metatlas_to_chebi(gem: str) -> dict[str, str]:
+    """
+    Build a MetAtlas base metabolite ID → ChEBI mapping for a given GEM.
+
+    Reads the GEM's ``metabolites.tsv`` (via
+    :func:`pypath.inputs.metatlas.metatlas_gem_metabolites`) and extracts
+    the ``metsNoComp`` (base ID without compartment) → ``metChEBIID``
+    correspondence.  Entries with empty ChEBI values are skipped.
+
+    Downloaded once per GEM name and cached for the session.
+
+    Args:
+        gem: GEM name (e.g. ``'Human-GEM'``).
+
+    Returns:
+        Dict mapping base MetAtlas IDs (e.g. ``'MAM00001'``) to ChEBI IDs
+        (e.g. ``'CHEBI:15389'``).
+    """
+
+    from pypath.inputs.metatlas._gem import metatlas_gem_metabolites
+
+    mapping: dict[str, str] = {}
+
+    for row in metatlas_gem_metabolites(gem=gem):
+
+        base_id = row.get('metsNoComp', '')
+        chebi = row.get('metChEBIID', '')
+
+        if base_id and chebi:
+            mapping[base_id] = chebi
+
+    return mapping
+
+
+def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
     """
     Translate a metabolite identifier to ChEBI.
 
     Args:
         source_id: The metabolite identifier.
-        id_type: The identifier type (``'chebi'``, ``'pubchem'``, or
-            ``'synonym'``).
+        id_type: The identifier type (``'chebi'``, ``'pubchem'``,
+            ``'synonym'``, or ``'metatlas'``).
+        gem: GEM name, required when *id_type* is ``'metatlas'``
+            (e.g. ``'Human-GEM'``).
 
     Returns:
         ChEBI ID string, or ``None`` if translation is not possible.
@@ -123,6 +166,9 @@ def _to_chebi(source_id: str, id_type: str) -> str | None:
 
     if id_type == 'synonym':
         return _name_to_chebi(source_id)
+
+    if id_type == 'metatlas':
+        return _metatlas_to_chebi(gem).get(source_id)
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return None
@@ -145,7 +191,12 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
 
     import pypath.utils.mapping as mapping_mod
 
-    if id_type == 'uniprot':
+    if id_type == 'ensembl':
+        # Already an Ensembl gene ID — pass through as-is.
+        # GEM enzyme IDs are ENSG... by construction.
+        return target_id
+
+    elif id_type == 'uniprot':
         result = mapping_mod.map_name(
             target_id,
             'uniprot',
@@ -213,12 +264,39 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
 
     df = df.copy()
 
+    # Translation is direction-aware: source/target roles vary by resource.
+    # GEM produces enzyme→metabolite edges (protein as source, metabolite as
+    # target) in addition to the more common metabolite→protein direction.
+    #
+    # For MetAtlas metabolite IDs the GEM name is extracted from the
+    # ``resource`` column (format: ``'GEM:<gem-name>'``).
+
+    def _gem_name(resource: str) -> str:
+        """Extract GEM name from a resource string like 'GEM:Human-GEM'."""
+        return resource.split(':', 1)[-1] if resource.startswith('GEM:') else ''
+
+    def _translate_entity(entity_id, id_type, entity_type, organism, resource):
+
+        if entity_type == 'small_molecule':
+            return _to_chebi(entity_id, id_type, gem=_gem_name(resource))
+
+        if entity_type == 'protein':
+            return _to_ensg(entity_id, id_type, organism)
+
+        return None
+
     df['source'] = df.apply(
-        lambda row: _to_chebi(row['source'], row['id_type_a']),
+        lambda row: _translate_entity(
+            row['source'], row['id_type_a'], row['source_type'],
+            organism, row['resource'],
+        ),
         axis=1,
     )
     df['target'] = df.apply(
-        lambda row: _to_ensg(row['target'], row['id_type_b'], organism),
+        lambda row: _translate_entity(
+            row['target'], row['id_type_b'], row['target_type'],
+            organism, row['resource'],
+        ),
         axis=1,
     )
 
@@ -227,18 +305,23 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
 
     if n_failed_source:
         _log.warning(
-            'Dropped %d rows: metabolite ID could not be translated to ChEBI.',
+            'Dropped %d rows: source ID could not be translated.',
             n_failed_source,
         )
 
     if n_failed_target:
         _log.warning(
-            'Dropped %d rows: protein ID could not be translated to ENSG.',
+            'Dropped %d rows: target ID could not be translated.',
             n_failed_target,
         )
 
     df = df.dropna(subset=['source', 'target'])
-    df['id_type_a'] = 'chebi'
-    df['id_type_b'] = 'ensg'
+
+    df['id_type_a'] = df['source_type'].map(
+        {'small_molecule': 'chebi', 'protein': 'ensg'}
+    )
+    df['id_type_b'] = df['target_type'].map(
+        {'small_molecule': 'chebi', 'protein': 'ensg'}
+    )
 
     return df.reset_index(drop=True)
