@@ -30,9 +30,9 @@ Establish package structure and incorporate existing COSMOS PKN build scripts.
 
 Develop and integrate clients for additional data sources:
 - Reactome (reactions and pathways)
-- STITCH (compound-protein interactions)
+- ~~STITCH (compound-protein interactions)~~ ✅ Done
 - SwissLipids (lipid hierarchy)
-- Genome-scale metabolism models (GEMs)
+- ~~Genome-scale metabolism models (GEMs)~~ ✅ Done (Human-GEM via MetAtlas)
 - Additional sources as identified
 
 ### Phase 3: Processing Algorithms
