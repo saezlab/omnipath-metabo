@@ -38,7 +38,7 @@ from __future__ import annotations
 
 __all__ = ['gem_interactions']
 
-from collections import Counter
+from collections import Counter, defaultdict
 from collections.abc import Generator
 from typing import TYPE_CHECKING
 
@@ -150,6 +150,12 @@ def gem_interactions(
         swapped.  ``id_type_a`` / ``id_type_b`` are ``'metatlas'`` for
         metabolites, ``'ensembl'`` for enzymes, and ``'reaction_id'``
         for orphan reaction pseudo-enzyme nodes.
+
+        Each yielded record carries ``attrs['gems']``: a sorted list of
+        GEM names that contributed the edge.  When loading a single GEM
+        this list has one element; when the same ``(source, target,
+        reaction_id, reverse)`` key appears in multiple GEMs, the edge
+        is deduplicated and ``attrs['gems']`` records all sources.
     """
 
     from pypath.inputs.metatlas._gem import (
@@ -256,7 +262,11 @@ def gem_interactions(
             base_id = _strip_compartment(rec.target, rec.target_compartment)
             metab_degree[base_id] += 1
 
-    # Yield interactions, skipping high-degree (cofactor) metabolites.
+    # Build Interaction objects, skipping high-degree (cofactor) metabolites.
+    # We collect them first so we can deduplicate across GEMs and attach
+    # provenance (attrs['gems']) before yielding.
+    all_interactions: list[tuple[Interaction, str]] = []
+
     for rec, gem_name in raw:
 
         is_orphan = rec.source_type == 'reaction' or rec.target_type == 'reaction'
@@ -305,16 +315,46 @@ def gem_interactions(
         if is_orphan:
             attrs['orphan'] = True
 
-        yield Interaction(
-            source=source,
-            target=target,
-            source_type=source_type,
-            target_type=target_type,
-            id_type_a=id_type_a,
-            id_type_b=id_type_b,
-            interaction_type='catalysis',
-            resource=f'{resource_prefix}:{gem_name}',
-            mor=0,
-            locations=locations,
-            attrs=attrs,
+        all_interactions.append((
+            Interaction(
+                source=source,
+                target=target,
+                source_type=source_type,
+                target_type=target_type,
+                id_type_a=id_type_a,
+                id_type_b=id_type_b,
+                interaction_type='catalysis',
+                resource=f'{resource_prefix}:{gem_name}',
+                mor=0,
+                locations=locations,
+                attrs=attrs,
+            ),
+            gem_name,
+        ))
+
+    # Deduplicate across GEMs.
+    #
+    # Two edges from different GEMs are considered identical when their
+    # (source, target, reaction_id, reverse) key matches.  For each unique
+    # edge the first occurrence is kept; all contributing GEM names are
+    # collected and stored in attrs['gems'] (always a sorted list, even for
+    # single-GEM builds).
+    seen: dict[tuple, Interaction] = {}
+    gem_provenance: dict[tuple, list[str]] = defaultdict(list)
+
+    for interaction, gem_name in all_interactions:
+        key = (
+            interaction.source,
+            interaction.target,
+            interaction.attrs.get('reaction_id', ''),
+            interaction.attrs.get('reverse', False),
         )
+        if key not in seen:
+            seen[key] = interaction
+        gem_provenance[key].append(gem_name)
+
+    for key, interaction in seen.items():
+        gem_names = sorted(set(gem_provenance[key]))
+        attrs = dict(interaction.attrs)
+        attrs['gems'] = gem_names
+        yield interaction._replace(attrs=attrs)

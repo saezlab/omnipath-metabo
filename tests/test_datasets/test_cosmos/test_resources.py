@@ -298,6 +298,14 @@ class TestGem:
         records = list(gem_interactions(gem='Human-GEM', include_reverse=True))
         assert any(r.attrs.get('reverse') for r in records)
 
+    def test_gems_provenance_single(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        for rec in records[:20]:
+            assert 'gems' in rec.attrs
+            assert rec.attrs['gems'] == ['Human-GEM']
+
 
 class TestRecon3d:
     """Integration tests for the Recon3D transporter processor."""
