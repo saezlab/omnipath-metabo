@@ -47,6 +47,7 @@ from .resources import (
     brenda_regulations,
     gem_interactions,
     mrclinksdb_interactions,
+    recon3d_transporter_interactions,
     slc_interactions,
     stitch_interactions,
     tcdb_interactions,
@@ -63,6 +64,7 @@ PROCESSORS = {
     'brenda': brenda_regulations,
     'mrclinksdb': mrclinksdb_interactions,
     'gem': gem_interactions,
+    'recon3d': recon3d_transporter_interactions,
 }
 
 

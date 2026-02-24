@@ -28,12 +28,19 @@ Translation strategies by metabolite id_type:
     - ``'synonym'``: name→PubChem CID via PubChem REST API, then CID→ChEBI (BRENDA)
     - ``'metatlas'``: GEM metabolites.tsv ``metsNoComp`` → ``metChEBIID``
       mapping; loaded once per GEM name from the ``resource`` column.
+    - ``'bigg'``: Recon3D BiGG base metabolite ID → ChEBI, built from the
+      annotation field of the BiGG JSON (``recon3d_metabolites()``).
 
 Translation strategies by protein id_type:
     - ``'uniprot'``: pypath ``uniprot → ensg`` via BioMart (TCDB, SLC, MRCLinksDB)
     - ``'ensp'``: two-hop ``ensp → uniprot → ensg`` (STITCH)
     - ``'genesymbol'``: pypath ``genesymbol → ensg`` (BRENDA fallback proteins)
     - ``'ensembl'``: identity — GEM enzyme IDs are already Ensembl gene IDs
+    - ``'entrez'``: Recon3D Entrez Gene ID → ENSG.  Tries the Ensembl gene
+      cross-references embedded in the BiGG JSON first; falls back to pypath
+      ``ncbigene → ensg`` BioMart mapping.  ``_ATN`` isoform suffixes must
+      already be stripped by the caller (``recon3d.py`` does this at parse
+      time).
 """
 
 from __future__ import annotations
@@ -109,6 +116,83 @@ def _name_to_chebi(name: str) -> str | None:
 
 
 @cache
+def _bigg_to_chebi() -> dict[str, str]:
+    """
+    Build a BiGG base metabolite ID → ChEBI ID mapping from Recon3D.
+
+    Reads the ChEBI cross-references embedded in the Recon3D BiGG JSON
+    (``recon3d_metabolites()``) — no external API call required.  When a
+    metabolite has multiple ChEBI annotations the first entry is used.
+    Downloaded once and cached for the session.
+
+    Returns:
+        Dict mapping BiGG base IDs (e.g. ``'atp'``) to ChEBI IDs
+        (e.g. ``'CHEBI:30616'``).
+    """
+
+    from pypath.inputs.recon3d._gem import recon3d_metabolites
+
+    mapping: dict[str, str] = {}
+
+    for met in recon3d_metabolites():
+        base_id = met.get('base_id', '')
+        chebis = met.get('chebi', [])
+
+        if base_id and chebis and base_id not in mapping:
+            mapping[base_id] = chebis[0]
+
+    return mapping
+
+
+@cache
+def _entrez_to_ensg_bigg() -> dict[str, str]:
+    """
+    Build an Entrez Gene ID → ENSG mapping via BiGG gene symbols.
+
+    The BiGG JSON gene objects carry a ``name`` field containing the HGNC
+    gene symbol (e.g. ``'SLC25A21'``).  This function strips the ``_ATN``
+    isoform suffix from the gene ``id`` to recover the base Entrez ID, then
+    maps the gene symbol to ENSG using pypath's BioMart-backed
+    ``genesymbol → ensg`` mapping.
+
+    The genesymbol → ENSG mapping table is downloaded once by pypath and
+    cached on disk; subsequent calls are fast dictionary lookups.  The final
+    entrez → ENSG dict is cached in memory for the session.
+
+    Returns:
+        Dict mapping Entrez Gene ID strings (e.g. ``'89874'``) to ENSG IDs
+        (e.g. ``'ENSG00000183032'``).
+    """
+
+    import re
+
+    import pypath.utils.mapping as mapping_mod
+
+    from pypath.inputs.recon3d._gem import recon3d_genes
+
+    result: dict[str, str] = {}
+
+    for gene in recon3d_genes():
+        raw_id = gene.get('id', '')
+        name = gene.get('name', '')
+
+        if not raw_id or not name:
+            continue
+
+        entrez = re.sub(r'_AT\d+$', '', raw_id)
+
+        if entrez in result:
+            continue
+
+        ensg_set = mapping_mod.map_name(name, 'genesymbol', 'ensg', ncbi_tax_id=9606)
+
+        if ensg_set:
+            result[entrez] = next(iter(ensg_set))
+
+    return result
+
+
+@cache
 def _metatlas_to_chebi(gem: str) -> dict[str, str]:
     """
     Build a MetAtlas base metabolite ID → ChEBI mapping for a given GEM.
@@ -170,6 +254,9 @@ def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
     if id_type == 'metatlas':
         return _metatlas_to_chebi(gem).get(source_id)
 
+    if id_type == 'bigg':
+        return _bigg_to_chebi().get(source_id)
+
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return None
 
@@ -180,8 +267,8 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
 
     Args:
         target_id: The protein identifier.
-        id_type: The identifier type (``'uniprot'``, ``'ensp'``, or
-            ``'genesymbol'``).
+        id_type: The identifier type — one of ``'uniprot'``, ``'ensp'``,
+            ``'genesymbol'``, ``'ensembl'``, or ``'entrez'``.
         organism: NCBI taxonomy ID.
 
     Returns:
@@ -195,6 +282,34 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
         # Already an Ensembl gene ID — pass through as-is.
         # GEM enzyme IDs are ENSG... by construction.
         return target_id
+
+    elif id_type == 'entrez':
+        # Recon3D Entrez Gene IDs (_ATN suffixes already stripped by recon3d.py).
+        # Try BiGG-embedded Ensembl cross-references first; fall back to
+        # pypath BioMart mapping.
+        ensg = _entrez_to_ensg_bigg().get(target_id)
+
+        if ensg:
+            return ensg
+
+        result = mapping_mod.map_name(
+            target_id,
+            'ncbigene',
+            'ensg',
+            ncbi_tax_id=organism,
+        )
+
+        if not result:
+            return None
+
+        if len(result) > 1:
+            _log.debug(
+                'Multiple ENSG IDs for Entrez %s: %s — using first.',
+                target_id,
+                result,
+            )
+
+        return next(iter(result))
 
     elif id_type == 'uniprot':
         result = mapping_mod.map_name(
@@ -315,7 +430,7 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
             n_failed_target,
         )
 
-    df = df.dropna(subset=['source', 'target'])
+    df = df.dropna(subset=['source', 'target']).copy()
 
     df['id_type_a'] = df['source_type'].map(
         {'small_molecule': 'chebi', 'protein': 'ensg'}
