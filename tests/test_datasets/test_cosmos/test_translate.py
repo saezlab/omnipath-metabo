@@ -10,8 +10,11 @@ mappings are marked slow.
 import pandas as pd
 import pytest
 
+from unittest.mock import patch
+
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
+    _normalise_hmdb,
     _to_chebi,
     _to_ensg,
     translate_pkn,
@@ -216,3 +219,80 @@ class TestTranslatePkn:
         df = _make_df(rows)
         result = translate_pkn(df)
         assert list(result.index) == list(range(len(result)))
+
+
+# ---------------------------------------------------------------------------
+# HMDB normalisation
+# ---------------------------------------------------------------------------
+
+class TestNormaliseHmdb:
+
+    def test_old_format_5digit(self):
+        assert _normalise_hmdb('HMDB00001') == 'HMDB0000001'
+
+    def test_old_format_no_leading_zeros(self):
+        assert _normalise_hmdb('HMDB00190') == 'HMDB0000190'
+
+    def test_new_format_already_7digit(self):
+        assert _normalise_hmdb('HMDB0000001') == 'HMDB0000001'
+
+    def test_idempotent_on_new_format(self):
+        val = 'HMDB0000190'
+        assert _normalise_hmdb(val) == val
+
+    def test_large_id(self):
+        # IDs with 7 digits already (e.g. HMDB0251697)
+        assert _normalise_hmdb('HMDB0251697') == 'HMDB0251697'
+
+    def test_no_prefix_passthrough(self):
+        assert _normalise_hmdb('CHEBI:12345') == 'CHEBI:12345'
+
+    def test_empty_string_passthrough(self):
+        assert _normalise_hmdb('') == ''
+
+
+# ---------------------------------------------------------------------------
+# _to_chebi with hmdb id_type (mocked UniChem)
+# ---------------------------------------------------------------------------
+
+class TestToChebiHmdb:
+
+    _FAKE_MAPPING = {
+        'HMDB0000001': 'CHEBI:16015',
+        'HMDB0000190': 'CHEBI:17289',
+    }
+
+    def test_new_format_translates(self):
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = _to_chebi('HMDB0000001', 'hmdb')
+        assert result == 'CHEBI:16015'
+
+    def test_old_format_normalised_and_translates(self):
+        """Old 5-digit HMDB ID is normalised before lookup."""
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = _to_chebi('HMDB00190', 'hmdb')
+        assert result == 'CHEBI:17289'
+
+    def test_unknown_hmdb_returns_none(self):
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = _to_chebi('HMDB9999999', 'hmdb')
+        assert result is None
+
+    def test_old_and_new_same_result(self):
+        """Old-format and new-format of the same ID produce the same ChEBI."""
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            old = _to_chebi('HMDB00001', 'hmdb')
+            new = _to_chebi('HMDB0000001', 'hmdb')
+        assert old == new == 'CHEBI:16015'

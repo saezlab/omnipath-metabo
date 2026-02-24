@@ -30,6 +30,9 @@ Translation strategies by metabolite id_type:
       mapping; loaded once per GEM name from the ``resource`` column.
     - ``'bigg'``: Recon3D BiGG base metabolite ID → ChEBI, built from the
       annotation field of the BiGG JSON (``recon3d_metabolites()``).
+    - ``'hmdb'``: UniChem HMDB→ChEBI mapping.  Old 5-digit HMDB IDs
+      (e.g. ``HMDB00001``) are silently normalised to the current 7-digit
+      format (e.g. ``HMDB0000001``) before lookup.
 
 Translation strategies by protein id_type:
     - ``'uniprot'``: pypath ``uniprot → ensg`` via BioMart (TCDB, SLC, MRCLinksDB)
@@ -59,9 +62,12 @@ _log = logging.getLogger(__name__)
 
 _UNICHEM_PUBCHEM = 'PubChem'
 _UNICHEM_CHEBI = 'ChEBI'
+_UNICHEM_HMDB = 'HMDB'
 _PUBCHEM_NAME_URL = (
     'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/cids/JSON'
 )
+
+_HMDB_DIGITS = 7  # current zero-padded width of the numeric part
 
 
 @cache
@@ -80,6 +86,55 @@ def _pubchem_to_chebi() -> dict[str, str]:
 
     raw = unichem_mapping(_UNICHEM_PUBCHEM, _UNICHEM_CHEBI)
     return {cid: next(iter(chebis)) for cid, chebis in raw.items() if chebis}
+
+
+def _normalise_hmdb(hmdb_id: str) -> str:
+    """
+    Normalise a HMDB identifier to the current 7-digit zero-padded format.
+
+    HMDB IDs were historically distributed in a 5-digit format
+    (e.g. ``HMDB00001``).  The current format uses 7 digits
+    (e.g. ``HMDB0000001``).  This function converts old-format IDs
+    transparently; IDs already in the new format are returned unchanged.
+
+    Args:
+        hmdb_id: HMDB identifier string (e.g. ``'HMDB00001'`` or
+            ``'HMDB0000001'``).
+
+    Returns:
+        HMDB ID with 7-digit zero-padded numeric part
+        (e.g. ``'HMDB0000001'``).
+    """
+
+    if not hmdb_id.upper().startswith('HMDB'):
+        return hmdb_id
+
+    return 'HMDB' + hmdb_id[4:].zfill(_HMDB_DIGITS)
+
+
+@cache
+def _hmdb_to_chebi() -> dict[str, str]:
+    """
+    Build a HMDB ID → ChEBI ID mapping via UniChem.
+
+    Uses the UniChem HMDB→ChEBI mapping (source 18).  UniChem already
+    stores HMDB IDs in the current 7-digit format; keys are normalised
+    via :func:`_normalise_hmdb` for safety.  When a HMDB ID maps to
+    multiple ChEBI IDs the first one is used.  Downloaded once per
+    session and cached in memory.
+
+    Returns:
+        Dict mapping normalised HMDB IDs (7-digit) to ChEBI ID strings.
+    """
+
+    from pypath.inputs.unichem import unichem_mapping
+
+    raw = unichem_mapping(_UNICHEM_HMDB, _UNICHEM_CHEBI)
+    return {
+        _normalise_hmdb(hmdb_id): next(iter(chebis))
+        for hmdb_id, chebis in raw.items()
+        if chebis
+    }
 
 
 @cache
@@ -256,6 +311,9 @@ def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
 
     if id_type == 'bigg':
         return _bigg_to_chebi().get(source_id)
+
+    if id_type == 'hmdb':
+        return _hmdb_to_chebi().get(_normalise_hmdb(source_id))
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return None
