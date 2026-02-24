@@ -1,0 +1,27 @@
+# COSMOS PKN expert-curation blacklist
+#
+# Each entry is a dict of column → value pairs.  An interaction is removed
+# if ALL fields in an entry match (AND logic across fields within an entry;
+# OR logic across entries).
+#
+# Matching is exact string equality on the translated DataFrame columns:
+#   source, target          — IDs after translation (ChEBI, ENSG, reaction_id)
+#   resource                — e.g. 'STITCH', 'GEM:Human-GEM', 'Recon3D'
+#   interaction_type        — e.g. 'transport', 'catalysis', 'receptor'
+#   source_type / target_type — 'small_molecule' or 'protein'
+#
+# Example entries (commented out):
+#
+#   # Remove one specific STITCH edge known to be a false positive:
+#   - source: CHEBI:15422
+#     target: ENSG00000001234
+#     resource: STITCH
+#
+#   # Remove all edges for a specific orphan reaction:
+#   - target: MAR00001
+#
+#   # Remove all Recon3D transport edges for a known promiscuous metabolite:
+#   - source: CHEBI:57618
+#     resource: Recon3D
+
+blacklist: []

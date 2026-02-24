@@ -11,6 +11,10 @@ organism: 9606
 # Disable for faster builds or when raw IDs are needed.
 translate_ids: true
 
+# Apply the expert-curation blacklist after ID translation.
+# The built-in blacklist is at data/blacklist.yaml.
+apply_blacklist: true
+
 # Resources listed here are active by default. Set a resource to
 # `false` to disable it. Each resource inherits the top-level
 # `organism` unless overridden in its own section.

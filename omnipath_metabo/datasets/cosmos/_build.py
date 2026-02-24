@@ -128,4 +128,8 @@ def build(
         from ._translate import translate_pkn
         df = translate_pkn(df, organism=organism)
 
+    if cfg.get('apply_blacklist', True):
+        from ._blacklist import apply_blacklist
+        df = apply_blacklist(df)
+
     return df
