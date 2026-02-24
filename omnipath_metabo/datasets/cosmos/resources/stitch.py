@@ -20,6 +20,19 @@ STITCH integrates chemical-protein interaction data from multiple
 evidence channels. This module filters by confidence score and
 interaction mode, normalising orientation so the small molecule
 is always the source.
+
+Each STITCH interaction is classified into one of three protein-role
+categories using Guide to Pharmacology (``guidetopharma``):
+
+- ``'receptor'``: the protein is a receptor in Guide to Pharmacology
+  (GPCR, ion channel, NHR, catalytic receptor).
+- ``'transporter'``: the protein is annotated as a transporter.
+- ``'other'``: allosteric regulators, enzymes, and proteins not present
+  in Guide to Pharmacology.
+
+The classification is stored in the ``interaction_type`` field.  The
+original STITCH mode (``'activation'``, ``'inhibition'``, ``'binding'``,
+etc.) is preserved in ``attrs['stitch_mode']``.
 """
 
 from __future__ import annotations
@@ -27,6 +40,7 @@ from __future__ import annotations
 __all__ = ['stitch_interactions']
 
 from collections.abc import Generator
+from functools import cache
 from typing import TYPE_CHECKING
 
 from .._record import Interaction
@@ -35,13 +49,103 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
+# Guide to Pharmacology target_type values that map to each COSMOS category.
+# Values are lowercase with underscores as returned by guidetopharma._targets.
+_G2P_RECEPTOR_TYPES = frozenset({
+    'gpcr',            # G protein-coupled receptors
+    'catalytic_receptor',  # receptor tyrosine kinases etc.
+    'nhr',             # nuclear hormone receptors
+    'vgic',            # voltage-gated ion channels
+    'lgic',            # ligand-gated ion channels
+    'other_ic',        # other ion channels
+})
+_G2P_TRANSPORTER_TYPES = frozenset({'transporter'})
+
+
+@cache
+def _g2p_uniprot_types(organism: int) -> dict[str, str]:
+    """
+    Build a UniProt → interaction_type dict from Guide to Pharmacology.
+
+    Uses the ``guidetopharma`` subpackage (the newer, actively maintained
+    implementation). ``target_type`` values from the
+    ``targets_and_families`` table are collapsed to three categories:
+    ``'receptor'``, ``'transporter'``, or ``'other'``.
+
+    Downloaded once per session per organism and cached in memory.
+
+    Args:
+        organism: NCBI taxonomy ID.
+
+    Returns:
+        Dict mapping UniProt accession strings to category strings.
+    """
+
+    from pypath.inputs.guidetopharma import protein_targets
+
+    result: dict[str, str] = {}
+
+    for targets_list in protein_targets().values():
+
+        for t in targets_list:
+
+            if t.organism != organism or not t.uniprot:
+                continue
+
+            if t.target_type in _G2P_RECEPTOR_TYPES:
+                result[t.uniprot] = 'receptor'
+            elif t.target_type in _G2P_TRANSPORTER_TYPES:
+                result[t.uniprot] = 'transporter'
+            else:
+                result[t.uniprot] = 'other'
+
+    return result
+
+
+def _classify_protein(ensp: str, organism: int) -> str:
+    """
+    Return the COSMOS interaction_type for a STITCH protein (ENSP).
+
+    Translates the ENSP to UniProt via pypath's BioMart-backed mapping,
+    then looks up the UniProt in the Guide to Pharmacology type table.
+    Returns ``'other'`` if translation fails or the protein is absent
+    from Guide to Pharmacology.
+
+    Args:
+        ensp: Ensembl protein identifier (ENSP...).
+        organism: NCBI taxonomy ID.
+
+    Returns:
+        One of ``'receptor'``, ``'transporter'``, or ``'other'``.
+    """
+
+    import pypath.utils.mapping as mapping_mod
+
+    g2p_types = _g2p_uniprot_types(organism)
+    uniprots = mapping_mod.map_name(ensp, 'ensp', 'uniprot', ncbi_tax_id=organism)
+
+    for uniprot in uniprots:
+        itype = g2p_types.get(uniprot)
+
+        if itype:
+            return itype
+
+    return 'other'
+
+
 def stitch_interactions(
     organism: int = 9606,
     score_threshold: int = 700,
-    mode: str | Sequence[str] | None = ('activation', 'inhibition'),
+    mode: str | Sequence[str] | None = ('activation', 'inhibition', 'binding'),
 ) -> Generator[Interaction, None, None]:
     """
     Yield STITCH chemical-protein interactions as uniform records.
+
+    Each protein target is classified by its biological role using
+    Guide to Pharmacology: ``'receptor'``, ``'transporter'``, or
+    ``'other'`` (allosteric / unknown binding).  The classification
+    is stored in ``interaction_type``; the original STITCH mode is
+    preserved in ``attrs['stitch_mode']``.
 
     Args:
         organism:
@@ -51,13 +155,15 @@ def stitch_interactions(
         mode:
             Interaction mode(s) to keep.  Pass a single string, a
             sequence of strings, or ``None`` to keep all modes.
-            Available modes per record: ``'binding'``, ``'pred_bind'``,
+            Available modes: ``'binding'``, ``'pred_bind'``,
             ``'expression'``, ``'activation'``, ``'inhibition'``,
             ``'reaction'``, ``'catalysis'``.
 
     Yields:
         :class:`Interaction` records with *source_type*
         ``'small_molecule'`` and *target_type* ``'protein'``.
+        ``interaction_type`` is one of ``'receptor'``,
+        ``'transporter'``, or ``'other'``.
     """
 
     from pypath.inputs.new_stitch import interactions
@@ -92,6 +198,8 @@ def stitch_interactions(
         else:
             mor = 0
 
+        interaction_type = _classify_protein(protein_id, organism)
+
         yield Interaction(
             source=chemical_id,
             target=protein_id,
@@ -99,7 +207,8 @@ def stitch_interactions(
             target_type='protein',
             id_type_a='pubchem',
             id_type_b='ensp',
-            interaction_type='unknown',
+            interaction_type=interaction_type,
             resource='STITCH',
             mor=mor,
+            attrs={'stitch_mode': rec.mode},
         )
