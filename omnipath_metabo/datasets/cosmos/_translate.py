@@ -268,7 +268,9 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
     Args:
         target_id: The protein identifier.
         id_type: The identifier type — one of ``'uniprot'``, ``'ensp'``,
-            ``'genesymbol'``, ``'ensembl'``, or ``'entrez'``.
+            ``'genesymbol'``, ``'ensembl'``, ``'entrez'``, or
+            ``'reaction_id'`` (orphan pseudo-enzyme, passed through
+            unchanged).
         organism: NCBI taxonomy ID.
 
     Returns:
@@ -281,6 +283,10 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
     if id_type == 'ensembl':
         # Already an Ensembl gene ID — pass through as-is.
         # GEM enzyme IDs are ENSG... by construction.
+        return target_id
+
+    elif id_type == 'reaction_id':
+        # Orphan reaction pseudo-enzyme: pass through the reaction ID unchanged.
         return target_id
 
     elif id_type == 'entrez':
@@ -432,11 +438,14 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
 
     df = df.dropna(subset=['source', 'target']).copy()
 
-    df['id_type_a'] = df['source_type'].map(
-        {'small_molecule': 'chebi', 'protein': 'ensg'}
-    )
-    df['id_type_b'] = df['target_type'].map(
-        {'small_molecule': 'chebi', 'protein': 'ensg'}
-    )
+    _type_to_id = {'small_molecule': 'chebi', 'protein': 'ensg'}
+
+    # Preserve 'reaction_id' entries (orphan pseudo-enzymes) — only update
+    # rows where the id_type is a translatable type.
+    mask_a = df['id_type_a'] != 'reaction_id'
+    mask_b = df['id_type_b'] != 'reaction_id'
+
+    df.loc[mask_a, 'id_type_a'] = df.loc[mask_a, 'source_type'].map(_type_to_id)
+    df.loc[mask_b, 'id_type_b'] = df.loc[mask_b, 'target_type'].map(_type_to_id)
 
     return df.reset_index(drop=True)

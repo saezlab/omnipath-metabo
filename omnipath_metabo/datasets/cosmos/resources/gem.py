@@ -100,6 +100,7 @@ def gem_interactions(
     organism: int = 9606,
     metab_max_degree: int = 400,
     include_reverse: bool = True,
+    include_orphans: bool = True,
 ) -> Generator[Interaction, None, None]:
     """
     Yield GEM metabolite-enzyme interactions as uniform records.
@@ -116,9 +117,11 @@ def gem_interactions(
     metabolite appearing in more than *metab_max_degree* edges across the
     full collected edge set is excluded.
 
-    Orphan reactions (no gene rule) are skipped by
-    ``metatlas_gem_network``; full orphan handling is planned for a future
-    update.
+    Orphan reactions (no gene rule) are retained when *include_orphans*
+    is ``True``.  The reaction ID is used as a pseudo-enzyme node with
+    ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.  These
+    edges pass through ID translation unchanged and can be identified and
+    filtered downstream by ``attrs['orphan']``.
 
     Args:
         gem:
@@ -136,16 +139,25 @@ def gem_interactions(
         include_reverse:
             If ``True``, include reversed edges for reversible reactions
             (``attrs['reverse'] = True``).  Default: ``True``.
+        include_orphans:
+            If ``True``, include reactions with no gene rule, using the
+            reaction ID as a pseudo-enzyme node.  Default: ``True``.
 
     Yields:
         :class:`Interaction` records.  For metabolite → enzyme edges,
         *source_type* is ``'small_molecule'`` and *target_type* is
         ``'protein'``.  For enzyme → metabolite edges the roles are
         swapped.  ``id_type_a`` / ``id_type_b`` are ``'metatlas'`` for
-        metabolites and ``'ensembl'`` for enzymes.
+        metabolites, ``'ensembl'`` for enzymes, and ``'reaction_id'``
+        for orphan reaction pseudo-enzyme nodes.
     """
 
-    from pypath.inputs.metatlas._gem import metatlas_gem_network
+    from pypath.inputs.metatlas._gem import (
+        metatlas_gem_network,
+        metatlas_gem_yaml_reactions,
+        metatlas_gem_yaml_metabolites,
+    )
+    from pypath.inputs.metatlas._records import GemInteraction
 
     gems = [gem] if isinstance(gem, str) else list(gem)
 
@@ -167,6 +179,70 @@ def gem_interactions(
 
             raw.append((rec, gem_name))
 
+        if include_orphans:
+
+            # Build metabolite → compartment lookup (YAML already cached).
+            met_comp = {
+                met.id: met.compartment
+                for met in metatlas_gem_yaml_metabolites(gem=gem_name)
+            }
+
+            for rxn in metatlas_gem_yaml_reactions(gem=gem_name):
+
+                if rxn.gene_reaction_rule and rxn.gene_reaction_rule.strip():
+                    continue  # handled by metatlas_gem_network above
+
+                rxn_id = rxn.id
+                lb = rxn.lower_bound
+                ub = rxn.upper_bound
+                direction = 1 if lb + ub >= 0 else -1
+                reversible = lb < 0 < ub
+
+                mets = rxn.metabolites
+                if isinstance(mets, list):
+                    mets = dict(mets)
+
+                reactants = [m for m, c in mets.items() if c * direction < 0]
+                products = [m for m, c in mets.items() if c * direction > 0]
+
+                for met_id in reactants:
+                    raw.append((GemInteraction(
+                        source=met_id, target=rxn_id,
+                        source_type='metabolite', target_type='reaction',
+                        source_compartment=met_comp.get(met_id, ''),
+                        target_compartment='',
+                        reaction_id=rxn_id, reverse=False,
+                    ), gem_name))
+
+                for met_id in products:
+                    raw.append((GemInteraction(
+                        source=rxn_id, target=met_id,
+                        source_type='reaction', target_type='metabolite',
+                        source_compartment='',
+                        target_compartment=met_comp.get(met_id, ''),
+                        reaction_id=rxn_id, reverse=False,
+                    ), gem_name))
+
+                if include_reverse and reversible:
+
+                    for met_id in products:
+                        raw.append((GemInteraction(
+                            source=met_id, target=rxn_id,
+                            source_type='metabolite', target_type='reaction',
+                            source_compartment=met_comp.get(met_id, ''),
+                            target_compartment='',
+                            reaction_id=rxn_id, reverse=True,
+                        ), gem_name))
+
+                    for met_id in reactants:
+                        raw.append((GemInteraction(
+                            source=rxn_id, target=met_id,
+                            source_type='reaction', target_type='metabolite',
+                            source_compartment='',
+                            target_compartment=met_comp.get(met_id, ''),
+                            reaction_id=rxn_id, reverse=True,
+                        ), gem_name))
+
     # Count each metabolite's total degree across all collected edges.
     metab_degree: Counter = Counter()
 
@@ -183,26 +259,28 @@ def gem_interactions(
     # Yield interactions, skipping high-degree (cofactor) metabolites.
     for rec, gem_name in raw:
 
+        is_orphan = rec.source_type == 'reaction' or rec.target_type == 'reaction'
+
         if rec.source_type == 'metabolite':
             met_id = _strip_compartment(rec.source, rec.source_compartment)
-            gene_id = rec.target
+            enzyme_id = rec.target
             compartment = rec.source_compartment
             source = met_id
-            target = gene_id
+            target = enzyme_id
             source_type = 'small_molecule'
             target_type = 'protein'
             id_type_a = 'metatlas'
-            id_type_b = 'ensembl'
+            id_type_b = 'reaction_id' if is_orphan else 'ensembl'
 
         else:
-            gene_id = rec.source
+            enzyme_id = rec.source
             met_id = _strip_compartment(rec.target, rec.target_compartment)
             compartment = rec.target_compartment
-            source = gene_id
+            source = enzyme_id
             target = met_id
             source_type = 'protein'
             target_type = 'small_molecule'
-            id_type_a = 'ensembl'
+            id_type_a = 'reaction_id' if is_orphan else 'ensembl'
             id_type_b = 'metatlas'
 
         if metab_degree[met_id] > metab_max_degree:
@@ -210,13 +288,22 @@ def gem_interactions(
 
         locations = (compartment,) if compartment else ()
 
-        is_complex = '_' in gene_id
+        is_complex = '_' in enzyme_id and not is_orphan
 
         resource_prefix = (
             'GEM_transporter'
             if rec.reaction_id in transport_ids[gem_name]
             else 'GEM'
         )
+
+        attrs = {
+            'reverse': rec.reverse,
+            'reaction_id': rec.reaction_id,
+            'enzyme_complex': is_complex,
+        }
+
+        if is_orphan:
+            attrs['orphan'] = True
 
         yield Interaction(
             source=source,
@@ -229,9 +316,5 @@ def gem_interactions(
             resource=f'{resource_prefix}:{gem_name}',
             mor=0,
             locations=locations,
-            attrs={
-                'reverse': rec.reverse,
-                'reaction_id': rec.reaction_id,
-                'enzyme_complex': is_complex,
-            },
+            attrs=attrs,
         )

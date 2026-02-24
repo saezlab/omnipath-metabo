@@ -138,6 +138,7 @@ def recon3d_transporter_interactions(
     organism: int = 9606,
     metab_max_degree: int = 400,
     include_reverse: bool = True,
+    include_orphans: bool = True,
 ) -> Generator[Interaction, None, None]:
     """
     Yield Recon3D transporter interactions as uniform Interaction records.
@@ -178,6 +179,11 @@ def recon3d_transporter_interactions(
         include_reverse:
             If ``True``, include reversed edges for reversible transport
             reactions (``attrs['reverse'] = True``).  Default: ``True``.
+        include_orphans:
+            If ``True``, include transport reactions with no gene rule,
+            using the reaction ID as a pseudo-enzyme node with
+            ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.
+            Default: ``True``.
 
     Yields:
         :class:`~omnipath_metabo.datasets.cosmos._record.Interaction`
@@ -202,7 +208,7 @@ def recon3d_transporter_interactions(
     for rxn in reactions:
         enzymes = _parse_gene_rule(rxn['gene_reaction_rule'])
 
-        if not enzymes:
+        if not enzymes and not include_orphans:
             continue
 
         mets: dict = rxn['metabolites']
@@ -236,6 +242,36 @@ def recon3d_transporter_interactions(
                         transported.append((base, in_comp, out_comp))
 
         if not transported:
+            continue
+
+        if not enzymes:
+            # Orphan transport reaction: use reaction ID as pseudo-enzyme.
+            n_transport_rxn += 1
+
+            for base_id, in_comp, out_comp in transported:
+                raw.append((
+                    base_id, 'metabolite', in_comp,
+                    rxn_id, 'reaction', '',
+                    rxn_id, False, in_comp, out_comp, False,
+                ))
+                raw.append((
+                    rxn_id, 'reaction', '',
+                    base_id, 'metabolite', out_comp,
+                    rxn_id, False, in_comp, out_comp, False,
+                ))
+
+                if reversible and include_reverse:
+                    raw.append((
+                        base_id, 'metabolite', out_comp,
+                        rxn_id, 'reaction', '',
+                        rxn_id, True, out_comp, in_comp, False,
+                    ))
+                    raw.append((
+                        rxn_id, 'reaction', '',
+                        base_id, 'metabolite', in_comp,
+                        rxn_id, True, out_comp, in_comp, False,
+                    ))
+
             continue
 
         n_transport_rxn += 1
@@ -292,23 +328,36 @@ def recon3d_transporter_interactions(
             n_filtered += 1
             continue
 
+        is_orphan = src_type == 'reaction' or tgt_type == 'reaction'
+
         if src_type == 'metabolite':
             source = src
             source_type = 'small_molecule'
             id_type_a = 'bigg'
             target = tgt
             target_type = 'protein'
-            id_type_b = 'entrez'
+            id_type_b = 'reaction_id' if is_orphan else 'entrez'
             locations = (src_comp,) if src_comp else ()
 
         else:
             source = src
             source_type = 'protein'
-            id_type_a = 'entrez'
+            id_type_a = 'reaction_id' if is_orphan else 'entrez'
             target = tgt
             target_type = 'small_molecule'
             id_type_b = 'bigg'
             locations = (tgt_comp,) if tgt_comp else ()
+
+        attrs = {
+            'reverse': is_reverse,
+            'reaction_id': rxn_id,
+            'enzyme_complex': is_complex,
+            'transport_from': transport_from,
+            'transport_to': transport_to,
+        }
+
+        if is_orphan:
+            attrs['orphan'] = True
 
         yield Interaction(
             source=source,
@@ -321,11 +370,5 @@ def recon3d_transporter_interactions(
             resource='Recon3D',
             mor=0,
             locations=locations,
-            attrs={
-                'reverse': is_reverse,
-                'reaction_id': rxn_id,
-                'enzyme_complex': is_complex,
-                'transport_from': transport_from,
-                'transport_to': transport_to,
-            },
+            attrs=attrs,
         )
