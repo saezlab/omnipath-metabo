@@ -137,6 +137,7 @@ def stitch_interactions(
     organism: int = 9606,
     score_threshold: int = 700,
     mode: str | Sequence[str] | None = ('activation', 'inhibition', 'binding'),
+    a_is_acting: bool = True,
 ) -> Generator[Interaction, None, None]:
     """
     Yield STITCH chemical-protein interactions as uniform records.
@@ -158,6 +159,13 @@ def stitch_interactions(
             Available modes: ``'binding'``, ``'pred_bind'``,
             ``'expression'``, ``'activation'``, ``'inhibition'``,
             ``'reaction'``, ``'catalysis'``.
+        a_is_acting:
+            If ``True`` (default), keep only interactions where the
+            chemical is the directed causal agent (``a_is_acting`` flag
+            in the STITCH actions file).  Undirected interactions are
+            dropped.  Set to ``False`` to include all interactions
+            regardless of directionality.  Following the legacy
+            Generation-PKN-COSMOS behaviour.
 
     Yields:
         :class:`Interaction` records with *source_type*
@@ -179,6 +187,9 @@ def stitch_interactions(
             continue
 
         if allowed and rec.mode not in allowed:
+            continue
+
+        if a_is_acting and not rec.directed:
             continue
 
         # Normalise orientation: small molecule as source
