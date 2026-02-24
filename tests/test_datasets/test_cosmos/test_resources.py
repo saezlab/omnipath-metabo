@@ -170,3 +170,194 @@ class TestMrclinksdb:
         records = list(mrclinksdb_interactions())
         with_locs = [r for r in records if r.locations]
         assert len(with_locs) > 0
+
+
+class TestStitchNewFeatures:
+    """Integration tests for STITCH protein-role classification and filters."""
+
+    def test_interaction_type_values(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        records = list(stitch_interactions(organism=9606, score_threshold=900))
+        valid_types = {'receptor', 'transporter', 'other'}
+        for rec in records[:50]:
+            assert rec.interaction_type in valid_types, (
+                f'Unexpected interaction_type: {rec.interaction_type!r}'
+            )
+
+    def test_stitch_mode_in_attrs(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        rec = next(stitch_interactions(organism=9606, score_threshold=900))
+        assert 'stitch_mode' in rec.attrs
+        assert rec.attrs['stitch_mode'] in (
+            'activation', 'inhibition', 'binding',
+            'pred_bind', 'expression', 'reaction', 'catalysis',
+        )
+
+    def test_a_is_acting_filter_reduces_records(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        # Collect first 200 interactions with and without the filter.
+        with_filter, without_filter = [], []
+
+        for i, rec in enumerate(
+            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=True)
+        ):
+            with_filter.append(rec)
+            if i >= 199:
+                break
+
+        for i, rec in enumerate(
+            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=False)
+        ):
+            without_filter.append(rec)
+            if i >= 199:
+                break
+
+        # The directed filter should change the mode distribution.
+        from collections import Counter
+        modes_with = Counter(r.attrs['stitch_mode'] for r in with_filter)
+        modes_without = Counter(r.attrs['stitch_mode'] for r in without_filter)
+        # Without filter, binding dominates; with filter, it is reduced.
+        assert modes_without.get('binding', 0) > modes_with.get('binding', 0)
+
+    def test_binding_mode_included_in_default(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        modes = set()
+        for i, rec in enumerate(
+            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=False)
+        ):
+            modes.add(rec.attrs['stitch_mode'])
+            if i >= 499:
+                break
+
+        assert 'binding' in modes
+
+
+class TestGem:
+    """Integration tests for the GEM processor (downloads Human-GEM)."""
+
+    def test_yields_interactions(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        assert len(records) > 1000
+
+    def test_has_normal_and_orphan_edges(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        normal = [r for r in records if not r.attrs.get('orphan')]
+        orphans = [r for r in records if r.attrs.get('orphan')]
+        assert len(normal) > 0
+        assert len(orphans) > 0
+
+    def test_orphan_id_types(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        for rec in records:
+            if rec.attrs.get('orphan'):
+                if rec.source_type == 'small_molecule':
+                    assert rec.id_type_b == 'reaction_id'
+                else:
+                    assert rec.id_type_a == 'reaction_id'
+
+    def test_normal_edge_id_types(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        for rec in records[:50]:
+            if not rec.attrs.get('orphan'):
+                if rec.source_type == 'small_molecule':
+                    assert rec.id_type_a == 'metatlas'
+                    assert rec.id_type_b == 'ensembl'
+                else:
+                    assert rec.id_type_a == 'ensembl'
+                    assert rec.id_type_b == 'metatlas'
+
+    def test_transport_resource_label(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM'))
+        resources = {r.resource for r in records}
+        assert 'GEM:Human-GEM' in resources
+        assert 'GEM_transporter:Human-GEM' in resources
+
+    def test_include_orphans_false(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM', include_orphans=False))
+        assert all(not r.attrs.get('orphan') for r in records)
+
+    def test_reverse_edges_present(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Human-GEM', include_reverse=True))
+        assert any(r.attrs.get('reverse') for r in records)
+
+
+class TestRecon3d:
+    """Integration tests for the Recon3D transporter processor."""
+
+    def test_yields_interactions(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        records = list(recon3d_transporter_interactions())
+        assert len(records) > 1000
+
+    def test_has_normal_and_orphan_edges(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        records = list(recon3d_transporter_interactions())
+        normal = [r for r in records if not r.attrs.get('orphan')]
+        orphans = [r for r in records if r.attrs.get('orphan')]
+        assert len(normal) > 0
+        assert len(orphans) > 0
+
+    def test_interaction_type_is_transport(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        records = list(recon3d_transporter_interactions())
+        assert all(r.interaction_type == 'transport' for r in records)
+
+    def test_normal_edge_id_types(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        records = list(recon3d_transporter_interactions())
+        for rec in records[:50]:
+            if not rec.attrs.get('orphan'):
+                if rec.source_type == 'small_molecule':
+                    assert rec.id_type_a == 'bigg'
+                    assert rec.id_type_b == 'entrez'
+                else:
+                    assert rec.id_type_a == 'entrez'
+                    assert rec.id_type_b == 'bigg'
+
+    def test_include_orphans_false(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        records = list(recon3d_transporter_interactions(include_orphans=False))
+        assert all(not r.attrs.get('orphan') for r in records)
+
+    def test_transport_attrs_present(self):
+        from omnipath_metabo.datasets.cosmos.resources import (
+            recon3d_transporter_interactions,
+        )
+
+        rec = next(recon3d_transporter_interactions())
+        assert 'transport_from' in rec.attrs
+        assert 'transport_to' in rec.attrs
+        assert 'reaction_id' in rec.attrs

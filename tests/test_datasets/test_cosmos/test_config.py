@@ -30,10 +30,10 @@ class TestDefaultConfig:
         assert isinstance(cfg['resources'], dict)
 
     def test_default_resources(self):
-        """All five resources present by default."""
+        """All seven resources present by default."""
 
         cfg = default_config()
-        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb'}
+        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d'}
         assert set(cfg['resources']) == expected
 
     def test_stitch_defaults(self):
@@ -42,6 +42,8 @@ class TestDefaultConfig:
         assert stitch['score_threshold'] == 700
         assert 'activation' in stitch['mode']
         assert 'inhibition' in stitch['mode']
+        assert 'binding' in stitch['mode']
+        assert stitch['a_is_acting'] is True
 
     def test_independent_copies(self):
         """Each call returns an independent copy."""

@@ -46,6 +46,7 @@ FAKE_PROCESSORS = {
 
 FAKE_DEFAULT_CONFIG = {
     'organism': 9606,
+    'translate_ids': False,  # fake IDs can't be translated; skip for unit tests
     'resources': {
         'fake_a': {},
         'fake_b': {},
@@ -166,7 +167,7 @@ class TestProcessorsRegistry:
     """Tests for the PROCESSORS constant."""
 
     def test_all_resources_registered(self):
-        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb'}
+        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d'}
         assert set(PROCESSORS) == expected
 
     def test_all_callable(self):
