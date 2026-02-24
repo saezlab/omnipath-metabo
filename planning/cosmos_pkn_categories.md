@@ -1,0 +1,6 @@
+- Transporter-metabolite: TCDB (multi-species, can be divided by uniprot ID), SLCtable (human only), Metabolic atlas (multi-species), recon3D (human only), STITCH ****(multi-species)
+- Receptor-metabolite: MRClinksDB (human and mouse), STITCH ****(multi-species)
+- Metabolite-protein interaction: BRENDA (multi-species, Allosteric regulation), STITCH ****(multi-species)
+- Lipid-reaction: Rhea (multi-species, can be divided by uniprot ID), **Reactome, swisslipid, human-gem**
+- Enzyme-metabolite: Metabolic atlas (multi-species, GEM), **KEGG**
+- Signaling network (kinase-phosphoprotein, ligand-receptor, TF-protein): omnipath
