@@ -192,6 +192,13 @@ def recon3d_transporter_interactions(
         is ``'protein'`` and ``id_type_b`` is ``'entrez'``.  Roles are
         swapped for enzyme → metabolite edges.  ``interaction_type`` is
         ``'transport'`` and ``resource`` is ``'Recon3D'``.
+
+    Warning:
+        Reverse edges are already included in the output when
+        ``include_reverse=True`` (the default).  A downstream COSMOS
+        formatter must NOT re-generate reverse edges.  Use
+        ``attrs['reverse']`` to identify and label them, not to create
+        new edges from them.
     """
     from pypath.inputs.recon3d._gem import recon3d_reactions
 

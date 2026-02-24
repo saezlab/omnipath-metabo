@@ -65,11 +65,14 @@ Usage — test individual resources::
 
 __all__ = [
     'build',
+    'build_enzyme_metabolite',
+    'build_receptors',
+    'build_transporters',
     'config',
     'default_config',
     'resources',
 ]
 
 from . import resources
-from ._build import build
+from ._build import build, build_enzyme_metabolite, build_receptors, build_transporters
 from ._config import config, default_config

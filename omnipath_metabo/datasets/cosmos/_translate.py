@@ -48,7 +48,7 @@ Translation strategies by protein id_type:
 
 from __future__ import annotations
 
-__all__ = ['translate_pkn']
+__all__ = ['translate_pkn', '_to_hmdb']
 
 import json
 import logging
@@ -282,6 +282,146 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
     return mapping
 
 
+@cache
+def _pubchem_to_hmdb() -> dict[str, str]:
+    """
+    Build a PubChem CID → HMDB ID mapping via UniChem.
+
+    Downloaded once per session and cached in memory.  When a PubChem CID
+    maps to multiple HMDB IDs the first one is used.
+
+    Returns:
+        Dict mapping PubChem CID strings to HMDB ID strings.
+    """
+    from pypath.inputs.unichem import unichem_mapping
+
+    raw = unichem_mapping(_UNICHEM_PUBCHEM, _UNICHEM_HMDB)
+    return {cid: next(iter(hmdb_ids)) for cid, hmdb_ids in raw.items() if hmdb_ids}
+
+
+@cache
+def _chebi_to_hmdb() -> dict[str, str]:
+    """
+    Build a ChEBI ID → HMDB ID mapping via UniChem.
+
+    Downloaded once per session and cached in memory.  When a ChEBI ID maps
+    to multiple HMDB IDs the first one is used.
+
+    Returns:
+        Dict mapping ChEBI ID strings to HMDB ID strings.
+    """
+    from pypath.inputs.unichem import unichem_mapping
+
+    raw = unichem_mapping(_UNICHEM_CHEBI, _UNICHEM_HMDB)
+    return {chebi: next(iter(hmdb_ids)) for chebi, hmdb_ids in raw.items() if hmdb_ids}
+
+
+@cache
+def _metatlas_to_hmdb(gem: str) -> dict[str, str]:
+    """
+    Build a MetAtlas base metabolite ID → HMDB mapping for a given GEM.
+
+    Reads the GEM's ``metabolites.tsv`` and extracts the ``metsNoComp`` →
+    ``metHMDBID`` correspondence.  Entries with empty HMDB values are skipped.
+
+    Downloaded once per GEM name and cached for the session.
+
+    Args:
+        gem: GEM name (e.g. ``'Human-GEM'``).
+
+    Returns:
+        Dict mapping base MetAtlas IDs to HMDB IDs, or an empty dict if the
+        TSV does not contain an HMDB column.
+    """
+    from pypath.inputs.metatlas._gem import metatlas_gem_metabolites
+
+    mapping: dict[str, str] = {}
+
+    for row in metatlas_gem_metabolites(gem=gem):
+        base_id = row.get('metsNoComp', '')
+        hmdb = row.get('metHMDBID', '')
+        if base_id and hmdb:
+            mapping[base_id] = hmdb
+
+    return mapping
+
+
+@cache
+def _bigg_to_hmdb() -> dict[str, str]:
+    """
+    Build a BiGG base metabolite ID → HMDB ID mapping from Recon3D.
+
+    Reads the HMDB cross-references embedded in the Recon3D BiGG JSON.
+    When a metabolite has multiple HMDB annotations the first entry is used.
+    Downloaded once and cached for the session.
+
+    Returns:
+        Dict mapping BiGG base IDs to HMDB IDs.
+    """
+    from pypath.inputs.recon3d._gem import recon3d_metabolites
+
+    mapping: dict[str, str] = {}
+
+    for met in recon3d_metabolites():
+        base_id = met.get('base_id', '')
+        hmdb_ids = met.get('hmdb', [])
+
+        if base_id and hmdb_ids and base_id not in mapping:
+            mapping[base_id] = hmdb_ids[0]
+
+    return mapping
+
+
+def _to_hmdb(source_id: str, id_type: str, gem: str = '') -> str | None:
+    """
+    Translate a metabolite identifier to HMDB.
+
+    Parallel to :func:`_to_chebi` but maps to HMDB instead of ChEBI.
+    Intended for use in coverage comparison scripts — not used by the
+    production ``translate_pkn`` pipeline.
+
+    Args:
+        source_id: The metabolite identifier.
+        id_type: The identifier type (``'chebi'``, ``'pubchem'``,
+            ``'bigg'``, ``'hmdb'``, ``'metatlas'``, or ``'synonym'``).
+        gem: GEM name, required when *id_type* is ``'metatlas'``
+            (e.g. ``'Human-GEM'``).
+
+    Returns:
+        HMDB ID string, or ``None`` if translation is not possible.
+    """
+    if id_type == 'hmdb':
+        return _normalise_hmdb(source_id)
+
+    if id_type == 'chebi':
+        return _chebi_to_hmdb().get(source_id)
+
+    if id_type == 'pubchem':
+        return _pubchem_to_hmdb().get(str(source_id))
+
+    if id_type == 'bigg':
+        return _bigg_to_hmdb().get(source_id)
+
+    if id_type == 'metatlas':
+        return _metatlas_to_hmdb(gem).get(source_id) if gem else None
+
+    if id_type == 'synonym':
+        # name → pubchem CID → HMDB
+        url = _PUBCHEM_NAME_URL.format(urllib.parse.quote(source_id))
+        try:
+            with urllib.request.urlopen(url, timeout=10) as resp:
+                data = json.loads(resp.read())
+            cids = data.get('IdentifierList', {}).get('CID', [])
+            if not cids:
+                return None
+            return _pubchem_to_hmdb().get(str(cids[0]))
+        except Exception:
+            return None
+
+    _log.debug('Unknown metabolite id_type %r, cannot translate to HMDB.', id_type)
+    return None
+
+
 def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
     """
     Translate a metabolite identifier to ChEBI.
@@ -422,6 +562,184 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
     return next(iter(result))
 
 
+def _gem_name_series(resource_series: pd.Series) -> pd.Series:
+    """
+    Extract the GEM name from a ``resource`` column.
+
+    Handles ``'GEM:Human-GEM'`` and ``'GEM_transporter:Human-GEM'`` formats,
+    returning the part after the colon.  Non-GEM resources return ``''``.
+    """
+    gem_mask = resource_series.str.startswith('GEM') & resource_series.str.contains(':')
+    result = pd.Series('', index=resource_series.index)
+    result[gem_mask] = resource_series[gem_mask].str.split(':', n=1).str[1]
+    return result
+
+
+def _build_metab_mapping(
+    id_type: str,
+    ids: pd.Series,
+    resource_series: pd.Series,
+) -> dict[str, str | None]:
+    """
+    Build a {source_id → ChEBI} mapping for a group of metabolite IDs.
+
+    Called once per ``(id_type, 'small_molecule')`` group.  Uses the cached
+    bulk dictionaries wherever possible; falls back to per-name HTTP calls
+    only for ``'synonym'`` (BRENDA) entries.
+
+    Args:
+        id_type: Metabolite identifier type (e.g. ``'pubchem'``, ``'metatlas'``).
+        ids: Series of source IDs (same index as the group slice).
+        resource_series: Series of resource names (same index).
+
+    Returns:
+        Dict mapping each unique source ID to its ChEBI ID (or ``None``).
+    """
+    unique_ids = ids.unique()
+
+    if id_type == 'chebi':
+        return {uid: uid for uid in unique_ids}
+
+    if id_type == 'pubchem':
+        mapping = _pubchem_to_chebi()
+        return {uid: mapping.get(str(uid)) for uid in unique_ids}
+
+    if id_type == 'bigg':
+        mapping = _bigg_to_chebi()
+        return {uid: mapping.get(uid) for uid in unique_ids}
+
+    if id_type == 'hmdb':
+        mapping = _hmdb_to_chebi()
+        return {uid: mapping.get(_normalise_hmdb(uid)) for uid in unique_ids}
+
+    if id_type == 'metatlas':
+        # Each row may come from a different GEM — build per-GEM mappings.
+        gem_names = _gem_name_series(resource_series)
+        result: dict[str, str | None] = {}
+        for uid in unique_ids:
+            # Find the GEM name for this metabolite ID (use first occurrence).
+            uid_mask = ids == uid
+            gem = gem_names[uid_mask].iloc[0] if uid_mask.any() else ''
+            result[uid] = _metatlas_to_chebi(gem).get(uid) if gem else None
+        return result
+
+    if id_type == 'synonym':
+        # One HTTP call per unique name; @cache deduplicates repeated calls.
+        return {uid: _name_to_chebi(uid) for uid in unique_ids}
+
+    _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
+    return {uid: None for uid in unique_ids}
+
+
+def _build_protein_mapping(
+    id_type: str,
+    ids: pd.Series,
+    organism: int,
+) -> dict[str, str | None]:
+    """
+    Build a {source_id → ENSG} mapping for a group of protein IDs.
+
+    Called once per ``(id_type, 'protein')`` group.  Performs BioMart
+    lookups in bulk by iterating unique IDs and mapping through pypath's
+    cached mapping tables.
+
+    Args:
+        id_type: Protein identifier type (e.g. ``'uniprot'``, ``'ensp'``).
+        ids: Series of source IDs (same index as the group slice).
+        organism: NCBI taxonomy ID.
+
+    Returns:
+        Dict mapping each unique source ID to its ENSG ID (or ``None``).
+    """
+    import pypath.utils.mapping as mapping_mod
+
+    unique_ids = ids.unique()
+
+    if id_type == 'ensembl':
+        return {uid: uid for uid in unique_ids}
+
+    if id_type == 'reaction_id':
+        return {uid: uid for uid in unique_ids}
+
+    if id_type == 'entrez':
+        bigg_map = _entrez_to_ensg_bigg()
+        result: dict[str, str | None] = {}
+        for uid in unique_ids:
+            ensg = bigg_map.get(uid)
+            if not ensg:
+                res = mapping_mod.map_name(uid, 'ncbigene', 'ensg',
+                                           ncbi_tax_id=organism)
+                ensg = next(iter(res)) if res else None
+            result[uid] = ensg
+        return result
+
+    if id_type == 'uniprot':
+        result = {}
+        for uid in unique_ids:
+            res = mapping_mod.map_name(uid, 'uniprot', 'ensg',
+                                       ncbi_tax_id=organism)
+            result[uid] = next(iter(res)) if res else None
+        return result
+
+    if id_type == 'ensp':
+        result = {}
+        for uid in unique_ids:
+            uniprots = mapping_mod.map_name(uid, 'ensp', 'uniprot',
+                                            ncbi_tax_id=organism)
+            ensg_set: set[str] = set()
+            for u in uniprots:
+                ensg_set |= mapping_mod.map_name(u, 'uniprot', 'ensg',
+                                                 ncbi_tax_id=organism)
+            result[uid] = next(iter(ensg_set)) if ensg_set else None
+        return result
+
+    if id_type == 'genesymbol':
+        result = {}
+        for uid in unique_ids:
+            res = mapping_mod.map_name(uid, 'genesymbol', 'ensg',
+                                       ncbi_tax_id=organism)
+            result[uid] = next(iter(res)) if res else None
+        return result
+
+    _log.debug('Unknown protein id_type %r, cannot translate to ENSG.', id_type)
+    return {uid: None for uid in unique_ids}
+
+
+def _translate_column(
+    df: pd.DataFrame,
+    col: str,
+    id_type_col: str,
+    entity_type_col: str,
+    organism: int,
+) -> None:
+    """
+    Translate one column (``'source'`` or ``'target'``) in-place.
+
+    Groups rows by ``(id_type, entity_type)`` and does bulk dict lookups
+    via ``Series.map(dict)`` instead of per-row Python calls.
+
+    Args:
+        df: PKN DataFrame (modified in-place).
+        col: Column to translate (``'source'`` or ``'target'``).
+        id_type_col: Column holding the id_type for *col*.
+        entity_type_col: Column holding the entity_type for *col*.
+        organism: NCBI taxonomy ID.
+    """
+    for (id_type, entity_type), idx in df.groupby(
+        [id_type_col, entity_type_col]
+    ).groups.items():
+        ids = df.loc[idx, col]
+
+        if entity_type == 'small_molecule':
+            mapping = _build_metab_mapping(id_type, ids, df.loc[idx, 'resource'])
+        elif entity_type == 'protein':
+            mapping = _build_protein_mapping(id_type, ids, organism)
+        else:
+            continue
+
+        df.loc[idx, col] = ids.map(mapping)
+
+
 def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     """
     Translate COSMOS PKN IDs to unified types.
@@ -430,9 +748,14 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     translated to Ensembl gene IDs (ENSG).  Rows where either translation
     fails are dropped and a warning is logged.
 
+    Translation is vectorised: rows are grouped by ``(id_type, entity_type)``
+    and bulk dict lookups are used via ``Series.map`` rather than per-row
+    Python function calls.  This is significantly faster for large PKNs.
+
     Args:
         df:
-            PKN DataFrame as returned by :func:`~omnipath_metabo.datasets.cosmos.build`.
+            PKN DataFrame as returned by
+            :func:`~omnipath_metabo.datasets.cosmos.build`.
         organism:
             NCBI taxonomy ID (default: 9606 for human).
 
@@ -440,44 +763,13 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
         DataFrame with ``source`` as ChEBI, ``target`` as ENSG, and updated
         ``id_type_a`` / ``id_type_b`` columns.  Index is reset.
     """
-
     df = df.copy()
 
     # Translation is direction-aware: source/target roles vary by resource.
     # GEM produces enzyme→metabolite edges (protein as source, metabolite as
     # target) in addition to the more common metabolite→protein direction.
-    #
-    # For MetAtlas metabolite IDs the GEM name is extracted from the
-    # ``resource`` column (format: ``'GEM:<gem-name>'``).
-
-    def _gem_name(resource: str) -> str:
-        """Extract GEM name from 'GEM:Human-GEM' or 'GEM_transporter:Human-GEM'."""
-        return resource.split(':', 1)[-1] if resource.startswith('GEM') and ':' in resource else ''
-
-    def _translate_entity(entity_id, id_type, entity_type, organism, resource):
-
-        if entity_type == 'small_molecule':
-            return _to_chebi(entity_id, id_type, gem=_gem_name(resource))
-
-        if entity_type == 'protein':
-            return _to_ensg(entity_id, id_type, organism)
-
-        return None
-
-    df['source'] = df.apply(
-        lambda row: _translate_entity(
-            row['source'], row['id_type_a'], row['source_type'],
-            organism, row['resource'],
-        ),
-        axis=1,
-    )
-    df['target'] = df.apply(
-        lambda row: _translate_entity(
-            row['target'], row['id_type_b'], row['target_type'],
-            organism, row['resource'],
-        ),
-        axis=1,
-    )
+    _translate_column(df, 'source', 'id_type_a', 'source_type', organism)
+    _translate_column(df, 'target', 'id_type_b', 'target_type', organism)
 
     n_failed_source = df['source'].isna().sum()
     n_failed_target = df['target'].isna().sum()

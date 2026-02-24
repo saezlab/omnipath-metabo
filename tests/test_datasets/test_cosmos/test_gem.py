@@ -367,6 +367,24 @@ class TestGemOrphans:
         for rec in records:
             assert rec.attrs['gems'] == ['TestGEM']
 
+    def test_no_duplicate_forward_reverse_keys(self):
+        """Each (source, target, reaction_id, reverse) key is unique.
+
+        Forward and reverse edges are distinguishable and never appear
+        as the same edge.  If this fails, the output contains ambiguous
+        edges that a COSMOS formatter could accidentally double-reverse.
+        """
+        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
+                           mets={'MAM001c': -1, 'MAM002c': 1},
+                           lb=-1000.0, ub=1000.0)
+        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
+        records = self._run([orphan], mets)
+        full_keys = [
+            (r.source, r.target, r.attrs.get('reaction_id'), r.attrs.get('reverse'))
+            for r in records
+        ]
+        assert len(full_keys) == len(set(full_keys))
+
     def test_non_orphan_has_no_orphan_flag(self):
         normal = _reaction(rid='MAR001', gene_reaction_rule='ENSG001',
                            mets={'MAM001c': -1, 'MAM002c': 1})

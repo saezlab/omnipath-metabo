@@ -307,6 +307,70 @@ class TestGem:
             assert rec.attrs['gems'] == ['Human-GEM']
 
 
+@pytest.mark.slow
+class TestStitchMouse:
+    """Integration tests verifying STITCH yields data for mouse (organism=10090)."""
+
+    def test_yields_interactions(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        records = list(stitch_interactions(organism=10090, score_threshold=900))
+        assert len(records) > 0
+
+    def test_resource_label(self):
+        from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
+
+        rec = next(stitch_interactions(organism=10090, score_threshold=900))
+        assert rec.resource == 'STITCH'
+
+
+@pytest.mark.slow
+class TestMrclinksdbMouse:
+    """Integration tests verifying MRCLinksDB yields data for mouse (organism=10090)."""
+
+    def test_yields_interactions(self):
+        from omnipath_metabo.datasets.cosmos.resources import mrclinksdb_interactions
+
+        records = list(mrclinksdb_interactions(organism=10090))
+        assert len(records) > 0
+
+
+@pytest.mark.slow
+class TestGemMouse:
+    """Integration tests verifying GEM yields data for Mouse-GEM."""
+
+    def test_yields_interactions(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        records = list(gem_interactions(gem='Mouse-GEM'))
+        assert len(records) > 1000
+
+    def test_gems_provenance(self):
+        from omnipath_metabo.datasets.cosmos.resources import gem_interactions
+
+        rec = next(gem_interactions(gem='Mouse-GEM'))
+        assert rec.attrs['gems'] == ['Mouse-GEM']
+
+
+@pytest.mark.slow
+class TestBuildMouse:
+    """Integration test verifying build() accepts organism=10090."""
+
+    def test_build_mouse_organism(self):
+        import pandas as pd
+
+        from omnipath_metabo.datasets.cosmos import build
+
+        df = build(
+            organism=10090,
+            slc=False,
+            recon3d=False,
+            stitch={'score_threshold': 900},
+        )
+        assert isinstance(df, pd.DataFrame)
+        assert len(df) > 0
+
+
 class TestRecon3d:
     """Integration tests for the Recon3D transporter processor."""
 

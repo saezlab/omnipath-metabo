@@ -296,3 +296,86 @@ class TestToChebiHmdb:
             old = _to_chebi('HMDB00001', 'hmdb')
             new = _to_chebi('HMDB0000001', 'hmdb')
         assert old == new == 'CHEBI:16015'
+
+
+# ---------------------------------------------------------------------------
+# Vectorized translate_pkn — output equivalence on a synthetic DataFrame
+# ---------------------------------------------------------------------------
+
+class TestTranslatePknVectorized:
+    """Verify that the vectorized translate_pkn produces identical results
+    to the expected output on a small synthetic DataFrame.
+
+    Uses only pass-through id_types (chebi, ensembl, reaction_id) so no
+    external calls are needed.
+    """
+
+    def _make_row(self, source, target, id_type_a, id_type_b,
+                  source_type='small_molecule', target_type='protein',
+                  resource='GEM:Human-GEM', interaction_type='catalysis',
+                  **attrs_kw):
+        return Interaction(
+            source=source, target=target,
+            source_type=source_type, target_type=target_type,
+            id_type_a=id_type_a, id_type_b=id_type_b,
+            interaction_type=interaction_type, resource=resource,
+            mor=0, attrs=dict(attrs_kw),
+        )
+
+    def test_chebi_ensembl_passthrough_unchanged(self):
+        """chebi + ensembl rows are returned with values identical to input."""
+        rows = [
+            self._make_row('CHEBI:30616', 'ENSG00000001234', 'chebi', 'ensembl'),
+            self._make_row('CHEBI:15422', 'ENSG00000141510', 'chebi', 'ensembl'),
+        ]
+        df = _make_df(rows)
+        result = translate_pkn(df)
+        assert list(result['source']) == ['CHEBI:30616', 'CHEBI:15422']
+        assert list(result['target']) == ['ENSG00000001234', 'ENSG00000141510']
+
+    def test_multiple_id_types_in_one_call(self):
+        """DataFrame with mixed id_types handled correctly in a single call."""
+        rows = [
+            # chebi + ensembl: pass-through
+            self._make_row('CHEBI:30616', 'ENSG00000001234', 'chebi', 'ensembl'),
+            # chebi + reaction_id: orphan, pass-through
+            self._make_row('CHEBI:30616', 'MAR04831', 'chebi', 'reaction_id',
+                           target_type='protein', orphan=True),
+            # protein-source GEM edge: ensembl + chebi
+            self._make_row('ENSG00000001234', 'CHEBI:30616', 'ensembl', 'chebi',
+                           source_type='protein', target_type='small_molecule'),
+        ]
+        df = _make_df(rows)
+        result = translate_pkn(df)
+        assert len(result) == 3
+        # chebi+ensembl row
+        row0 = result[result['id_type_a'] == 'chebi'].iloc[0]
+        assert row0['source'] == 'CHEBI:30616'
+        assert row0['id_type_b'] == 'ensg'
+        # orphan row — reaction_id preserved
+        orphan_rows = result[result['id_type_b'] == 'reaction_id']
+        assert len(orphan_rows) == 1
+        assert orphan_rows.iloc[0]['target'] == 'MAR04831'
+
+    def test_pubchem_no_mapping_drops_row(self):
+        """A pubchem ID with no mapping in the dict → row is dropped."""
+        rows = [
+            self._make_row('CHEBI:30616', 'ENSG001', 'chebi', 'ensembl'),
+            self._make_row('9999999999', 'ENSG001', 'pubchem', 'ensembl'),
+        ]
+        df = _make_df(rows)
+        result = translate_pkn(df)
+        # Only the chebi row survives; the pubchem one is dropped.
+        assert len(result) == 1
+        assert result.iloc[0]['source'] == 'CHEBI:30616'
+
+    def test_result_index_is_contiguous(self):
+        """Index is always reset to 0..n-1 after translation."""
+        rows = [
+            self._make_row('CHEBI:30616', 'ENSG001', 'chebi', 'ensembl'),
+            self._make_row('CHEBI:15422', 'ENSG002', 'chebi', 'ensembl'),
+            self._make_row('CHEBI:57540', 'ENSG003', 'chebi', 'ensembl'),
+        ]
+        df = _make_df(rows)
+        result = translate_pkn(df)
+        assert list(result.index) == list(range(len(result)))

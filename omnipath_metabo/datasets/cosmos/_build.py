@@ -34,8 +34,9 @@ ID unification (when ``translate_ids`` is ``True``):
 
 from __future__ import annotations
 
-__all__ = ['build']
+__all__ = ['build', 'build_transporters', 'build_receptors', 'build_enzyme_metabolite']
 
+import logging
 from itertools import chain
 from typing import TYPE_CHECKING
 
@@ -43,6 +44,20 @@ import pandas as pd
 
 from ._config import config
 from ._record import Interaction
+
+_log = logging.getLogger(__name__)
+
+try:
+    from tqdm import tqdm as _tqdm
+except ImportError:
+    _tqdm = None
+
+
+def _progress(iterable, desc: str, **kwargs):
+    """Wrap *iterable* with tqdm if available, otherwise return it unchanged."""
+    if _tqdm is not None:
+        return _tqdm(iterable, desc=desc, **kwargs)
+    return iterable
 from .resources import (
     brenda_regulations,
     gem_interactions,
@@ -103,6 +118,7 @@ def build(
     translate = cfg.get('translate_ids', True)
 
     generators = []
+    active_names = []
 
     for name, params in resources.items():
 
@@ -117,19 +133,142 @@ def build(
 
         resource_args = params if isinstance(params, dict) else {}
         resource_args.setdefault('organism', organism)
+        active_names.append(name)
         generators.append(PROCESSORS[name](**resource_args))
+
+    for name in _progress(active_names, desc='[COSMOS] collecting resources'):
+        _log.info('[COSMOS] Building %s...', name)
 
     df = pd.DataFrame(
         chain.from_iterable(generators),
         columns=Interaction._fields,
     )
 
+    _log.info(
+        '[COSMOS] Collected %d edges from %d resources.',
+        len(df),
+        len(active_names),
+    )
+
     if translate:
         from ._translate import translate_pkn
+        n_before = len(df)
+        _log.info('[COSMOS] Translating IDs...')
         df = translate_pkn(df, organism=organism)
+        _log.info(
+            '[COSMOS] Translation complete: %d/%d edges retained.',
+            len(df),
+            n_before,
+        )
 
     if cfg.get('apply_blacklist', True):
         from ._blacklist import apply_blacklist
         df = apply_blacklist(df)
 
     return df
+
+
+def build_transporters(*args, **kwargs) -> pd.DataFrame:
+    """
+    Build the transporter subset of the COSMOS PKN.
+
+    Convenience wrapper around :func:`build` that enables only
+    transporter-relevant resources (TCDB, SLC, GEM, Recon3D, STITCH)
+    and post-filters to keep only transporter interactions.
+
+    Post-filter predicate:
+        - ``interaction_type == 'transport'``
+        - ``resource.startswith('GEM_transporter')``
+        - STITCH rows where ``interaction_type == 'transporter'``
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  ``brenda`` and
+            ``mrclinksdb`` are disabled unless explicitly re-enabled.
+
+    Returns:
+        DataFrame containing only transporter interactions.
+    """
+    kwargs.setdefault('brenda', False)
+    kwargs.setdefault('mrclinksdb', False)
+    df = build(*args, **kwargs)
+    mask = (
+        df['interaction_type'].eq('transport') |
+        df['resource'].str.startswith('GEM_transporter') |
+        (df['resource'].eq('STITCH') & df['interaction_type'].eq('transporter'))
+    )
+    return df[mask].reset_index(drop=True)
+
+
+def build_receptors(*args, **kwargs) -> pd.DataFrame:
+    """
+    Build the receptor subset of the COSMOS PKN.
+
+    Convenience wrapper around :func:`build` that enables only
+    receptor-relevant resources (MRCLinksDB, STITCH) and post-filters
+    to keep only receptor/ligand interactions.
+
+    Post-filter predicate:
+        - ``interaction_type == 'ligand_receptor'``
+        - STITCH rows where ``interaction_type == 'receptor'``
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  ``tcdb``, ``slc``,
+            ``brenda``, ``gem``, and ``recon3d`` are disabled unless
+            explicitly re-enabled.
+
+    Returns:
+        DataFrame containing only receptor interactions.
+    """
+    kwargs.setdefault('tcdb', False)
+    kwargs.setdefault('slc', False)
+    kwargs.setdefault('brenda', False)
+    kwargs.setdefault('gem', False)
+    kwargs.setdefault('recon3d', False)
+    df = build(*args, **kwargs)
+    mask = (
+        df['interaction_type'].eq('ligand_receptor') |
+        (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
+    )
+    return df[mask].reset_index(drop=True)
+
+
+def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
+    """
+    Build the enzyme-metabolite (metabolic) subset of the COSMOS PKN.
+
+    Convenience wrapper around :func:`build` that enables only
+    metabolic resources (BRENDA, GEM, STITCH) and post-filters to
+    keep only enzyme-metabolite interactions.
+
+    Post-filter predicate:
+        - ``interaction_type == 'allosteric_regulation'``
+        - ``resource.startswith('GEM:')`` (metabolic GEM edges,
+          distinct from ``'GEM_transporter:'`` transport edges)
+        - STITCH rows where ``interaction_type == 'other'``
+
+    Note:
+        ``'GEM_transporter:...'`` resources are excluded because
+        ``'GEM_transporter:...'.startswith('GEM:')`` is ``False``.
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  ``tcdb``, ``slc``,
+            ``mrclinksdb``, and ``recon3d`` are disabled unless
+            explicitly re-enabled.
+
+    Returns:
+        DataFrame containing only enzyme-metabolite interactions.
+    """
+    kwargs.setdefault('tcdb', False)
+    kwargs.setdefault('slc', False)
+    kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('recon3d', False)
+    df = build(*args, **kwargs)
+    mask = (
+        df['interaction_type'].eq('allosteric_regulation') |
+        df['resource'].str.startswith('GEM:') |
+        (df['resource'].eq('STITCH') & df['interaction_type'].eq('other'))
+    )
+    return df[mask].reset_index(drop=True)

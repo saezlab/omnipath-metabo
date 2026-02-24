@@ -152,6 +152,12 @@ class TestBuildWithMocks:
         )
         assert _mock_processors.get('organism') == 10090
 
+    def test_organism_injected_arbitrary_value(self, _mock_processors):
+        """organism= is forwarded for any NCBI taxon ID, not just 9606/10090."""
+
+        build(organism=10116)  # rat
+        assert _mock_processors.get('organism') == 10116
+
     def test_resource_params_passed(self, _mock_processors):
         build(resources={'capture': {'score_threshold': 500}})
         assert _mock_processors.get('score_threshold') == 500

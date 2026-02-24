@@ -156,6 +156,13 @@ def gem_interactions(
         this list has one element; when the same ``(source, target,
         reaction_id, reverse)`` key appears in multiple GEMs, the edge
         is deduplicated and ``attrs['gems']`` records all sources.
+
+    Warning:
+        Reverse edges are already included in the output when
+        ``include_reverse=True`` (the default).  A downstream COSMOS
+        formatter must NOT re-generate reverse edges.  Use
+        ``attrs['reverse']`` to identify and label them, not to create
+        new edges from them.
     """
 
     from pypath.inputs.metatlas._gem import (
