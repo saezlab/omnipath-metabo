@@ -29,16 +29,16 @@ the edge count and produce an incorrect network.  The correct approach is:
 
 | Entity type | Transformation |
 |---|---|
-| Metabolite (ChEBI) | Add ``Metab__`` prefix and ``__<compartment>`` suffix |
+| Metabolite (ChEBI) | Add ``Metab__`` prefix and ``_<compartment>`` suffix (single underscore) |
 | Protein (ENSG) | Add ``Gene<N>__`` prefix where N is a **sequential reaction index** (1, 2, 3, …) assigned per unique ``reaction_id``; add ``_rev`` suffix when ``attrs['reverse'] == True`` |
-| Orphan pseudo-enzyme (reaction_id) | Retain for now; removable via ``include_orphans`` flag |
+| Orphan pseudo-enzyme (reaction_id) | Retained by default; removable via ``include_orphans=False`` |
 
 The reaction index makes the same gene a distinct node in each reaction it
 catalyses, enabling the PKN to represent the same protein acting in multiple
 independent reactions without creating spurious loops.
 
 Example (reaction index 42):
-- ``CHEBI:15422`` in cytoplasm → ``Metab__CHEBI:15422__c``
+- ``CHEBI:15422`` in cytoplasm → ``Metab__CHEBI:15422_c``
 - ``ENSG00000141510`` (forward) → ``Gene42__ENSG00000141510``
 - ``ENSG00000141510`` (reverse) → ``Gene42__ENSG00000141510_rev``
 
@@ -54,14 +54,17 @@ Compartment codes are stored in:
 
 ---
 
-## Implementation checklist (when formatter is written)
+## Implementation checklist
 
-- [ ] Apply node-ID prefixes/suffixes to ``source`` and ``target`` columns
-- [ ] Set ``attrs['cosmos_formatted'] = True`` on each row
-- [ ] Do **not** call ``include_reverse`` or expand edges — the PKN already
-      has both directions
-- [ ] Validate that no ``(source, target, reaction_id, reverse)`` key appears
+- [x] Apply node-ID prefixes/suffixes to ``source`` and ``target`` columns
+- [x] Set ``attrs['cosmos_formatted'] = True`` on each row
+- [x] Do **not** re-generate reverse edges — the PKN already has both
+      directions for GEM/Recon3D; non-pre-expanded transporters are
+      expanded 1→4 rows by the formatter
+- [x] Validate that no ``(source, target, reaction_id, reverse)`` key appears
       more than once after formatting (the safety test in ``test_gem.py``
-      confirms this pre-formatting)
-- [ ] Handle orphan pseudo-enzymes (``id_type == 'reaction_id'``) — decide
-      whether to include, drop, or relabel them in the formatted network
+      confirms this pre-formatting; ``test_format.py`` covers post-formatting)
+- [x] Handle orphan pseudo-enzymes (``id_type == 'reaction_id'``) — kept by
+      default; removable via ``include_orphans=False``
+
+Implemented in ``omnipath_metabo/datasets/cosmos/_format.py`` (commit ``e6c3e92``).

@@ -135,36 +135,47 @@ def _assign_n(df: pd.DataFrame) -> pd.Series:
     same ``reaction_id`` within a category receive the same N.  All other
     rows each consume one N value.
 
+    Implementation uses ``pd.factorize`` (which preserves first-occurrence
+    order) to avoid Python-level row iteration.
+
     Args:
         df: DataFrame with ``_category`` column already set.
 
     Returns:
         Integer Series aligned to ``df.index``.
     """
+    # Vectorised pre-expanded check (no apply needed)
+    pre_exp_mask = (
+        df['resource'].str.startswith('GEM', na=False) |
+        df['resource'].isin(_PRE_EXPANDED_EXACT)
+    )
+
+    # Build a reaction key per row:
+    #   - Pre-expanded with a reaction_id → use the reaction_id string so that
+    #     all rows of the same reaction share a key (and thus the same N).
+    #   - Everything else → use a unique per-row sentinel so each row gets
+    #     its own N.  We prefix with '__idx__' to avoid collisions with
+    #     real reaction IDs.
+    rxn_key = pd.Series(
+        '__idx__' + df.index.astype(str), index=df.index, dtype=object
+    )
+
+    if pre_exp_mask.any():
+        rxn_ids = df.loc[pre_exp_mask, 'attrs'].apply(
+            lambda a: a.get('reaction_id') if isinstance(a, dict) else None
+        )
+        valid = rxn_ids.dropna()
+        if not valid.empty:
+            rxn_key.loc[valid.index] = valid.astype(str)
+
+    # factorize within each category: preserves first-occurrence order,
+    # returns 0-based codes → add 1 for 1-based N.
     n_series = pd.Series(0, index=df.index, dtype=int)
-
     for cat in _CATEGORIES:
-        mask = df['_category'] == cat
-        n = 1
-        seen: dict[str, int] = {}   # reaction_id → N (pre-expanded only)
-
-        for idx, row in df.loc[mask].iterrows():
-            attrs = row['attrs'] if isinstance(row['attrs'], dict) else {}
-
-            if _is_pre_expanded(row['resource']):
-                rxn_id = attrs.get('reaction_id')
-                if rxn_id is None:
-                    n_series.at[idx] = n
-                    n += 1
-                elif rxn_id in seen:
-                    n_series.at[idx] = seen[rxn_id]
-                else:
-                    seen[rxn_id] = n
-                    n_series.at[idx] = n
-                    n += 1
-            else:
-                n_series.at[idx] = n
-                n += 1
+        cat_mask = df['_category'] == cat
+        if cat_mask.any():
+            codes, _ = pd.factorize(rxn_key[cat_mask])
+            n_series[cat_mask] = codes + 1
 
     return n_series
 
