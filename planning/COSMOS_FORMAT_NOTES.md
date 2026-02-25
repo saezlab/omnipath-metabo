@@ -68,3 +68,24 @@ Compartment codes are stored in:
       default; removable via ``include_orphans=False``
 
 Implemented in ``omnipath_metabo/datasets/cosmos/_format.py`` (commit ``e6c3e92``).
+
+---
+
+## Known issues / caveats
+
+### sign=0 rows from STITCH (63,189 rows in human full PKN, 2026-02-25)
+
+STITCH interactions where the mode of regulation is unknown are stored with
+``mor=0``, which becomes ``sign=0`` in the formatted output.  The COSMOS R
+package expects ``sign`` to be strictly ±1; it filters or imputes zeros at
+load time, so these rows are not silently included in the optimisation.
+
+**Resolution options (not yet implemented):**
+
+- Drop ``sign=0`` rows from the output (``build_cosmos_pkn.py --drop-zero-sign``).
+- Impute ``sign=0`` → ``sign=1`` (unsigned interactions treated as activating).
+- Keep as-is and let COSMOS R handle it — current behaviour.
+
+The affected rows are predominantly STITCH ``binding`` mode interactions.
+The ``attrs['stitch_mode']`` column carries the original STITCH mode string
+and can be used to decide per-mode imputation strategy.
