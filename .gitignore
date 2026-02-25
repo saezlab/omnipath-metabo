@@ -1,3 +1,8 @@
+# Generated output files (scripts/build_cosmos_pkn.py, scripts/compare_metabolite_ids.py)
+cosmos_pkn.csv
+cosmos_pkn.tsv
+metabolite_id_coverage.csv
+
 *~
 __pycache__/
 /build/
