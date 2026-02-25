@@ -30,12 +30,17 @@ the edge count and produce an incorrect network.  The correct approach is:
 | Entity type | Transformation |
 |---|---|
 | Metabolite (ChEBI) | Add ``Metab__`` prefix and ``__<compartment>`` suffix |
-| Protein (ENSG) | Add ``Gene<N>__`` prefix where N is the organism NCBI tax ID |
-| Orphan pseudo-enzyme (reaction_id) | Retain as-is or drop (TBD) |
+| Protein (ENSG) | Add ``Gene<N>__`` prefix where N is a **sequential reaction index** (1, 2, 3, …) assigned per unique ``reaction_id``; add ``_rev`` suffix when ``attrs['reverse'] == True`` |
+| Orphan pseudo-enzyme (reaction_id) | Retain for now; removable via ``include_orphans`` flag |
 
-Example:
+The reaction index makes the same gene a distinct node in each reaction it
+catalyses, enabling the PKN to represent the same protein acting in multiple
+independent reactions without creating spurious loops.
+
+Example (reaction index 42):
 - ``CHEBI:15422`` in cytoplasm → ``Metab__CHEBI:15422__c``
-- ``ENSG00000141510`` (human) → ``Gene9606__ENSG00000141510``
+- ``ENSG00000141510`` (forward) → ``Gene42__ENSG00000141510``
+- ``ENSG00000141510`` (reverse) → ``Gene42__ENSG00000141510_rev``
 
 ---
 

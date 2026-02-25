@@ -70,9 +70,11 @@ __all__ = [
     'build_transporters',
     'config',
     'default_config',
+    'format_pkn',
     'resources',
 ]
 
 from . import resources
 from ._build import build, build_enzyme_metabolite, build_receptors, build_transporters
 from ._config import config, default_config
+from ._format import format_pkn
