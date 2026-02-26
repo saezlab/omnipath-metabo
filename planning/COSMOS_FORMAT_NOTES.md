@@ -73,19 +73,28 @@ Implemented in ``omnipath_metabo/datasets/cosmos/_format.py`` (commit ``e6c3e92`
 
 ## Known issues / caveats
 
-### sign=0 rows from STITCH (63,189 rows in human full PKN, 2026-02-25)
+### sign=0 rows from STITCH ✅ resolved (commit df88e5c)
 
-STITCH interactions where the mode of regulation is unknown are stored with
-``mor=0``, which becomes ``sign=0`` in the formatted output.  The COSMOS R
-package expects ``sign`` to be strictly ±1; it filters or imputes zeros at
-load time, so these rows are not silently included in the optimisation.
+Resolved by removing ``binding`` from the default STITCH mode list.  Only
+``activation`` and ``inhibition`` are fetched by default, so ``mor=0`` no
+longer arises from STITCH in a standard build.  Binding can still be
+requested explicitly via ``mode=('activation', 'inhibition', 'binding')``.
 
-**Resolution options (not yet implemented):**
+BRENDA ``mor=0`` (neither activator nor inhibitor) is now also skipped.
+MRCLinksDB changed to ``mor=1`` (receptor-ligand binding treated as activating).
 
-- Drop ``sign=0`` rows from the output (``build_cosmos_pkn.py --drop-zero-sign``).
-- Impute ``sign=0`` → ``sign=1`` (unsigned interactions treated as activating).
-- Keep as-is and let COSMOS R handle it — current behaviour.
+### GEM / Recon3D mor=0 — pending alignment with COSMOS team
 
-The affected rows are predominantly STITCH ``binding`` mode interactions.
-The ``attrs['stitch_mode']`` column carries the original STITCH mode string
-and can be used to decide per-mode imputation strategy.
+GEM and Recon3D metabolic edges carry ``mor=0`` (stoichiometric, no
+regulatory sign).  Two precedents exist in the legacy R code:
+
+- **Old** (``Generation-PKN-COSMOS``, line 875): ``GSMM.network$sign <- 1``
+  — all GEM edges explicitly set to ``sign=1`` before merging.
+- **New** (OmnipathR ``cosmos_combine_networks``): ``chalmers_gem_network()``
+  has no ``sign`` column; ``bind_rows`` produces ``sign=NA`` for GEM rows,
+  left for ``cosmosR`` to handle downstream.
+
+Our ``mor=0`` is semantically closer to ``NA`` than to ``1``.  The correct
+value depends on how ``cosmosR::preprocess_COSMOS_signaling_to_metabolism``
+treats ``sign=0`` vs ``sign=NA`` — **to be confirmed with COSMOS coworker**
+before changing.
