@@ -42,7 +42,7 @@ class TestDefaultConfig:
         assert stitch['score_threshold'] == 700
         assert 'activation' in stitch['mode']
         assert 'inhibition' in stitch['mode']
-        assert 'binding' in stitch['mode']
+        assert 'binding' not in stitch['mode']
         assert stitch['a_is_acting'] is True
 
     def test_independent_copies(self):

@@ -25,7 +25,6 @@ resources:
     mode:
       - activation
       - inhibition
-      - binding
     a_is_acting: true
 
   tcdb: {}

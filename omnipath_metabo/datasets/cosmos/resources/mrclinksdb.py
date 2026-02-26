@@ -89,6 +89,6 @@ def mrclinksdb_interactions(
             id_type_b='uniprot',
             interaction_type='ligand_receptor',
             resource='MRCLinksDB',
-            mor=0,
+            mor=1,
             locations=tuple(sorted(abbreviations)),
         )

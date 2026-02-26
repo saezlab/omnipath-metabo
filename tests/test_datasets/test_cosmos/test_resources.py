@@ -198,18 +198,32 @@ class TestStitchNewFeatures:
     def test_a_is_acting_filter_reduces_records(self):
         from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
 
+        # Explicitly include binding so the a_is_acting filter has something to
+        # remove (binding interactions are undirected and dropped when a_is_acting=True).
+        all_modes = ('activation', 'inhibition', 'binding')
+
         # Collect first 200 interactions with and without the filter.
         with_filter, without_filter = [], []
 
         for i, rec in enumerate(
-            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=True)
+            stitch_interactions(
+                organism=9606,
+                score_threshold=900,
+                mode=all_modes,
+                a_is_acting=True,
+            )
         ):
             with_filter.append(rec)
             if i >= 199:
                 break
 
         for i, rec in enumerate(
-            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=False)
+            stitch_interactions(
+                organism=9606,
+                score_threshold=900,
+                mode=all_modes,
+                a_is_acting=False,
+            )
         ):
             without_filter.append(rec)
             if i >= 199:
@@ -222,12 +236,20 @@ class TestStitchNewFeatures:
         # Without filter, binding dominates; with filter, it is reduced.
         assert modes_without.get('binding', 0) > modes_with.get('binding', 0)
 
-    def test_binding_mode_included_in_default(self):
+    def test_binding_mode_can_be_explicitly_included(self):
+        """Binding mode is excluded from defaults but can be requested explicitly."""
+
         from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
 
         modes = set()
+
         for i, rec in enumerate(
-            stitch_interactions(organism=9606, score_threshold=900, a_is_acting=False)
+            stitch_interactions(
+                organism=9606,
+                score_threshold=900,
+                mode=('activation', 'inhibition', 'binding'),
+                a_is_acting=False,
+            )
         ):
             modes.add(rec.attrs['stitch_mode'])
             if i >= 499:

@@ -67,6 +67,9 @@ def brenda_regulations(
             0
         )
 
+        if mor == 0:
+            continue
+
         for protein_id in record.protein:
             yield Interaction(
                 source=record.compound,

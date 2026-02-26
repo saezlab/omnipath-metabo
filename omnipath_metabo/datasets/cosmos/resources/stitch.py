@@ -136,7 +136,7 @@ def _classify_protein(ensp: str, organism: int) -> str:
 def stitch_interactions(
     organism: int = 9606,
     score_threshold: int = 700,
-    mode: str | Sequence[str] | None = ('activation', 'inhibition', 'binding'),
+    mode: str | Sequence[str] | None = ('activation', 'inhibition'),
     a_is_acting: bool = True,
 ) -> Generator[Interaction, None, None]:
     """
