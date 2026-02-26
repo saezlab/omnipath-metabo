@@ -64,7 +64,15 @@ def mrclinksdb_interactions(
     for rec in _interactions.mrclinksdb_interaction(organism=organism_name):
 
         receptor = str(rec.receptor_uniprot)
-        pubchem = rec.pubchem
+        pubchem_raw = str(rec.pubchem)
+
+        # PubChem IDs arrive with a 'CID:' prefix (e.g. 'CID:13712').
+        # Records that do not match this pattern (including the CSV header
+        # row that pypath passes through) are skipped.
+        if not pubchem_raw.startswith('CID:'):
+            continue
+
+        pubchem = pubchem_raw[4:]  # strip 'CID:' → plain numeric string
 
         if not receptor or not pubchem:
             continue
