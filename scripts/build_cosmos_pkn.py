@@ -9,18 +9,18 @@ Pipeline::
 
 Usage::
 
-    uv run python scripts/build_cosmos_pkn.py
+    python scripts/build_cosmos_pkn.py
 
     # Human PKN, transporters only, TSV output
-    uv run python scripts/build_cosmos_pkn.py \\
+    python scripts/build_cosmos_pkn.py \\
         --subset transporters --output cosmos_transporters.tsv
 
     # Mouse, no STITCH, drop connector edges
-    uv run python scripts/build_cosmos_pkn.py \\
+    python scripts/build_cosmos_pkn.py \\
         --organism 10090 --no-stitch --no-connector-edges
 
     # Full PKN with every column (for debugging)
-    uv run python scripts/build_cosmos_pkn.py --all-columns
+    python scripts/build_cosmos_pkn.py --all-columns
 
 Output columns (default)
 -------------------------
@@ -52,11 +52,18 @@ def _parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         '--subset',
-        choices=['all', 'transporters', 'receptors', 'enzyme_metabolite'],
+        choices=['all', 'transporters', 'receptors', 'allosteric', 'enzyme_metabolite'],
         default='all',
         help=(
             'Which functional subset to build.  '
-            '"all" uses build(); others use the dedicated build_*() wrappers.'
+            'All subsets contain protein-metabolite interactions; '
+            'they differ by biological function: '
+            '"transporters" = membrane transport (TCDB, SLC, GEM transporters, Recon3D, STITCH transporters); '
+            '"receptors" = ligand-receptor signalling (MRCLinksDB, STITCH receptors); '
+            '"allosteric" = allosteric regulation, small molecules that activate/inhibit proteins '
+            '(BRENDA, STITCH other); '
+            '"enzyme_metabolite" = stoichiometric enzyme-metabolite reactions from GEMs (GEM metabolic only).  '
+            '"all" is the union of all four.'
         ),
     )
     p.add_argument('--score-threshold', type=int, default=700,
@@ -112,6 +119,7 @@ def _build(args: argparse.Namespace):
     """Call the appropriate build function."""
     from omnipath_metabo.datasets.cosmos import (
         build,
+        build_allosteric,
         build_enzyme_metabolite,
         build_receptors,
         build_transporters,
@@ -141,6 +149,7 @@ def _build(args: argparse.Namespace):
         'all': build,
         'transporters': build_transporters,
         'receptors': build_receptors,
+        'allosteric': build_allosteric,
         'enzyme_metabolite': build_enzyme_metabolite,
     }[args.subset]
 

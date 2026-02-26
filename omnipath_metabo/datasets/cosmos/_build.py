@@ -34,7 +34,7 @@ ID unification (when ``translate_ids`` is ``True``):
 
 from __future__ import annotations
 
-__all__ = ['build', 'build_transporters', 'build_receptors', 'build_enzyme_metabolite']
+__all__ = ['build', 'build_transporters', 'build_receptors', 'build_allosteric', 'build_enzyme_metabolite']
 
 import logging
 from itertools import chain
@@ -234,41 +234,82 @@ def build_receptors(*args, **kwargs) -> pd.DataFrame:
     return df[mask].reset_index(drop=True)
 
 
-def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
+def build_allosteric(*args, **kwargs) -> pd.DataFrame:
     """
-    Build the enzyme-metabolite (metabolic) subset of the COSMOS PKN.
+    Build the allosteric-regulation subset of the COSMOS PKN.
 
     Convenience wrapper around :func:`build` that enables only
-    metabolic resources (BRENDA, GEM, STITCH) and post-filters to
-    keep only enzyme-metabolite interactions.
+    allosteric-relevant resources (BRENDA, STITCH) and post-filters
+    to keep only allosteric interactions.
+
+    Corresponds to the *Metabolite-protein interaction* category in the
+    COSMOS PKN planning document: small molecules that activate or
+    inhibit proteins through allosteric binding, distinct from
+    stoichiometric enzymatic metabolism.
 
     Post-filter predicate:
-        - ``interaction_type == 'allosteric_regulation'``
-        - ``resource.startswith('GEM:')`` (metabolic GEM edges,
-          distinct from ``'GEM_transporter:'`` transport edges)
+        - ``interaction_type == 'allosteric_regulation'`` (BRENDA)
         - STITCH rows where ``interaction_type == 'other'``
-
-    Note:
-        ``'GEM_transporter:...'`` resources are excluded because
-        ``'GEM_transporter:...'.startswith('GEM:')`` is ``False``.
 
     Args:
         *args: Passed through to :func:`build`.
         **kwargs: Passed through to :func:`build`.  ``tcdb``, ``slc``,
-            ``mrclinksdb``, and ``recon3d`` are disabled unless
+            ``mrclinksdb``, ``gem``, and ``recon3d`` are disabled unless
             explicitly re-enabled.
 
     Returns:
-        DataFrame containing only enzyme-metabolite interactions.
+        DataFrame containing only allosteric regulation interactions.
     """
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
     kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     df = build(*args, **kwargs)
     mask = (
         df['interaction_type'].eq('allosteric_regulation') |
-        df['resource'].str.startswith('GEM:') |
         (df['resource'].eq('STITCH') & df['interaction_type'].eq('other'))
     )
     return df[mask].reset_index(drop=True)
+
+
+def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
+    """
+    Build the enzyme-metabolite (metabolic) subset of the COSMOS PKN.
+
+    Convenience wrapper around :func:`build` that enables only GEM
+    resources and post-filters to keep only stoichiometric
+    enzyme-metabolite interactions from genome-scale metabolic models.
+
+    Corresponds to the *Enzyme-metabolite* category in the COSMOS PKN
+    planning document: direct metabolic reactions where enzymes act on
+    substrates and products, as opposed to allosteric regulation.
+
+    Post-filter predicate:
+        - ``resource.startswith('GEM:')`` (metabolic GEM edges,
+          distinct from ``'GEM_transporter:'`` transport edges)
+
+    Note:
+        ``'GEM_transporter:...'`` resources are excluded because
+        ``'GEM_transporter:...'.startswith('GEM:')`` is ``False``.
+        For allosteric regulation (BRENDA, STITCH), use
+        :func:`build_allosteric`.
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  ``tcdb``, ``slc``,
+            ``brenda``, ``mrclinksdb``, ``recon3d``, and ``stitch`` are
+            disabled unless explicitly re-enabled.
+
+    Returns:
+        DataFrame containing only stoichiometric enzyme-metabolite
+        interactions from GEMs.
+    """
+    kwargs.setdefault('tcdb', False)
+    kwargs.setdefault('slc', False)
+    kwargs.setdefault('brenda', False)
+    kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('recon3d', False)
+    kwargs.setdefault('stitch', False)
+    df = build(*args, **kwargs)
+    return df[df['resource'].str.startswith('GEM:')].reset_index(drop=True)

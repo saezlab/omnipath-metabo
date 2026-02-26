@@ -65,6 +65,7 @@ Usage — test individual resources::
 
 __all__ = [
     'build',
+    'build_allosteric',
     'build_enzyme_metabolite',
     'build_receptors',
     'build_transporters',
@@ -75,6 +76,6 @@ __all__ = [
 ]
 
 from . import resources
-from ._build import build, build_enzyme_metabolite, build_receptors, build_transporters
+from ._build import build, build_allosteric, build_enzyme_metabolite, build_receptors, build_transporters
 from ._config import config, default_config
 from ._format import format_pkn
