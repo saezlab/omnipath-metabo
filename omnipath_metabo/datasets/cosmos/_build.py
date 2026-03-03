@@ -29,7 +29,7 @@ Resource categories:
 
 ID unification (when ``translate_ids`` is ``True``):
     - Metabolite source IDs → ChEBI (via UniChem or PubChem REST API)
-    - Protein target IDs → Ensembl gene IDs, ENSG (via pypath BioMart)
+    - Protein target IDs → UniProt accessions (via pypath BioMart)
 """
 
 from __future__ import annotations
@@ -42,8 +42,9 @@ from typing import TYPE_CHECKING
 
 import pandas as pd
 
+from ._bundle import CosmosBundle
 from ._config import config
-from ._record import Interaction
+from ._record import CosmosMetabolite, CosmosProtein, CosmosReaction, Interaction
 
 _log = logging.getLogger(__name__)
 
@@ -83,18 +84,212 @@ PROCESSORS = {
 }
 
 
+# ---------------------------------------------------------------------------
+# Provenance helpers
+# ---------------------------------------------------------------------------
+
+def _collect_metabolites(prov: pd.DataFrame) -> list:
+    """
+    Build :class:`~._record.CosmosMetabolite` provenance records.
+
+    Args:
+        prov: Merged DataFrame with columns for translated IDs (``source``,
+            ``target``) and original IDs (``_orig_source``, ``_orig_target``,
+            ``_orig_id_type_a``, ``_orig_id_type_b``), plus ``source_type``,
+            ``target_type``, ``resource``.
+
+    Returns:
+        Deduplicated list of :class:`CosmosMetabolite` records.
+    """
+    records = []
+    seen: set = set()
+
+    for entity_col, chebi_col, orig_col, id_type_col in [
+        ('source_type', 'source', '_orig_source', '_orig_id_type_a'),
+        ('target_type', 'target', '_orig_target', '_orig_id_type_b'),
+    ]:
+        mask = prov[entity_col] == 'small_molecule'
+        for _, row in prov[mask].iterrows():
+            chebi = row[chebi_col]
+            orig = row[orig_col]
+            id_type = row[id_type_col]
+            resource = row['resource']
+            key = (chebi, orig, id_type, resource)
+            if key not in seen:
+                seen.add(key)
+                records.append(CosmosMetabolite(
+                    chebi=chebi,
+                    original_id=orig,
+                    id_type=id_type,
+                    resource=resource,
+                ))
+
+    return records
+
+
+def _collect_proteins(prov: pd.DataFrame) -> list:
+    """
+    Build :class:`~._record.CosmosProtein` provenance records.
+
+    Orphan reaction-ID pseudo-enzymes (``id_type == 'reaction_id'``) are
+    excluded — they are not real proteins.
+
+    Args:
+        prov: Merged DataFrame (same structure as for
+            :func:`_collect_metabolites`).
+
+    Returns:
+        Deduplicated list of :class:`CosmosProtein` records.
+    """
+    records = []
+    seen: set = set()
+
+    for entity_col, uniprot_col, orig_col, id_type_col in [
+        ('source_type', 'source', '_orig_source', '_orig_id_type_a'),
+        ('target_type', 'target', '_orig_target', '_orig_id_type_b'),
+    ]:
+        mask = (
+            (prov[entity_col] == 'protein') &
+            (prov[id_type_col] != 'reaction_id')
+        )
+        for _, row in prov[mask].iterrows():
+            uniprot = row[uniprot_col]
+            orig = row[orig_col]
+            id_type = row[id_type_col]
+            resource = row['resource']
+            key = (uniprot, orig, id_type, resource)
+            if key not in seen:
+                seen.add(key)
+                records.append(CosmosProtein(
+                    uniprot=uniprot,
+                    original_id=orig,
+                    id_type=id_type,
+                    resource=resource,
+                ))
+
+    return records
+
+
+def _collect_reactions(df: pd.DataFrame) -> list:
+    """
+    Build :class:`~._record.CosmosReaction` metadata records from GEM rows.
+
+    Groups translated GEM / Recon3D rows by ``(reaction_id, gem_name)`` and
+    collects the set of UniProt ACs (genes) and ChEBI IDs (metabolites) that
+    participate in each reaction.
+
+    Args:
+        df: Translated PKN DataFrame (may include ``_row_id`` column).
+
+    Returns:
+        List of :class:`CosmosReaction` records, one per unique
+        ``(reaction_id, gem)`` pair.
+    """
+    gem_mask = (
+        df['resource'].str.startswith('GEM') | (df['resource'] == 'Recon3D')
+    )
+    if not gem_mask.any():
+        return []
+
+    seen: dict = {}  # (reaction_id, gem) → {'genes': set, 'metabolites': set}
+
+    for _, row in df[gem_mask].iterrows():
+        attrs = row['attrs'] if isinstance(row['attrs'], dict) else {}
+        reaction_id = attrs.get('reaction_id', '')
+        if not reaction_id:
+            continue
+
+        resource = row['resource']
+        gem = resource.split(':', 1)[1] if ':' in resource else resource
+
+        key = (reaction_id, gem)
+        if key not in seen:
+            seen[key] = {'genes': set(), 'metabolites': set()}
+
+        if row['source_type'] == 'protein' and row['id_type_a'] != 'reaction_id':
+            seen[key]['genes'].add(row['source'])
+        if row['target_type'] == 'protein' and row['id_type_b'] != 'reaction_id':
+            seen[key]['genes'].add(row['target'])
+        if row['source_type'] == 'small_molecule':
+            seen[key]['metabolites'].add(row['source'])
+        if row['target_type'] == 'small_molecule':
+            seen[key]['metabolites'].add(row['target'])
+
+    return [
+        CosmosReaction(
+            reaction_id=rxn_id,
+            gem=gem,
+            genes=tuple(sorted(gm['genes'])),
+            metabolites=tuple(sorted(gm['metabolites'])),
+        )
+        for (rxn_id, gem), gm in seen.items()
+    ]
+
+
+def _filter_bundle(bundle: CosmosBundle, predicate) -> CosmosBundle:
+    """
+    Return a copy of *bundle* keeping only network rows that satisfy *predicate*.
+
+    Provenance lists (``metabolites``, ``proteins``, ``reactions``) are
+    filtered to include only entries referenced by the surviving network rows.
+
+    Args:
+        bundle: Source :class:`CosmosBundle`.
+        predicate: Callable ``(Interaction) → bool``.
+
+    Returns:
+        Filtered :class:`CosmosBundle`.
+    """
+    filtered = [row for row in bundle.network if predicate(row)]
+
+    met_ids: set = set()
+    prot_ids: set = set()
+    rxn_ids: set = set()
+
+    for row in filtered:
+        if row.source_type == 'small_molecule':
+            met_ids.add(row.source)
+        elif row.source_type == 'protein' and row.id_type_a != 'reaction_id':
+            prot_ids.add(row.source)
+        if row.target_type == 'small_molecule':
+            met_ids.add(row.target)
+        elif row.target_type == 'protein' and row.id_type_b != 'reaction_id':
+            prot_ids.add(row.target)
+        if isinstance(row.attrs, dict) and row.attrs.get('reaction_id'):
+            rxn_ids.add(row.attrs['reaction_id'])
+
+    return CosmosBundle(
+        network=filtered,
+        metabolites=[m for m in bundle.metabolites if m.chebi in met_ids],
+        proteins=[p for p in bundle.proteins if p.uniprot in prot_ids],
+        reactions=[r for r in bundle.reactions if r.reaction_id in rxn_ids],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
 def build(
-    *args: dict | Path | str,
+    *args: dict | 'Path' | str,
     **kwargs,
-) -> pd.DataFrame:
+) -> CosmosBundle:
     """
     Build the COSMOS prior-knowledge network from multiple sources.
 
     Calls each requested resource processor, collects the yielded
-    :class:`Interaction` records, and returns them as a single
-    DataFrame.  The ``resources`` dict in the config controls both
-    which resources are active and their parameters.  The top-level
-    ``organism`` is injected into each resource unless overridden.
+    :class:`Interaction` records, optionally translates IDs to canonical
+    form (ChEBI / UniProt), and returns a :class:`CosmosBundle`.
+
+    When ``translate_ids`` is ``True`` (default), the bundle's
+    ``metabolites``, ``proteins``, and ``reactions`` lists are populated
+    with provenance records linking original source IDs to their canonical
+    counterparts.  The ``network`` list holds :class:`Interaction`
+    namedtuples with translated IDs.
+
+    The ``resources`` dict in the config controls both which resources are
+    active and their parameters.  The top-level ``organism`` is injected
+    into each resource unless overridden.
 
     Args:
         *args:
@@ -108,8 +303,9 @@ def build(
                 build(organism=10090)
 
     Returns:
-        DataFrame with one row per interaction, columns matching
-        :class:`Interaction` fields.
+        :class:`CosmosBundle` with all interactions in ``network``.
+        When ``translate_ids`` is ``True``, provenance records are
+        populated in ``metabolites``, ``proteins``, and ``reactions``.
     """
 
     cfg = config(*args, **kwargs)
@@ -150,9 +346,17 @@ def build(
         len(active_names),
     )
 
+    metabolites: list = []
+    proteins: list = []
+    reactions: list = []
+
     if translate:
         from ._translate import translate_pkn
+
         n_before = len(df)
+        df['_row_id'] = range(len(df))
+        df_raw = df[['_row_id', 'source', 'target', 'id_type_a', 'id_type_b']].copy()
+
         _log.info('[COSMOS] Translating IDs...')
         df = translate_pkn(df, organism=organism)
         _log.info(
@@ -161,14 +365,44 @@ def build(
             n_before,
         )
 
-    if cfg.get('apply_blacklist', True):
-        from ._blacklist import apply_blacklist
-        df = apply_blacklist(df)
+        if cfg.get('apply_blacklist', True):
+            from ._blacklist import apply_blacklist
+            df = apply_blacklist(df)
 
-    return df
+        # Merge to recover original IDs for provenance tracking.
+        prov = df[
+            ['_row_id', 'source', 'target', 'source_type', 'target_type', 'resource']
+        ].merge(
+            df_raw.rename(columns={
+                'source': '_orig_source',
+                'target': '_orig_target',
+                'id_type_a': '_orig_id_type_a',
+                'id_type_b': '_orig_id_type_b',
+            }),
+            on='_row_id',
+        )
+
+        metabolites = _collect_metabolites(prov)
+        proteins = _collect_proteins(prov)
+        reactions = _collect_reactions(df)
+        df = df.drop(columns=['_row_id'])
+
+    else:
+        if cfg.get('apply_blacklist', True):
+            from ._blacklist import apply_blacklist
+            df = apply_blacklist(df)
+
+    network = [Interaction(*row) for row in df.itertuples(index=False, name=None)]
+
+    return CosmosBundle(
+        network=network,
+        metabolites=metabolites,
+        proteins=proteins,
+        reactions=reactions,
+    )
 
 
-def build_transporters(*args, **kwargs) -> pd.DataFrame:
+def build_transporters(*args, **kwargs) -> CosmosBundle:
     """
     Build the transporter subset of the COSMOS PKN.
 
@@ -187,20 +421,20 @@ def build_transporters(*args, **kwargs) -> pd.DataFrame:
             ``mrclinksdb`` are disabled unless explicitly re-enabled.
 
     Returns:
-        DataFrame containing only transporter interactions.
+        :class:`CosmosBundle` containing only transporter interactions,
+        with provenance filtered to the surviving edges.
     """
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('mrclinksdb', False)
-    df = build(*args, **kwargs)
-    mask = (
-        df['interaction_type'].eq('transport') |
-        df['resource'].str.startswith('GEM_transporter') |
-        (df['resource'].eq('STITCH') & df['interaction_type'].eq('transporter'))
-    )
-    return df[mask].reset_index(drop=True)
+    bundle = build(*args, **kwargs)
+    return _filter_bundle(bundle, lambda row: (
+        row.interaction_type == 'transport' or
+        row.resource.startswith('GEM_transporter') or
+        (row.resource == 'STITCH' and row.interaction_type == 'transporter')
+    ))
 
 
-def build_receptors(*args, **kwargs) -> pd.DataFrame:
+def build_receptors(*args, **kwargs) -> CosmosBundle:
     """
     Build the receptor subset of the COSMOS PKN.
 
@@ -219,22 +453,22 @@ def build_receptors(*args, **kwargs) -> pd.DataFrame:
             explicitly re-enabled.
 
     Returns:
-        DataFrame containing only receptor interactions.
+        :class:`CosmosBundle` containing only receptor interactions,
+        with provenance filtered to the surviving edges.
     """
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
-    df = build(*args, **kwargs)
-    mask = (
-        df['interaction_type'].eq('ligand_receptor') |
-        (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
-    )
-    return df[mask].reset_index(drop=True)
+    bundle = build(*args, **kwargs)
+    return _filter_bundle(bundle, lambda row: (
+        row.interaction_type == 'ligand_receptor' or
+        (row.resource == 'STITCH' and row.interaction_type == 'receptor')
+    ))
 
 
-def build_allosteric(*args, **kwargs) -> pd.DataFrame:
+def build_allosteric(*args, **kwargs) -> CosmosBundle:
     """
     Build the allosteric-regulation subset of the COSMOS PKN.
 
@@ -258,22 +492,22 @@ def build_allosteric(*args, **kwargs) -> pd.DataFrame:
             explicitly re-enabled.
 
     Returns:
-        DataFrame containing only allosteric regulation interactions.
+        :class:`CosmosBundle` containing only allosteric regulation
+        interactions, with provenance filtered to the surviving edges.
     """
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
-    df = build(*args, **kwargs)
-    mask = (
-        df['interaction_type'].eq('allosteric_regulation') |
-        (df['resource'].eq('STITCH') & df['interaction_type'].eq('other'))
-    )
-    return df[mask].reset_index(drop=True)
+    bundle = build(*args, **kwargs)
+    return _filter_bundle(bundle, lambda row: (
+        row.interaction_type == 'allosteric_regulation' or
+        (row.resource == 'STITCH' and row.interaction_type == 'other')
+    ))
 
 
-def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
+def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     """
     Build the enzyme-metabolite (metabolic) subset of the COSMOS PKN.
 
@@ -302,8 +536,9 @@ def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
             disabled unless explicitly re-enabled.
 
     Returns:
-        DataFrame containing only stoichiometric enzyme-metabolite
-        interactions from GEMs.
+        :class:`CosmosBundle` containing only stoichiometric
+        enzyme-metabolite interactions from GEMs, with provenance
+        filtered to the surviving edges.
     """
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
@@ -311,5 +546,5 @@ def build_enzyme_metabolite(*args, **kwargs) -> pd.DataFrame:
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('recon3d', False)
     kwargs.setdefault('stitch', False)
-    df = build(*args, **kwargs)
-    return df[df['resource'].str.startswith('GEM:')].reset_index(drop=True)
+    bundle = build(*args, **kwargs)
+    return _filter_bundle(bundle, lambda row: row.resource.startswith('GEM:'))

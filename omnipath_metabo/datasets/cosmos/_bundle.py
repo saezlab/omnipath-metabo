@@ -75,7 +75,7 @@ class CosmosBundle:
             resources.
     """
 
-    network: list[CosmosEdge] = field(default_factory=list)
+    network: list = field(default_factory=list)
     metabolites: list[CosmosMetabolite] = field(default_factory=list)
     proteins: list[CosmosProtein] = field(default_factory=list)
     reactions: list[CosmosReaction] = field(default_factory=list)

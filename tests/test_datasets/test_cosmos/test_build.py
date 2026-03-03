@@ -16,6 +16,7 @@ from omnipath_metabo.datasets.cosmos._build import (
     build_receptors,
     build_transporters,
 )
+from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
 from omnipath_metabo.datasets.cosmos._record import Interaction
 
 
@@ -124,25 +125,23 @@ def _mock_processors():
 class TestBuildWithMocks:
     """Tests for build() using fake processors."""
 
-    def test_returns_dataframe(self, _mock_build):
-        df = build()
-        assert isinstance(df, pd.DataFrame)
+    def test_returns_bundle(self, _mock_build):
+        assert isinstance(build(), CosmosBundle)
 
-    def test_columns_match_interaction_fields(self, _mock_build):
-        df = build()
-        assert list(df.columns) == list(Interaction._fields)
+    def test_network_is_list_of_interactions(self, _mock_build):
+        bundle = build()
+        assert isinstance(bundle.network, list)
+        for row in bundle.network:
+            assert isinstance(row, Interaction)
 
     def test_default_runs_all(self, _mock_build):
-        df = build()
-        assert len(df) == 4  # 2 records x 2 fake resources
+        assert len(build().network) == 4  # 2 records x 2 fake resources
 
     def test_single_resource(self, _mock_build):
-        df = build(fake_b=False)
-        assert len(df) == 2
+        assert len(build(fake_b=False).network) == 2
 
     def test_disable_resource(self, _mock_build):
-        df = build(fake_a=False, fake_b=False)
-        assert len(df) == 0
+        assert len(build(fake_a=False, fake_b=False).network) == 0
 
     def test_unknown_resource_raises(self, _mock_build):
         with pytest.raises(ValueError, match='Unknown resource'):
@@ -172,8 +171,14 @@ class TestBuildWithMocks:
     def test_empty_resources_override_is_noop(self, _mock_build):
         """Empty resources override doesn't change defaults."""
 
-        df = build(resources={})
-        assert len(df) == 4  # defaults still active
+        assert len(build(resources={}).network) == 4  # defaults still active
+
+    def test_bundle_provenance_empty_without_translation(self, _mock_build):
+        """With translate_ids=False, provenance lists are empty."""
+        bundle = build()
+        assert bundle.metabolites == []
+        assert bundle.proteins == []
+        assert bundle.reactions == []
 
 
 class TestProcessorsRegistry:
@@ -197,38 +202,41 @@ class TestBuildIntegration:
     """
 
     def test_build_stitch_only(self):
-        df = build(
+        bundle = build(
             stitch={'score_threshold': 900},
             tcdb=False, slc=False, brenda=False, mrclinksdb=False,
             gem=False, recon3d=False,
         )
 
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) > 0
+        assert isinstance(bundle, CosmosBundle)
+        assert len(bundle.network) > 0
+        df = pd.DataFrame(bundle.network)
         assert (df['resource'] == 'STITCH').all()
         assert set(df['source_type']) == {'small_molecule'}
         assert set(df['target_type']) == {'protein'}
 
     def test_build_slc_only(self):
-        df = build(
+        bundle = build(
             slc={},
             stitch=False, tcdb=False, brenda=False, mrclinksdb=False,
             gem=False, recon3d=False,
         )
 
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) > 0
+        assert isinstance(bundle, CosmosBundle)
+        assert len(bundle.network) > 0
+        df = pd.DataFrame(bundle.network)
         assert (df['resource'] == 'SLC').all()
 
     def test_build_brenda_only(self):
-        df = build(
+        bundle = build(
             brenda={},
             stitch=False, tcdb=False, slc=False, mrclinksdb=False,
             gem=False, recon3d=False,
         )
 
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) > 0
+        assert isinstance(bundle, CosmosBundle)
+        assert len(bundle.network) > 0
+        df = pd.DataFrame(bundle.network)
         assert (df['resource'] == 'BRENDA').all()
 
 
@@ -239,11 +247,11 @@ class TestBuildIntegration:
 def _row(interaction_type: str, resource: str, mor: int = 1) -> Interaction:
     return Interaction(
         source='CHEBI:1',
-        target='ENSG00000001',
+        target='P00001',
         source_type='small_molecule',
         target_type='protein',
         id_type_a='chebi',
-        id_type_b='ensembl',
+        id_type_b='uniprot',
         interaction_type=interaction_type,
         resource=resource,
         mor=mor,
@@ -279,18 +287,23 @@ _ALL_ROWS = [
 
 
 @pytest.fixture
-def _all_categories_df():
-    return pd.DataFrame(_ALL_ROWS, columns=Interaction._fields)
+def _all_categories_bundle():
+    return CosmosBundle(network=list(_ALL_ROWS))
 
 
 @pytest.fixture
-def _mock_build_fn(_all_categories_df):
-    """Patch build() to return a controlled DataFrame for subset filter tests."""
+def _mock_build_fn(_all_categories_bundle):
+    """Patch build() to return a controlled CosmosBundle for subset filter tests."""
     with patch(
         'omnipath_metabo.datasets.cosmos._build.build',
-        side_effect=lambda *a, **kw: _all_categories_df.copy(),
+        side_effect=lambda *a, **kw: CosmosBundle(network=list(_ALL_ROWS)),
     ) as mock:
         yield mock
+
+
+def _net(bundle: CosmosBundle) -> pd.DataFrame:
+    """Convert bundle.network to a DataFrame for column-based assertions."""
+    return pd.DataFrame(bundle.network)
 
 
 # ---------------------------------------------------------------------------
@@ -300,44 +313,40 @@ def _mock_build_fn(_all_categories_df):
 class TestBuildTransporters:
     """Tests for build_transporters() filtering and default-disabled resources."""
 
-    def test_returns_dataframe(self, _mock_build_fn):
-        assert isinstance(build_transporters(), pd.DataFrame)
-
-    def test_index_reset(self, _mock_build_fn):
-        df = build_transporters()
-        assert list(df.index) == list(range(len(df)))
+    def test_returns_bundle(self, _mock_build_fn):
+        assert isinstance(build_transporters(), CosmosBundle)
 
     def test_total_row_count(self, _mock_build_fn):
         # TCDB, SLC, GEM_transporter (×2: by type + by resource), STITCH transporter
-        assert len(build_transporters()) == 5
+        assert len(build_transporters().network) == 5
 
     def test_keeps_transport_type(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         assert 'transport' in df['interaction_type'].values
 
     def test_keeps_gem_transporter_by_resource_prefix(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         # both GEM_transporter rows: one matched via type, one only via resource prefix
         gem_rows = df[df['resource'].str.startswith('GEM_transporter')]
         assert len(gem_rows) == 2
 
     def test_keeps_stitch_transporter(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         stitch_rows = df[df['resource'].eq('STITCH')]
         assert len(stitch_rows) == 1
         assert stitch_rows.iloc[0]['interaction_type'] == 'transporter'
 
     def test_excludes_receptor_rows(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         assert 'ligand_receptor' not in df['interaction_type'].values
         assert 'receptor' not in df['interaction_type'].values
 
     def test_excludes_allosteric_rows(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         assert 'allosteric_regulation' not in df['interaction_type'].values
 
     def test_excludes_gem_metabolic(self, _mock_build_fn):
-        df = build_transporters()
+        df = _net(build_transporters())
         # GEM: prefix (metabolic) must not appear; only GEM_transporter: is kept
         assert len(df[df['resource'].str.startswith('GEM:')]) == 0
 
@@ -361,39 +370,35 @@ class TestBuildTransporters:
 class TestBuildReceptors:
     """Tests for build_receptors() filtering and default-disabled resources."""
 
-    def test_returns_dataframe(self, _mock_build_fn):
-        assert isinstance(build_receptors(), pd.DataFrame)
-
-    def test_index_reset(self, _mock_build_fn):
-        df = build_receptors()
-        assert list(df.index) == list(range(len(df)))
+    def test_returns_bundle(self, _mock_build_fn):
+        assert isinstance(build_receptors(), CosmosBundle)
 
     def test_total_row_count(self, _mock_build_fn):
         # MRCLinksDB ligand_receptor + STITCH receptor
-        assert len(build_receptors()) == 2
+        assert len(build_receptors().network) == 2
 
     def test_keeps_ligand_receptor(self, _mock_build_fn):
-        df = build_receptors()
+        df = _net(build_receptors())
         assert 'ligand_receptor' in df['interaction_type'].values
 
     def test_keeps_stitch_receptor(self, _mock_build_fn):
-        df = build_receptors()
+        df = _net(build_receptors())
         stitch_rows = df[df['resource'].eq('STITCH')]
         assert len(stitch_rows) == 1
         assert stitch_rows.iloc[0]['interaction_type'] == 'receptor'
 
     def test_excludes_transport_rows(self, _mock_build_fn):
-        df = build_receptors()
+        df = _net(build_receptors())
         assert 'transport' not in df['interaction_type'].values
         assert 'transporter' not in df['interaction_type'].values
 
     def test_excludes_allosteric_rows(self, _mock_build_fn):
-        df = build_receptors()
+        df = _net(build_receptors())
         assert 'allosteric_regulation' not in df['interaction_type'].values
         assert 'other' not in df['interaction_type'].values
 
     def test_excludes_gem_rows(self, _mock_build_fn):
-        df = build_receptors()
+        df = _net(build_receptors())
         assert len(df[df['resource'].str.startswith('GEM')]) == 0
 
     def test_disables_tcdb_by_default(self, _mock_build_fn):
@@ -428,39 +433,35 @@ class TestBuildReceptors:
 class TestBuildAllosteric:
     """Tests for build_allosteric() filtering and default-disabled resources."""
 
-    def test_returns_dataframe(self, _mock_build_fn):
-        assert isinstance(build_allosteric(), pd.DataFrame)
-
-    def test_index_reset(self, _mock_build_fn):
-        df = build_allosteric()
-        assert list(df.index) == list(range(len(df)))
+    def test_returns_bundle(self, _mock_build_fn):
+        assert isinstance(build_allosteric(), CosmosBundle)
 
     def test_total_row_count(self, _mock_build_fn):
         # BRENDA allosteric_regulation + STITCH other
-        assert len(build_allosteric()) == 2
+        assert len(build_allosteric().network) == 2
 
     def test_keeps_allosteric_regulation(self, _mock_build_fn):
-        df = build_allosteric()
+        df = _net(build_allosteric())
         assert 'allosteric_regulation' in df['interaction_type'].values
 
     def test_keeps_stitch_other(self, _mock_build_fn):
-        df = build_allosteric()
+        df = _net(build_allosteric())
         stitch_rows = df[df['resource'].eq('STITCH')]
         assert len(stitch_rows) == 1
         assert stitch_rows.iloc[0]['interaction_type'] == 'other'
 
     def test_excludes_transport_rows(self, _mock_build_fn):
-        df = build_allosteric()
+        df = _net(build_allosteric())
         assert 'transport' not in df['interaction_type'].values
         assert 'transporter' not in df['interaction_type'].values
 
     def test_excludes_receptor_rows(self, _mock_build_fn):
-        df = build_allosteric()
+        df = _net(build_allosteric())
         assert 'ligand_receptor' not in df['interaction_type'].values
         assert 'receptor' not in df['interaction_type'].values
 
     def test_excludes_gem_rows(self, _mock_build_fn):
-        df = build_allosteric()
+        df = _net(build_allosteric())
         assert len(df[df['resource'].str.startswith('GEM')]) == 0
 
     def test_disables_tcdb_by_default(self, _mock_build_fn):
@@ -500,40 +501,36 @@ class TestBuildEnzymeMetabolite:
     resources (BRENDA, STITCH) are excluded.
     """
 
-    def test_returns_dataframe(self, _mock_build_fn):
-        assert isinstance(build_enzyme_metabolite(), pd.DataFrame)
-
-    def test_index_reset(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
-        assert list(df.index) == list(range(len(df)))
+    def test_returns_bundle(self, _mock_build_fn):
+        assert isinstance(build_enzyme_metabolite(), CosmosBundle)
 
     def test_total_row_count(self, _mock_build_fn):
         # only GEM:Human-GEM metabolic row
-        assert len(build_enzyme_metabolite()) == 1
+        assert len(build_enzyme_metabolite().network) == 1
 
     def test_keeps_gem_metabolic(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         assert df['resource'].str.startswith('GEM:').all()
 
     def test_excludes_gem_transporter(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         # 'GEM_transporter:...' does NOT start with 'GEM:' → excluded
         assert len(df[df['resource'].str.startswith('GEM_transporter')]) == 0
 
     def test_excludes_allosteric_rows(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         assert 'allosteric_regulation' not in df['interaction_type'].values
 
     def test_excludes_stitch(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         assert 'STITCH' not in df['resource'].values
 
     def test_excludes_transport_rows(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         assert 'transport' not in df['interaction_type'].values
 
     def test_excludes_receptor_rows(self, _mock_build_fn):
-        df = build_enzyme_metabolite()
+        df = _net(build_enzyme_metabolite())
         assert 'ligand_receptor' not in df['interaction_type'].values
 
     def test_disables_brenda_by_default(self, _mock_build_fn):

@@ -61,6 +61,15 @@ def _df(*rows):
     return pd.DataFrame(list(rows), columns=_INTERACTION_COLS)
 
 
+def _call_format(df, **kw) -> pd.DataFrame:
+    """Call format_pkn and return all edges (incl. connectors) as a DataFrame."""
+    from omnipath_metabo.datasets.cosmos._record import CosmosEdge
+    bundle = format_pkn(df, **kw)
+    if not bundle.network:
+        return pd.DataFrame(columns=list(CosmosEdge._fields))
+    return pd.DataFrame(bundle.network)
+
+
 # ---------------------------------------------------------------------------
 # Node ID formatting helpers
 # ---------------------------------------------------------------------------
@@ -231,7 +240,7 @@ class TestFormatTransporter:
             resource='TCDB',
             locations=locations,
         ))
-        return format_pkn(df, include_orphans=True)
+        return _call_format(df, include_orphans=True)
 
     def test_four_main_rows_generated(self):
         result = self._run()
@@ -312,7 +321,7 @@ class TestConnectorEdges:
             resource='TCDB',
             locations=('e', 'c'),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         assert len(conn) > 0
 
@@ -324,7 +333,7 @@ class TestConnectorEdges:
             resource='TCDB',
             locations=('e', 'c'),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         sources = set(conn['source'])
         targets = set(conn['target'])
@@ -342,7 +351,7 @@ class TestConnectorEdges:
             resource='TCDB',
             locations=('e', 'c'),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         targets = set(conn['target'])
         assert 'Metab__CHEBI:15422_e' in targets
@@ -358,7 +367,7 @@ class TestConnectorEdges:
                  interaction_type='transport', resource='TCDB',
                  locations=('e', 'c')),
         )
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         # No duplicate (source, target) pairs in connectors
         dupes = conn.duplicated(subset=['source', 'target'])
@@ -367,7 +376,7 @@ class TestConnectorEdges:
     def test_connector_resource_label(self):
         df = _df(_row(interaction_type='transport', resource='TCDB',
                       locations=('e', 'c')))
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         assert (conn['resource'] == 'COSMOS_formatter').all()
 
@@ -405,19 +414,15 @@ class TestFormatPreExpanded:
     def test_gem_no_extra_rows_generated(self):
         """Pre-expanded rows should not be expanded further."""
         df = self._gem_rows()
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         # 4 in → 4 out (no new rows)
         assert len(main) == 4
 
     def test_gem_all_rows_share_same_n(self):
         df = self._gem_rows()
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
-        gene_nodes = (
-            main['source'].str.startswith('Gene').fillna(False) |
-            main['target'].str.startswith('Gene').fillna(False)
-        )
         gene_cols = pd.concat([
             main.loc[main['source'].str.startswith('Gene', na=False), 'source'],
             main.loc[main['target'].str.startswith('Gene', na=False), 'target'],
@@ -427,7 +432,7 @@ class TestFormatPreExpanded:
 
     def test_gem_reverse_row_gets_rev_suffix(self):
         df = self._gem_rows()
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         rev_rows = main[main['attrs'].apply(lambda a: a.get('reverse', False))]
         for _, r in rev_rows.iterrows():
@@ -436,7 +441,7 @@ class TestFormatPreExpanded:
 
     def test_gem_forward_row_no_rev_suffix(self):
         df = self._gem_rows()
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         fwd_rows = main[~main['attrs'].apply(lambda a: a.get('reverse', False))]
         for _, r in fwd_rows.iterrows():
@@ -445,7 +450,7 @@ class TestFormatPreExpanded:
 
     def test_recon3d_treated_as_pre_expanded(self):
         df = self._gem_rows(resource='Recon3D')
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 4
 
@@ -463,7 +468,7 @@ class TestFormatSimple:
             resource='MRCLinksDB',
             locations=(),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
         assert main.iloc[0]['source'] == 'Metab__CHEBI:9251'
@@ -477,7 +482,7 @@ class TestFormatSimple:
             resource='BRENDA',
             locations=('c',),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
         assert main.iloc[0]['source'] == 'Metab__CHEBI:30031_c'
@@ -492,7 +497,7 @@ class TestFormatSimple:
             resource='MRCLinksDB',
             locations=(),
         ))
-        result = format_pkn(df)
+        result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         rev_conn = conn[conn['target'].str.endswith('_rev', na=False)]
         assert len(rev_conn) == 0
@@ -513,7 +518,7 @@ class TestNCounterCategories:
             _row(interaction_type='ligand_receptor', resource='MRCLinksDB',
                  locations=()),
         )
-        result = format_pkn(df)
+        result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
         gene_nodes = pd.concat([
             main.loc[main['source'].str.startswith('Gene', na=False), 'source'],
@@ -547,12 +552,12 @@ class TestOrphanHandling:
         )
 
     def test_orphan_kept_by_default(self):
-        result = format_pkn(self._orphan_df())
+        result = _call_format(self._orphan_df())
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
 
     def test_orphan_dropped_when_excluded(self):
-        result = format_pkn(self._orphan_df(), include_orphans=False)
+        result = _call_format(self._orphan_df(), include_orphans=False)
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 0
 
@@ -567,11 +572,11 @@ class TestCosmosFormattedFlag:
             _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
             _row(interaction_type='ligand_receptor', resource='MRCLinksDB', locations=()),
         )
-        result = format_pkn(df)
+        result = _call_format(df)
         for _, r in result.iterrows():
             assert r['attrs']['cosmos_formatted'] is True
 
     def test_empty_input(self):
         df = pd.DataFrame(columns=_INTERACTION_COLS)
-        result = format_pkn(df)
+        result = _call_format(df)
         assert result.empty

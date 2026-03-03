@@ -11,6 +11,7 @@ from unittest.mock import patch
 import pandas as pd
 import pytest
 
+from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
 from omnipath_metabo.datasets.cosmos._record import Interaction
 
 
@@ -97,6 +98,11 @@ def _make_mock_build(interactions):
     )
 
 
+def _df(bundle: CosmosBundle) -> pd.DataFrame:
+    """Convert bundle.network to a DataFrame for column-based assertions."""
+    return pd.DataFrame(bundle.network)
+
+
 # ---------------------------------------------------------------------------
 # Tests: build_transporters
 # ---------------------------------------------------------------------------
@@ -111,40 +117,39 @@ class TestBuildTransporters:
         with p0, p1:
             return build_transporters()
 
-    def test_returns_dataframe(self):
-        df = self._run()
-        assert isinstance(df, pd.DataFrame)
+    def test_returns_bundle(self):
+        bundle = self._run()
+        assert isinstance(bundle, CosmosBundle)
 
     def test_transport_interaction_type_kept(self):
-        df = self._run([_TRANSPORT_TCDB, _TRANSPORT_SLC])
-        assert len(df) == 2
+        bundle = self._run([_TRANSPORT_TCDB, _TRANSPORT_SLC])
+        assert len(bundle.network) == 2
+        df = _df(bundle)
         assert (df['interaction_type'] == 'transport').all()
 
     def test_gem_transporter_resource_kept(self):
-        df = self._run([_TRANSPORT_GEM_T])
-        assert len(df) == 1
-        assert df.iloc[0]['resource'] == 'GEM_transporter:Human-GEM'
+        bundle = self._run([_TRANSPORT_GEM_T])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].resource == 'GEM_transporter:Human-GEM'
 
     def test_stitch_transporter_kept(self):
-        df = self._run([_TRANSPORT_STITCH])
-        assert len(df) == 1
-        assert df.iloc[0]['interaction_type'] == 'transporter'
+        bundle = self._run([_TRANSPORT_STITCH])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].interaction_type == 'transporter'
 
     def test_no_receptor_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         assert not df['interaction_type'].isin(['ligand_receptor', 'receptor']).any()
 
     def test_no_enzyme_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         # allosteric_regulation and plain GEM: should be absent
         assert not df['interaction_type'].eq('allosteric_regulation').any()
         # GEM: (non-transporter) resource should not be present
         gem_metabolic = df['resource'].eq('GEM:Human-GEM')
         assert not gem_metabolic.any()
-
-    def test_index_reset(self):
-        df = self._run(_ALL_INTERACTIONS)
-        assert list(df.index) == list(range(len(df)))
 
 
 # ---------------------------------------------------------------------------
@@ -161,22 +166,23 @@ class TestBuildReceptors:
         with p0, p1:
             return build_receptors()
 
-    def test_returns_dataframe(self):
-        df = self._run()
-        assert isinstance(df, pd.DataFrame)
+    def test_returns_bundle(self):
+        bundle = self._run()
+        assert isinstance(bundle, CosmosBundle)
 
     def test_ligand_receptor_kept(self):
-        df = self._run([_RECEPTOR_MRC])
-        assert len(df) == 1
-        assert df.iloc[0]['interaction_type'] == 'ligand_receptor'
+        bundle = self._run([_RECEPTOR_MRC])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].interaction_type == 'ligand_receptor'
 
     def test_stitch_receptor_kept(self):
-        df = self._run([_RECEPTOR_STITCH])
-        assert len(df) == 1
-        assert df.iloc[0]['interaction_type'] == 'receptor'
+        bundle = self._run([_RECEPTOR_STITCH])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].interaction_type == 'receptor'
 
     def test_no_transport_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         transport_mask = (
             df['interaction_type'].eq('transport') |
             df['resource'].str.startswith('GEM_transporter')
@@ -184,17 +190,10 @@ class TestBuildReceptors:
         assert not transport_mask.any()
 
     def test_no_enzyme_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         assert not df['interaction_type'].eq('allosteric_regulation').any()
 
-    def test_index_reset(self):
-        df = self._run(_ALL_INTERACTIONS)
-        assert list(df.index) == list(range(len(df)))
-
-
-# ---------------------------------------------------------------------------
-# Tests: build_enzyme_metabolite
-# ---------------------------------------------------------------------------
 
 # ---------------------------------------------------------------------------
 # Tests: build_allosteric
@@ -210,22 +209,23 @@ class TestBuildAllosteric:
         with p0, p1:
             return build_allosteric()
 
-    def test_returns_dataframe(self):
-        df = self._run()
-        assert isinstance(df, pd.DataFrame)
+    def test_returns_bundle(self):
+        bundle = self._run()
+        assert isinstance(bundle, CosmosBundle)
 
     def test_allosteric_kept(self):
-        df = self._run([_ENZYME_BRENDA])
-        assert len(df) == 1
-        assert df.iloc[0]['interaction_type'] == 'allosteric_regulation'
+        bundle = self._run([_ENZYME_BRENDA])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].interaction_type == 'allosteric_regulation'
 
     def test_stitch_other_kept(self):
-        df = self._run([_ENZYME_STITCH])
-        assert len(df) == 1
-        assert df.iloc[0]['interaction_type'] == 'other'
+        bundle = self._run([_ENZYME_STITCH])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].interaction_type == 'other'
 
     def test_no_transport_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         transport_mask = (
             df['interaction_type'].eq('transport') |
             df['resource'].str.startswith('GEM_transporter')
@@ -233,16 +233,13 @@ class TestBuildAllosteric:
         assert not transport_mask.any()
 
     def test_no_receptor_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         receptor_mask = (
             df['interaction_type'].eq('ligand_receptor') |
             (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
         )
         assert not receptor_mask.any()
-
-    def test_index_reset(self):
-        df = self._run(_ALL_INTERACTIONS)
-        assert list(df.index) == list(range(len(df)))
 
 
 # ---------------------------------------------------------------------------
@@ -259,24 +256,25 @@ class TestBuildEnzymeMetabolite:
         with p0, p1:
             return build_enzyme_metabolite()
 
-    def test_returns_dataframe(self):
-        df = self._run()
-        assert isinstance(df, pd.DataFrame)
+    def test_returns_bundle(self):
+        bundle = self._run()
+        assert isinstance(bundle, CosmosBundle)
 
     def test_gem_metabolic_kept(self):
-        df = self._run([_ENZYME_GEM])
-        assert len(df) == 1
-        assert df.iloc[0]['resource'] == 'GEM:Human-GEM'
+        bundle = self._run([_ENZYME_GEM])
+        assert len(bundle.network) == 1
+        assert bundle.network[0].resource == 'GEM:Human-GEM'
 
     def test_gem_transporter_excluded(self):
         # GEM_transporter does NOT start with 'GEM:' so must not appear
-        df = self._run([_TRANSPORT_GEM_T, _ENZYME_GEM])
-        resources = set(df['resource'])
+        bundle = self._run([_TRANSPORT_GEM_T, _ENZYME_GEM])
+        resources = {row.resource for row in bundle.network}
         assert 'GEM_transporter:Human-GEM' not in resources
         assert 'GEM:Human-GEM' in resources
 
     def test_no_transport_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         transport_mask = (
             df['interaction_type'].eq('transport') |
             df['resource'].str.startswith('GEM_transporter')
@@ -284,7 +282,8 @@ class TestBuildEnzymeMetabolite:
         assert not transport_mask.any()
 
     def test_no_receptor_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         receptor_mask = (
             df['interaction_type'].eq('ligand_receptor') |
             (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
@@ -292,9 +291,6 @@ class TestBuildEnzymeMetabolite:
         assert not receptor_mask.any()
 
     def test_no_allosteric_rows(self):
-        df = self._run(_ALL_INTERACTIONS)
+        bundle = self._run(_ALL_INTERACTIONS)
+        df = _df(bundle)
         assert not df['interaction_type'].eq('allosteric_regulation').any()
-
-    def test_index_reset(self):
-        df = self._run(_ALL_INTERACTIONS)
-        assert list(df.index) == list(range(len(df)))

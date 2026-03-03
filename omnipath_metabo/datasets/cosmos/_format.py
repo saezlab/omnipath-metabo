@@ -19,14 +19,14 @@ COSMOS PKN formatter.
 Applies COSMOS R package-compatible node-ID prefixes/suffixes to a
 translated PKN DataFrame.  The formatter assumes the DataFrame has
 already been passed through ``translate_pkn()`` so that all metabolite
-IDs are ChEBI and all protein IDs are ENSG.
+IDs are ChEBI and all protein IDs are UniProt accessions.
 
 Node-ID format
 --------------
 - Metabolite: ``Metab__CHEBI:xxxx_c``  (double underscore; single-
   underscore + compartment letter; no compartment suffix when unknown)
-- Gene forward: ``Gene{N}__ENSG...``
-- Gene reverse: ``Gene{N}__ENSG..._rev``
+- Gene forward: ``Gene{N}__UniProtAC...``
+- Gene reverse: ``Gene{N}__UniProtAC..._rev``
 
 N is a sequential integer assigned per unique reaction within each
 category (transporter / receptor / other).  The counter resets to 1
@@ -42,9 +42,9 @@ formatter expands each such row into four directed edges following the
 COSMOS transporter convention::
 
     Metab__X_other  →  Gene{N}__ENSG         (met enters transporter)
-    Gene{N}__ENSG   →  Metab__X_c            (met exits on cytoplasm side)
-    Metab__X_c      →  Gene{N}__ENSG_rev     (reverse: met enters)
-    Gene{N}__ENSG_rev → Metab__X_other       (reverse: met exits)
+    Gene{N}__AC   →  Metab__X_c            (met exits on cytoplasm side)
+    Metab__X_c      →  Gene{N}__AC_rev     (reverse: met enters)
+    Gene{N}__AC_rev → Metab__X_other       (reverse: met exits)
 
 The non-cytoplasm compartment (``other``) is the first non-``'c'``
 entry in the ``locations`` tuple.  When ``locations`` is empty (STITCH)
@@ -58,8 +58,8 @@ Connector edges
 ---------------
 After formatting, unique connector edges are appended::
 
-    ENSG...    →  Gene{N}__ENSG...       (one per unique formatted gene)
-    ENSG...    →  Gene{N}__ENSG..._rev   (transporter reverse genes)
+    UniProtAC  →  Gene{N}__AC...       (one per unique formatted gene)
+    UniProtAC  →  Gene{N}__AC..._rev   (transporter reverse genes)
     CHEBI:xxxx →  Metab__CHEBI:xxxx_c   (one per unique formatted metabolite)
 
 These edges allow downstream tools that key measurements by bare IDs
@@ -367,43 +367,66 @@ def _make_connector_rows(
 # ---------------------------------------------------------------------------
 
 def format_pkn(
-    df: pd.DataFrame,
+    source,
     include_orphans: bool = True,
-) -> pd.DataFrame:
+) -> 'CosmosBundle':
     """
-    Apply COSMOS node-ID formatting to a translated PKN DataFrame.
+    Apply COSMOS node-ID formatting to a translated PKN.
 
-    Converts ChEBI / ENSG IDs to COSMOS R package-compatible node IDs
+    Converts ChEBI / UniProt IDs to COSMOS R package-compatible node IDs
     and appends connector edges linking bare IDs to their formatted
     counterparts.
 
-    The input DataFrame must have been produced by
+    The input must have been produced by
     :func:`~omnipath_metabo.datasets.cosmos._translate.translate_pkn`
-    (i.e. all metabolite IDs are ChEBI, all protein IDs are ENSG).
+    (i.e. all metabolite IDs are ChEBI, all protein IDs are UniProt
+    accessions).
 
     Args:
-        df:
-            Translated PKN DataFrame as returned by
-            :func:`~omnipath_metabo.datasets.cosmos.build`.
+        source:
+            Either a :class:`~._bundle.CosmosBundle` (as returned by
+            :func:`~omnipath_metabo.datasets.cosmos.build`) or a
+            translated PKN DataFrame.  When a bundle is provided, the
+            ``metabolites``, ``proteins``, and ``reactions`` components
+            are carried through unchanged into the returned bundle.
         include_orphans:
             If ``True`` (default), keep rows where the enzyme node is an
             orphan pseudo-enzyme (``attrs['orphan'] == True``, i.e. a
-            ``reaction_id`` string used in place of an ENSG gene ID).
+            ``reaction_id`` string used in place of a UniProt AC).
             If ``False``, drop those rows before formatting.
 
     Returns:
-        DataFrame with COSMOS-formatted ``source`` / ``target`` columns
-        and connector edges appended.  Internal helper columns
-        (``_category``, ``_n``) are not included in the output.
-        ``attrs['cosmos_formatted']`` is ``True`` on every row.
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted
+        ``source`` / ``target`` node IDs in the ``network`` list (as
+        :class:`~._record.CosmosEdge` namedtuples) and connector edges
+        appended.  ``attrs['cosmos_formatted']`` is ``True`` on every
+        edge.  Provenance lists (``metabolites``, ``proteins``,
+        ``reactions``) are carried through from the input bundle, or
+        are empty when a plain DataFrame was provided.
 
     Warning:
-        Do **not** call this function more than once on the same
-        DataFrame.  The presence of ``attrs['cosmos_formatted'] == True``
-        can be used to detect accidental double-application.
+        Do **not** call this function more than once on the same input.
+        The presence of ``attrs['cosmos_formatted'] == True`` can be
+        used to detect accidental double-application.
     """
+    from ._bundle import CosmosBundle
+    from ._record import CosmosEdge, Interaction
+
+    if isinstance(source, CosmosBundle):
+        in_bundle = source
+        if not in_bundle.network:
+            return CosmosBundle(
+                metabolites=in_bundle.metabolites,
+                proteins=in_bundle.proteins,
+                reactions=in_bundle.reactions,
+            )
+        df = pd.DataFrame(in_bundle.network)
+    else:
+        in_bundle = None
+        df = source
+
     if df.empty:
-        return df.copy()
+        return CosmosBundle()
 
     if not include_orphans:
         mask_orphan = df['attrs'].apply(
@@ -412,7 +435,7 @@ def format_pkn(
         df = df[~mask_orphan]
 
     if df.empty:
-        return df.copy()
+        return CosmosBundle()
 
     df = df.copy()
     df['_category'] = df.apply(
@@ -464,8 +487,25 @@ def format_pkn(
     )
 
     if not output_rows:
-        return pd.DataFrame(columns=cols)
+        return CosmosBundle(
+            metabolites=in_bundle.metabolites if in_bundle else [],
+            proteins=in_bundle.proteins if in_bundle else [],
+            reactions=in_bundle.reactions if in_bundle else [],
+        )
 
     result = pd.DataFrame(output_rows)[cols]
     conn_df = _make_connector_rows(connectors, cols)
-    return pd.concat([result, conn_df], ignore_index=True)
+    final_df = pd.concat([result, conn_df], ignore_index=True)
+
+    _edge_fields = CosmosEdge._fields
+    edges = [
+        CosmosEdge(**{f: row[f] for f in _edge_fields})
+        for _, row in final_df.iterrows()
+    ]
+
+    return CosmosBundle(
+        network=edges,
+        metabolites=in_bundle.metabolites if in_bundle else [],
+        proteins=in_bundle.proteins if in_bundle else [],
+        reactions=in_bundle.reactions if in_bundle else [],
+    )
