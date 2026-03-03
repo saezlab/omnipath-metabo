@@ -196,15 +196,19 @@ class TestBuildReceptors:
 # Tests: build_enzyme_metabolite
 # ---------------------------------------------------------------------------
 
-class TestBuildEnzymeMetabolite:
+# ---------------------------------------------------------------------------
+# Tests: build_allosteric
+# ---------------------------------------------------------------------------
+
+class TestBuildAllosteric:
 
     def _run(self, interactions=None):
-        from omnipath_metabo.datasets.cosmos import build_enzyme_metabolite
+        from omnipath_metabo.datasets.cosmos import build_allosteric
 
         ints = interactions if interactions is not None else _ALL_INTERACTIONS
         p0, p1 = _make_mock_build(ints)
         with p0, p1:
-            return build_enzyme_metabolite()
+            return build_allosteric()
 
     def test_returns_dataframe(self):
         df = self._run()
@@ -214,18 +218,6 @@ class TestBuildEnzymeMetabolite:
         df = self._run([_ENZYME_BRENDA])
         assert len(df) == 1
         assert df.iloc[0]['interaction_type'] == 'allosteric_regulation'
-
-    def test_gem_metabolic_kept(self):
-        df = self._run([_ENZYME_GEM])
-        assert len(df) == 1
-        assert df.iloc[0]['resource'] == 'GEM:Human-GEM'
-
-    def test_gem_transporter_excluded(self):
-        # GEM_transporter does NOT start with 'GEM:' so must not appear
-        df = self._run([_TRANSPORT_GEM_T, _ENZYME_GEM])
-        resources = set(df['resource'])
-        assert 'GEM_transporter:Human-GEM' not in resources
-        assert 'GEM:Human-GEM' in resources
 
     def test_stitch_other_kept(self):
         df = self._run([_ENZYME_STITCH])
@@ -247,6 +239,61 @@ class TestBuildEnzymeMetabolite:
             (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
         )
         assert not receptor_mask.any()
+
+    def test_index_reset(self):
+        df = self._run(_ALL_INTERACTIONS)
+        assert list(df.index) == list(range(len(df)))
+
+
+# ---------------------------------------------------------------------------
+# Tests: build_enzyme_metabolite
+# ---------------------------------------------------------------------------
+
+class TestBuildEnzymeMetabolite:
+
+    def _run(self, interactions=None):
+        from omnipath_metabo.datasets.cosmos import build_enzyme_metabolite
+
+        ints = interactions if interactions is not None else _ALL_INTERACTIONS
+        p0, p1 = _make_mock_build(ints)
+        with p0, p1:
+            return build_enzyme_metabolite()
+
+    def test_returns_dataframe(self):
+        df = self._run()
+        assert isinstance(df, pd.DataFrame)
+
+    def test_gem_metabolic_kept(self):
+        df = self._run([_ENZYME_GEM])
+        assert len(df) == 1
+        assert df.iloc[0]['resource'] == 'GEM:Human-GEM'
+
+    def test_gem_transporter_excluded(self):
+        # GEM_transporter does NOT start with 'GEM:' so must not appear
+        df = self._run([_TRANSPORT_GEM_T, _ENZYME_GEM])
+        resources = set(df['resource'])
+        assert 'GEM_transporter:Human-GEM' not in resources
+        assert 'GEM:Human-GEM' in resources
+
+    def test_no_transport_rows(self):
+        df = self._run(_ALL_INTERACTIONS)
+        transport_mask = (
+            df['interaction_type'].eq('transport') |
+            df['resource'].str.startswith('GEM_transporter')
+        )
+        assert not transport_mask.any()
+
+    def test_no_receptor_rows(self):
+        df = self._run(_ALL_INTERACTIONS)
+        receptor_mask = (
+            df['interaction_type'].eq('ligand_receptor') |
+            (df['resource'].eq('STITCH') & df['interaction_type'].eq('receptor'))
+        )
+        assert not receptor_mask.any()
+
+    def test_no_allosteric_rows(self):
+        df = self._run(_ALL_INTERACTIONS)
+        assert not df['interaction_type'].eq('allosteric_regulation').any()
 
     def test_index_reset(self):
         df = self._run(_ALL_INTERACTIONS)
