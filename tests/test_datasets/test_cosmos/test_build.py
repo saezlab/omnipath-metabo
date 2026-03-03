@@ -200,6 +200,7 @@ class TestBuildIntegration:
         df = build(
             stitch={'score_threshold': 900},
             tcdb=False, slc=False, brenda=False, mrclinksdb=False,
+            gem=False, recon3d=False,
         )
 
         assert isinstance(df, pd.DataFrame)
@@ -212,6 +213,7 @@ class TestBuildIntegration:
         df = build(
             slc={},
             stitch=False, tcdb=False, brenda=False, mrclinksdb=False,
+            gem=False, recon3d=False,
         )
 
         assert isinstance(df, pd.DataFrame)
@@ -222,6 +224,7 @@ class TestBuildIntegration:
         df = build(
             brenda={},
             stitch=False, tcdb=False, slc=False, mrclinksdb=False,
+            gem=False, recon3d=False,
         )
 
         assert isinstance(df, pd.DataFrame)
