@@ -16,7 +16,7 @@ from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
     _normalise_hmdb,
     _to_chebi,
-    _to_ensg,
+    _to_uniprot,
     translate_pkn,
 )
 
@@ -42,23 +42,23 @@ class TestToChebi:
 
 
 # ---------------------------------------------------------------------------
-# _to_ensg dispatch
+# _to_uniprot dispatch
 # ---------------------------------------------------------------------------
 
-class TestToEnsg:
+class TestToUniprot:
 
-    def test_ensembl_passthrough(self):
-        assert _to_ensg('ENSG00000001234', 'ensembl', 9606) == 'ENSG00000001234'
+    def test_uniprot_passthrough(self):
+        assert _to_uniprot('P00533', 'uniprot', 9606) == 'P00533'
 
     def test_reaction_id_passthrough(self):
         # Orphan pseudo-enzyme IDs must pass through unchanged.
-        assert _to_ensg('MAR04831', 'reaction_id', 9606) == 'MAR04831'
+        assert _to_uniprot('MAR04831', 'reaction_id', 9606) == 'MAR04831'
 
     def test_reaction_id_with_underscores(self):
-        assert _to_ensg('ORPHAN_NA_TRANS', 'reaction_id', 9606) == 'ORPHAN_NA_TRANS'
+        assert _to_uniprot('ORPHAN_NA_TRANS', 'reaction_id', 9606) == 'ORPHAN_NA_TRANS'
 
     def test_unknown_id_type_returns_none(self):
-        result = _to_ensg('X', 'unknown_type', 9606)
+        result = _to_uniprot('X', 'unknown_type', 9606)
         assert result is None
 
 
@@ -68,8 +68,8 @@ class TestToEnsg:
 
 class TestTranslatePkn:
 
-    def _make_met_protein_row(self, source='CHEBI:1', target='ENSG001',
-                               id_type_a='chebi', id_type_b='ensembl'):
+    def _make_met_protein_row(self, source='CHEBI:1', target='P12345',
+                               id_type_a='chebi', id_type_b='uniprot'):
         return Interaction(
             source=source,
             target=target,
@@ -82,8 +82,8 @@ class TestTranslatePkn:
             mor=0,
         )
 
-    def _make_protein_met_row(self, source='ENSG001', target='CHEBI:1',
-                               id_type_a='ensembl', id_type_b='chebi'):
+    def _make_protein_met_row(self, source='P12345', target='CHEBI:1',
+                               id_type_a='uniprot', id_type_b='chebi'):
         return Interaction(
             source=source,
             target=target,
@@ -106,20 +106,20 @@ class TestTranslatePkn:
         result = translate_pkn(df)
         assert result.iloc[0]['source'] == 'CHEBI:30616'
 
-    def test_ensembl_target_preserved(self):
-        df = _make_df([self._make_met_protein_row(target='ENSG00000001234')])
+    def test_uniprot_target_preserved(self):
+        df = _make_df([self._make_met_protein_row(target='P00533')])
         result = translate_pkn(df)
-        assert result.iloc[0]['target'] == 'ENSG00000001234'
+        assert result.iloc[0]['target'] == 'P00533'
 
     def test_id_type_a_updated_to_chebi(self):
         df = _make_df([self._make_met_protein_row()])
         result = translate_pkn(df)
         assert result.iloc[0]['id_type_a'] == 'chebi'
 
-    def test_id_type_b_updated_to_ensg(self):
+    def test_id_type_b_updated_to_uniprot(self):
         df = _make_df([self._make_met_protein_row()])
         result = translate_pkn(df)
-        assert result.iloc[0]['id_type_b'] == 'ensg'
+        assert result.iloc[0]['id_type_b'] == 'uniprot'
 
     def test_drops_row_when_source_untranslatable(self):
         # pubchem id_type with no mapping available → source becomes None → dropped
@@ -132,9 +132,10 @@ class TestTranslatePkn:
         assert len(result) == 0
 
     def test_drops_row_when_target_untranslatable(self):
+        # ensp with a fake ID: pypath returns empty set with unloaded tables → dropped
         row = self._make_met_protein_row(
-            target='NOTANID',
-            id_type_b='uniprot',
+            target='ENSP999FAKE',
+            id_type_b='ensp',
         )
         df = _make_df([row])
         result = translate_pkn(df)
@@ -182,7 +183,7 @@ class TestTranslatePkn:
 
     def test_mixed_normal_and_orphan_rows(self):
         normal = self._make_met_protein_row(
-            source='CHEBI:30616', target='ENSG00000001234',
+            source='CHEBI:30616', target='P00533',
         )
         orphan = Interaction(
             source='CHEBI:30616',
@@ -199,19 +200,19 @@ class TestTranslatePkn:
         df = _make_df([normal, orphan])
         result = translate_pkn(df)
         assert len(result) == 2
-        assert result[result['id_type_b'] == 'ensg'].iloc[0]['target'] == 'ENSG00000001234'
+        assert result[result['id_type_b'] == 'uniprot'].iloc[0]['target'] == 'P00533'
         assert result[result['id_type_b'] == 'reaction_id'].iloc[0]['target'] == 'MAR04831'
 
     def test_direction_aware_gem_protein_source(self):
         # GEM produces protein-source edges (enzyme → metabolite); ensure
         # translate_pkn handles both directions.
         row = self._make_protein_met_row(
-            source='ENSG00000001234', target='CHEBI:30616',
+            source='P00533', target='CHEBI:30616',
         )
         df = _make_df([row])
         result = translate_pkn(df)
         assert len(result) == 1
-        assert result.iloc[0]['id_type_a'] == 'ensg'
+        assert result.iloc[0]['id_type_a'] == 'uniprot'
         assert result.iloc[0]['id_type_b'] == 'chebi'
 
     def test_index_reset(self):
@@ -322,36 +323,36 @@ class TestTranslatePknVectorized:
             mor=0, attrs=dict(attrs_kw),
         )
 
-    def test_chebi_ensembl_passthrough_unchanged(self):
-        """chebi + ensembl rows are returned with values identical to input."""
+    def test_chebi_uniprot_passthrough_unchanged(self):
+        """chebi + uniprot rows are returned with values identical to input."""
         rows = [
-            self._make_row('CHEBI:30616', 'ENSG00000001234', 'chebi', 'ensembl'),
-            self._make_row('CHEBI:15422', 'ENSG00000141510', 'chebi', 'ensembl'),
+            self._make_row('CHEBI:30616', 'P00533', 'chebi', 'uniprot'),
+            self._make_row('CHEBI:15422', 'P04637', 'chebi', 'uniprot'),
         ]
         df = _make_df(rows)
         result = translate_pkn(df)
         assert list(result['source']) == ['CHEBI:30616', 'CHEBI:15422']
-        assert list(result['target']) == ['ENSG00000001234', 'ENSG00000141510']
+        assert list(result['target']) == ['P00533', 'P04637']
 
     def test_multiple_id_types_in_one_call(self):
         """DataFrame with mixed id_types handled correctly in a single call."""
         rows = [
-            # chebi + ensembl: pass-through
-            self._make_row('CHEBI:30616', 'ENSG00000001234', 'chebi', 'ensembl'),
+            # chebi + uniprot: pass-through
+            self._make_row('CHEBI:30616', 'P00533', 'chebi', 'uniprot'),
             # chebi + reaction_id: orphan, pass-through
             self._make_row('CHEBI:30616', 'MAR04831', 'chebi', 'reaction_id',
                            target_type='protein', orphan=True),
-            # protein-source GEM edge: ensembl + chebi
-            self._make_row('ENSG00000001234', 'CHEBI:30616', 'ensembl', 'chebi',
+            # protein-source edge: uniprot + chebi
+            self._make_row('P00533', 'CHEBI:30616', 'uniprot', 'chebi',
                            source_type='protein', target_type='small_molecule'),
         ]
         df = _make_df(rows)
         result = translate_pkn(df)
         assert len(result) == 3
-        # chebi+ensembl row
+        # chebi+uniprot row
         row0 = result[result['id_type_a'] == 'chebi'].iloc[0]
         assert row0['source'] == 'CHEBI:30616'
-        assert row0['id_type_b'] == 'ensg'
+        assert row0['id_type_b'] == 'uniprot'
         # orphan row — reaction_id preserved
         orphan_rows = result[result['id_type_b'] == 'reaction_id']
         assert len(orphan_rows) == 1
@@ -360,8 +361,8 @@ class TestTranslatePknVectorized:
     def test_pubchem_no_mapping_drops_row(self):
         """A pubchem ID with no mapping in the dict → row is dropped."""
         rows = [
-            self._make_row('CHEBI:30616', 'ENSG001', 'chebi', 'ensembl'),
-            self._make_row('9999999999', 'ENSG001', 'pubchem', 'ensembl'),
+            self._make_row('CHEBI:30616', 'P00533', 'chebi', 'uniprot'),
+            self._make_row('9999999999', 'P00533', 'pubchem', 'uniprot'),
         ]
         df = _make_df(rows)
         result = translate_pkn(df)
@@ -372,9 +373,9 @@ class TestTranslatePknVectorized:
     def test_result_index_is_contiguous(self):
         """Index is always reset to 0..n-1 after translation."""
         rows = [
-            self._make_row('CHEBI:30616', 'ENSG001', 'chebi', 'ensembl'),
-            self._make_row('CHEBI:15422', 'ENSG002', 'chebi', 'ensembl'),
-            self._make_row('CHEBI:57540', 'ENSG003', 'chebi', 'ensembl'),
+            self._make_row('CHEBI:30616', 'P00533', 'chebi', 'uniprot'),
+            self._make_row('CHEBI:15422', 'P04637', 'chebi', 'uniprot'),
+            self._make_row('CHEBI:57540', 'P12345', 'chebi', 'uniprot'),
         ]
         df = _make_df(rows)
         result = translate_pkn(df)

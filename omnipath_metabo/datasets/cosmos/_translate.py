@@ -16,8 +16,8 @@
 """
 ID translation for COSMOS PKN interactions.
 
-Translates all metabolite IDs to ChEBI and all protein IDs to Ensembl
-gene IDs (ENSG).  Translation is direction-aware: GEM resources produce
+Translates all metabolite IDs to ChEBI and all protein IDs to UniProt
+accessions.  Translation is direction-aware: GEM resources produce
 enzyme→metabolite edges where the protein is the *source*, so
 ``source_type``/``target_type`` columns are checked rather than assuming
 a fixed metabolite-source / protein-target convention.
@@ -35,20 +35,21 @@ Translation strategies by metabolite id_type:
       format (e.g. ``HMDB0000001``) before lookup.
 
 Translation strategies by protein id_type:
-    - ``'uniprot'``: pypath ``uniprot → ensg`` via BioMart (TCDB, SLC, MRCLinksDB)
-    - ``'ensp'``: two-hop ``ensp → uniprot → ensg`` (STITCH)
-    - ``'genesymbol'``: pypath ``genesymbol → ensg`` (BRENDA fallback proteins)
-    - ``'ensembl'``: identity — GEM enzyme IDs are already Ensembl gene IDs
-    - ``'entrez'``: Recon3D Entrez Gene ID → ENSG.  Tries the Ensembl gene
-      cross-references embedded in the BiGG JSON first; falls back to pypath
-      ``ncbigene → ensg`` BioMart mapping.  ``_ATN`` isoform suffixes must
-      already be stripped by the caller (``recon3d.py`` does this at parse
-      time).
+    - ``'uniprot'``: identity passthrough (TCDB, SLC, MRCLinksDB, BRENDA)
+    - ``'ensp'``: pypath ``ensp → uniprot`` via BioMart (STITCH)
+    - ``'genesymbol'``: pypath ``genesymbol → uniprot`` (BRENDA fallback)
+    - ``'ensembl'``: pypath ``ensg → uniprot`` via BioMart (GEM enzyme IDs
+      are ENSG; translated to UniProt for cross-network integration)
+    - ``'entrez'``: Recon3D Entrez Gene ID → UniProt.  Tries BiGG-embedded
+      gene symbol → UniProt first; falls back to pypath
+      ``ncbigene → uniprot`` BioMart mapping.  ``_ATN`` isoform suffixes
+      must already be stripped by the caller (``recon3d.py`` does this at
+      parse time).
 """
 
 from __future__ import annotations
 
-__all__ = ['translate_pkn', '_to_hmdb']
+__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot']
 
 import json
 import logging
@@ -200,23 +201,23 @@ def _bigg_to_chebi() -> dict[str, str]:
 
 
 @cache
-def _entrez_to_ensg_bigg() -> dict[str, str]:
+def _entrez_to_uniprot_bigg() -> dict[str, str]:
     """
-    Build an Entrez Gene ID → ENSG mapping via BiGG gene symbols.
+    Build an Entrez Gene ID → UniProt AC mapping via BiGG gene symbols.
 
     The BiGG JSON gene objects carry a ``name`` field containing the HGNC
     gene symbol (e.g. ``'SLC25A21'``).  This function strips the ``_ATN``
     isoform suffix from the gene ``id`` to recover the base Entrez ID, then
-    maps the gene symbol to ENSG using pypath's BioMart-backed
-    ``genesymbol → ensg`` mapping.
+    maps the gene symbol to UniProt using pypath's BioMart-backed
+    ``genesymbol → uniprot`` mapping.
 
-    The genesymbol → ENSG mapping table is downloaded once by pypath and
+    The genesymbol → UniProt mapping table is downloaded once by pypath and
     cached on disk; subsequent calls are fast dictionary lookups.  The final
-    entrez → ENSG dict is cached in memory for the session.
+    entrez → UniProt dict is cached in memory for the session.
 
     Returns:
-        Dict mapping Entrez Gene ID strings (e.g. ``'89874'``) to ENSG IDs
-        (e.g. ``'ENSG00000183032'``).
+        Dict mapping Entrez Gene ID strings (e.g. ``'89874'``) to UniProt
+        ACs (e.g. ``'Q9UBT5'``).
     """
 
     import re
@@ -239,10 +240,10 @@ def _entrez_to_ensg_bigg() -> dict[str, str]:
         if entrez in result:
             continue
 
-        ensg_set = mapping_mod.map_name(name, 'genesymbol', 'ensg', ncbi_tax_id=9606)
+        uniprot_set = mapping_mod.map_name(name, 'genesymbol', 'uniprot', ncbi_tax_id=9606)
 
-        if ensg_set:
-            result[entrez] = next(iter(ensg_set))
+        if uniprot_set:
+            result[entrez] = next(iter(uniprot_set))
 
     return result
 
@@ -459,9 +460,9 @@ def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
     return None
 
 
-def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
+def _to_uniprot(target_id: str, id_type: str, organism: int) -> str | None:
     """
-    Translate a protein identifier to an Ensembl gene ID (ENSG).
+    Translate a protein identifier to a UniProt accession.
 
     Args:
         target_id: The protein identifier.
@@ -472,15 +473,13 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
         organism: NCBI taxonomy ID.
 
     Returns:
-        Ensembl gene ID string (``ENSG...``), or ``None`` if translation
-        is not possible.
+        UniProt accession string, or ``None`` if translation is not possible.
     """
 
     import pypath.utils.mapping as mapping_mod
 
-    if id_type == 'ensembl':
-        # Already an Ensembl gene ID — pass through as-is.
-        # GEM enzyme IDs are ENSG... by construction.
+    if id_type == 'uniprot':
+        # Already a UniProt AC — pass through as-is.
         return target_id
 
     elif id_type == 'reaction_id':
@@ -489,63 +488,48 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
 
     elif id_type == 'entrez':
         # Recon3D Entrez Gene IDs (_ATN suffixes already stripped by recon3d.py).
-        # Try BiGG-embedded Ensembl cross-references first; fall back to
-        # pypath BioMart mapping.
-        ensg = _entrez_to_ensg_bigg().get(target_id)
+        # Try BiGG-embedded gene symbol → UniProt first; fall back to
+        # pypath BioMart ncbigene → uniprot mapping.
+        uniprot = _entrez_to_uniprot_bigg().get(target_id)
 
-        if ensg:
-            return ensg
+        if uniprot:
+            return uniprot
 
         result = mapping_mod.map_name(
             target_id,
             'ncbigene',
-            'ensg',
-            ncbi_tax_id=organism,
-        )
-
-        if not result:
-            return None
-
-        if len(result) > 1:
-            _log.debug(
-                'Multiple ENSG IDs for Entrez %s: %s — using first.',
-                target_id,
-                result,
-            )
-
-        return next(iter(result))
-
-    elif id_type == 'uniprot':
-        result = mapping_mod.map_name(
-            target_id,
             'uniprot',
-            'ensg',
             ncbi_tax_id=organism,
         )
 
     elif id_type == 'ensp':
-        # ENSP → UniProt → ENSG (direct ensp→ensg is not supported by pypath)
-        uniprots = mapping_mod.map_name(
+        # ENSP → UniProt (direct one-hop mapping via pypath BioMart)
+        result = mapping_mod.map_name(
             target_id,
             'ensp',
             'uniprot',
             ncbi_tax_id=organism,
         )
-        result = set()
 
-        for u in uniprots:
-            result |= mapping_mod.map_name(u, 'uniprot', 'ensg', ncbi_tax_id=organism)
+    elif id_type == 'ensembl':
+        # ENSG → UniProt (GEM enzyme IDs; translated for cross-network integration)
+        result = mapping_mod.map_name(
+            target_id,
+            'ensg',
+            'uniprot',
+            ncbi_tax_id=organism,
+        )
 
     elif id_type == 'genesymbol':
         result = mapping_mod.map_name(
             target_id,
             'genesymbol',
-            'ensg',
+            'uniprot',
             ncbi_tax_id=organism,
         )
 
     else:
-        _log.debug('Unknown protein id_type %r, cannot translate to ENSG.', id_type)
+        _log.debug('Unknown protein id_type %r, cannot translate to UniProt.', id_type)
         return None
 
     if not result:
@@ -553,7 +537,7 @@ def _to_ensg(target_id: str, id_type: str, organism: int) -> str | None:
 
     if len(result) > 1:
         _log.debug(
-            'Multiple ENSG IDs for %s (%s): %s — using first.',
+            'Multiple UniProt ACs for %s (%s): %s — using first.',
             target_id,
             id_type,
             result,
@@ -637,7 +621,7 @@ def _build_protein_mapping(
     organism: int,
 ) -> dict[str, str | None]:
     """
-    Build a {source_id → ENSG} mapping for a group of protein IDs.
+    Build a {source_id → UniProt} mapping for a group of protein IDs.
 
     Called once per ``(id_type, 'protein')`` group.  Performs BioMart
     lookups in bulk by iterating unique IDs and mapping through pypath's
@@ -649,59 +633,55 @@ def _build_protein_mapping(
         organism: NCBI taxonomy ID.
 
     Returns:
-        Dict mapping each unique source ID to its ENSG ID (or ``None``).
+        Dict mapping each unique source ID to its UniProt AC (or ``None``).
     """
     import pypath.utils.mapping as mapping_mod
 
     unique_ids = ids.unique()
 
-    if id_type == 'ensembl':
+    if id_type == 'uniprot':
         return {uid: uid for uid in unique_ids}
 
     if id_type == 'reaction_id':
         return {uid: uid for uid in unique_ids}
 
     if id_type == 'entrez':
-        bigg_map = _entrez_to_ensg_bigg()
+        bigg_map = _entrez_to_uniprot_bigg()
         result: dict[str, str | None] = {}
         for uid in unique_ids:
-            ensg = bigg_map.get(uid)
-            if not ensg:
-                res = mapping_mod.map_name(uid, 'ncbigene', 'ensg',
+            uniprot = bigg_map.get(uid)
+            if not uniprot:
+                res = mapping_mod.map_name(uid, 'ncbigene', 'uniprot',
                                            ncbi_tax_id=organism)
-                ensg = next(iter(res)) if res else None
-            result[uid] = ensg
-        return result
-
-    if id_type == 'uniprot':
-        result = {}
-        for uid in unique_ids:
-            res = mapping_mod.map_name(uid, 'uniprot', 'ensg',
-                                       ncbi_tax_id=organism)
-            result[uid] = next(iter(res)) if res else None
+                uniprot = next(iter(res)) if res else None
+            result[uid] = uniprot
         return result
 
     if id_type == 'ensp':
         result = {}
         for uid in unique_ids:
-            uniprots = mapping_mod.map_name(uid, 'ensp', 'uniprot',
-                                            ncbi_tax_id=organism)
-            ensg_set: set[str] = set()
-            for u in uniprots:
-                ensg_set |= mapping_mod.map_name(u, 'uniprot', 'ensg',
-                                                 ncbi_tax_id=organism)
-            result[uid] = next(iter(ensg_set)) if ensg_set else None
+            res = mapping_mod.map_name(uid, 'ensp', 'uniprot',
+                                       ncbi_tax_id=organism)
+            result[uid] = next(iter(res)) if res else None
+        return result
+
+    if id_type == 'ensembl':
+        result = {}
+        for uid in unique_ids:
+            res = mapping_mod.map_name(uid, 'ensg', 'uniprot',
+                                       ncbi_tax_id=organism)
+            result[uid] = next(iter(res)) if res else None
         return result
 
     if id_type == 'genesymbol':
         result = {}
         for uid in unique_ids:
-            res = mapping_mod.map_name(uid, 'genesymbol', 'ensg',
+            res = mapping_mod.map_name(uid, 'genesymbol', 'uniprot',
                                        ncbi_tax_id=organism)
             result[uid] = next(iter(res)) if res else None
         return result
 
-    _log.debug('Unknown protein id_type %r, cannot translate to ENSG.', id_type)
+    _log.debug('Unknown protein id_type %r, cannot translate to UniProt.', id_type)
     return {uid: None for uid in unique_ids}
 
 
@@ -745,7 +725,7 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     Translate COSMOS PKN IDs to unified types.
 
     Metabolite source IDs are translated to ChEBI.  Protein target IDs are
-    translated to Ensembl gene IDs (ENSG).  Rows where either translation
+    translated to UniProt accessions.  Rows where either translation
     fails are dropped and a warning is logged.
 
     Translation is vectorised: rows are grouped by ``(id_type, entity_type)``
@@ -760,7 +740,7 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
             NCBI taxonomy ID (default: 9606 for human).
 
     Returns:
-        DataFrame with ``source`` as ChEBI, ``target`` as ENSG, and updated
+        DataFrame with ``source`` as ChEBI, ``target`` as UniProt, and updated
         ``id_type_a`` / ``id_type_b`` columns.  Index is reset.
     """
     df = df.copy()
@@ -788,7 +768,7 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
 
     df = df.dropna(subset=['source', 'target']).copy()
 
-    _type_to_id = {'small_molecule': 'chebi', 'protein': 'ensg'}
+    _type_to_id = {'small_molecule': 'chebi', 'protein': 'uniprot'}
 
     # Preserve 'reaction_id' entries (orphan pseudo-enzymes) — only update
     # rows where the id_type is a translatable type.
