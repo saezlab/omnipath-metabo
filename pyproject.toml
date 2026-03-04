@@ -52,6 +52,9 @@ tests = [
     "ruff",
 ]
 
+[project.scripts]
+cosmos-pkn = "omnipath_metabo.datasets.cosmos._cli:main"
+
 [project.urls]
 Documentation = "https://saezlab.github.io/omnipath-metabo"
 Homepage = "https://github.com/saezlab/omnipath-metabo"
