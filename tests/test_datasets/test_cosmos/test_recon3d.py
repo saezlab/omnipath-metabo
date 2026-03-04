@@ -102,23 +102,27 @@ class TestParseGeneRule:
 
     def test_single_gene_strips_suffix(self):
         result = _parse_gene_rule('1234_AT1')
-        assert result == ['1234']
+        assert len(result) == 1
+        enzyme_id, isoforms = result[0]
+        assert enzyme_id == '1234'
 
     def test_multiple_atn_suffixes_stripped(self):
         result = _parse_gene_rule('1234_AT2')
-        assert result == ['1234']
+        enzyme_id, isoforms = result[0]
+        assert enzyme_id == '1234'
 
     def test_or_rule_gives_multiple_enzymes(self):
         result = _parse_gene_rule('1234_AT1 or 5678_AT1')
         assert len(result) == 2
-        assert '1234' in result
-        assert '5678' in result
+        ids = [r[0] for r in result]
+        assert '1234' in ids
+        assert '5678' in ids
 
     def test_and_rule_gives_complex(self):
         result = _parse_gene_rule('1234_AT1 and 5678_AT1')
         assert len(result) == 1
-        # complex subunits joined with '_', sorted
-        assert result[0] == '1234_5678'
+        enzyme_id, isoforms = result[0]
+        assert enzyme_id == '1234_5678'
 
     def test_parentheses_stripped(self):
         result = _parse_gene_rule('(1234_AT1 or 5678_AT1)')
@@ -126,13 +130,40 @@ class TestParseGeneRule:
 
     def test_mixed_or_and(self):
         result = _parse_gene_rule('1111_AT1 or (2222_AT1 and 3333_AT1)')
-        assert '1111' in result
-        assert '2222_3333' in result
+        ids = [r[0] for r in result]
+        assert '1111' in ids
+        assert '2222_3333' in ids
 
     def test_complex_subunits_sorted(self):
-        # sorted order: '2222' before '9999'
         result = _parse_gene_rule('9999_AT1 and 2222_AT1')
-        assert result == ['2222_9999']
+        assert len(result) == 1
+        enzyme_id, isoforms = result[0]
+        assert enzyme_id == '2222_9999'
+
+    def test_isoforms_captured_single_gene(self):
+        _, isoforms = _parse_gene_rule('1234_AT1')[0]
+        assert isoforms == {'1234': 'AT1'}
+
+    def test_isoforms_captured_at2(self):
+        _, isoforms = _parse_gene_rule('1234_AT2')[0]
+        assert isoforms == {'1234': 'AT2'}
+
+    def test_isoforms_empty_when_no_suffix(self):
+        result = _parse_gene_rule('1234')
+        assert len(result) == 1
+        enzyme_id, isoforms = result[0]
+        assert enzyme_id == '1234'
+        assert isoforms == {}
+
+    def test_isoforms_complex_rule(self):
+        _, isoforms = _parse_gene_rule('5678_AT1 and 9012_AT2')[0]
+        assert isoforms == {'5678': 'AT1', '9012': 'AT2'}
+
+    def test_isoforms_per_or_branch(self):
+        result = _parse_gene_rule('1111_AT1 or 2222_AT2')
+        by_id = {eid: iso for eid, iso in result}
+        assert by_id['1111'] == {'1111': 'AT1'}
+        assert by_id['2222'] == {'2222': 'AT2'}
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +268,30 @@ class TestTransportDetection:
         assert any('_' in e for e in enz_ids), 'AND-rule complex not joined'
         complex_edges = [r for r in recs if r.attrs.get('enzyme_complex')]
         assert len(complex_edges) > 0
+
+    def test_isoforms_in_attrs_when_present(self):
+        # _RXN_ATP_TRANSPORT has gene rule '1234_AT1' → isoforms = {'1234': 'AT1'}
+        recs = _run([_RXN_ATP_TRANSPORT])
+        for r in recs:
+            assert 'isoforms' in r.attrs
+            assert r.attrs['isoforms'] == {'1234': 'AT1'}
+
+    def test_no_isoforms_in_attrs_when_absent(self):
+        rxn = {
+            'id': 'NO_ISO',
+            'gene_reaction_rule': '9876',  # no _ATN suffix
+            'metabolites': {'x_c': -1, 'x_e': 1},
+            'lower_bound': 0, 'upper_bound': 1000,
+            'reversible': False,
+        }
+        recs = _run([rxn])
+        for r in recs:
+            assert 'isoforms' not in r.attrs
+
+    def test_orphan_has_no_isoforms(self):
+        recs = _run([_RXN_ORPHAN_TRANSPORT])
+        for r in recs:
+            assert 'isoforms' not in r.attrs
 
 
 # ---------------------------------------------------------------------------

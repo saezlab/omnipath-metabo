@@ -96,12 +96,15 @@ def _strip_compartment(met_id: str) -> tuple[str, str]:
     return met_id, ''
 
 
-def _parse_gene_rule(rule: str) -> list[str]:
+def _parse_gene_rule(
+    rule: str,
+) -> list[tuple[str, dict[str, str]]]:
     """
     Parse a Recon3D gene_reaction_rule into clean Entrez enzyme identifiers.
 
     Strips ``_ATN`` isoform suffixes from gene IDs before building complex
-    subunit strings.  OR-separated parts become separate isoenzymes; AND-
+    subunit strings, and records the stripped designations in a per-enzyme
+    isoform map.  OR-separated parts become separate isoenzymes; AND-
     separated parts become underscore-joined complex subunit IDs.
 
     Args:
@@ -109,8 +112,12 @@ def _parse_gene_rule(rule: str) -> list[str]:
             (e.g. ``'1234_AT1 or (5678_AT1 and 9012_AT2)'``).
 
     Returns:
-        List of enzyme identifier strings with ``_ATN`` suffixes removed.
-        Empty list for orphan reactions (empty or whitespace-only rule).
+        List of ``(enzyme_id, isoforms)`` tuples.  *enzyme_id* has
+        ``_ATN`` suffixes stripped.  *isoforms* maps each base Entrez ID
+        that carried an isoform designation to its designation string
+        (e.g. ``{'5678': 'AT1', '9012': 'AT2'}``); the dict is empty when
+        no gene in this enzyme group carried an isoform suffix.
+        Returns an empty list for orphan reactions (empty/whitespace rule).
     """
     if not rule or not rule.strip():
         return []
@@ -119,17 +126,37 @@ def _parse_gene_rule(rule: str) -> list[str]:
     enzymes = []
 
     for or_part in re.split(r'\bor\b', rule, flags=re.IGNORECASE):
-        genes = [
-            re.sub(r'_AT\d+$', '', g.strip())
+        raw_genes = [
+            g.strip()
             for g in re.split(r'\band\b', or_part, flags=re.IGNORECASE)
             if g.strip()
         ]
-        genes = [g for g in genes if g]
 
-        if not genes:
+        if not raw_genes:
             continue
 
-        enzymes.append('_'.join(sorted(genes)) if len(genes) > 1 else genes[0])
+        bases: list[str] = []
+        isoforms: dict[str, str] = {}
+
+        for g in raw_genes:
+            m = re.search(r'(_AT\d+)$', g)
+
+            if m:
+                base = g[:m.start()]
+                isoforms[base] = m.group(1)[1:]  # e.g. 'AT1', 'AT2'
+            else:
+                base = g
+
+            if base:
+                bases.append(base)
+
+        bases = [b for b in bases if b]
+
+        if not bases:
+            continue
+
+        enzyme_id = '_'.join(sorted(bases)) if len(bases) > 1 else bases[0]
+        enzymes.append((enzyme_id, isoforms))
 
     return enzymes
 
@@ -205,10 +232,11 @@ def recon3d_transporter_interactions(
     reactions = recon3d_reactions()
 
     # Two-pass: collect all candidate edge tuples first, then filter by
-    # metabolite degree.  Tuple layout (11 fields):
+    # metabolite degree.  Tuple layout (12 fields):
     #   src, src_type, src_comp,
     #   tgt, tgt_type, tgt_comp,
-    #   rxn_id, is_reverse, transport_from, transport_to, is_complex
+    #   rxn_id, is_reverse, transport_from, transport_to, is_complex,
+    #   isoforms
     raw: list[tuple] = []
     n_transport_rxn = 0
 
@@ -259,24 +287,24 @@ def recon3d_transporter_interactions(
                 raw.append((
                     base_id, 'metabolite', in_comp,
                     rxn_id, 'reaction', '',
-                    rxn_id, False, in_comp, out_comp, False,
+                    rxn_id, False, in_comp, out_comp, False, {},
                 ))
                 raw.append((
                     rxn_id, 'reaction', '',
                     base_id, 'metabolite', out_comp,
-                    rxn_id, False, in_comp, out_comp, False,
+                    rxn_id, False, in_comp, out_comp, False, {},
                 ))
 
                 if reversible and include_reverse:
                     raw.append((
                         base_id, 'metabolite', out_comp,
                         rxn_id, 'reaction', '',
-                        rxn_id, True, out_comp, in_comp, False,
+                        rxn_id, True, out_comp, in_comp, False, {},
                     ))
                     raw.append((
                         rxn_id, 'reaction', '',
                         base_id, 'metabolite', in_comp,
-                        rxn_id, True, out_comp, in_comp, False,
+                        rxn_id, True, out_comp, in_comp, False, {},
                     ))
 
             continue
@@ -284,19 +312,19 @@ def recon3d_transporter_interactions(
         n_transport_rxn += 1
 
         for base_id, in_comp, out_comp in transported:
-            for enzyme in enzymes:
+            for enzyme, isoforms in enzymes:
                 is_complex = '_' in enzyme
 
                 # Forward: met[in_comp] → enzyme → met[out_comp]
                 raw.append((
                     base_id, 'metabolite', in_comp,
                     enzyme, 'protein', '',
-                    rxn_id, False, in_comp, out_comp, is_complex,
+                    rxn_id, False, in_comp, out_comp, is_complex, isoforms,
                 ))
                 raw.append((
                     enzyme, 'protein', '',
                     base_id, 'metabolite', out_comp,
-                    rxn_id, False, in_comp, out_comp, is_complex,
+                    rxn_id, False, in_comp, out_comp, is_complex, isoforms,
                 ))
 
                 if reversible and include_reverse:
@@ -304,12 +332,12 @@ def recon3d_transporter_interactions(
                     raw.append((
                         base_id, 'metabolite', out_comp,
                         enzyme, 'protein', '',
-                        rxn_id, True, out_comp, in_comp, is_complex,
+                        rxn_id, True, out_comp, in_comp, is_complex, isoforms,
                     ))
                     raw.append((
                         enzyme, 'protein', '',
                         base_id, 'metabolite', in_comp,
-                        rxn_id, True, out_comp, in_comp, is_complex,
+                        rxn_id, True, out_comp, in_comp, is_complex, isoforms,
                     ))
 
     # Count each metabolite's total degree across all candidate edges.
@@ -328,6 +356,7 @@ def recon3d_transporter_interactions(
         src, src_type, src_comp,
         tgt, tgt_type, tgt_comp,
         rxn_id, is_reverse, transport_from, transport_to, is_complex,
+        isoforms,
     ) in raw:
         met = src if src_type == 'metabolite' else tgt
 
@@ -365,6 +394,9 @@ def recon3d_transporter_interactions(
 
         if is_orphan:
             attrs['orphan'] = True
+
+        if isoforms and not is_orphan:
+            attrs['isoforms'] = isoforms
 
         yield Interaction(
             source=source,
