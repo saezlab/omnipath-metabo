@@ -332,7 +332,7 @@ def gem_interactions(
                 id_type_b=id_type_b,
                 interaction_type='catalysis',
                 resource=f'{resource_prefix}:{gem_name}',
-                mor=0,
+                mor=1,
                 locations=locations,
                 attrs=attrs,
             ),

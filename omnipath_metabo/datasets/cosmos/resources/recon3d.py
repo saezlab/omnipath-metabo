@@ -407,7 +407,7 @@ def recon3d_transporter_interactions(
             id_type_b=id_type_b,
             interaction_type='transport',
             resource='Recon3D',
-            mor=0,
+            mor=1,
             locations=locations,
             attrs=attrs,
         )
