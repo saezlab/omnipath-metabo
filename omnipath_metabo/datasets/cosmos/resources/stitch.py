@@ -22,13 +22,27 @@ interaction mode, normalising orientation so the small molecule
 is always the source.
 
 Each STITCH interaction is classified into one of three protein-role
-categories using Guide to Pharmacology (``guidetopharma``):
+categories using a two-source annotation strategy:
 
-- ``'receptor'``: the protein is a receptor in Guide to Pharmacology
-  (GPCR, ion channel, NHR, catalytic receptor).
-- ``'transporter'``: the protein is annotated as a transporter.
-- ``'other'``: allosteric regulators, enzymes, and proteins not present
-  in Guide to Pharmacology.
+1. **Guide to Pharmacology** (``guidetopharma``) classifies GPCRs, ion
+   channels, nuclear hormone receptors, and catalytic receptors as
+   ``'receptor'``; its ``'transporter'`` type maps to ``'transporter'``.
+
+2. **TCDB** (Transporter Classification Database) provides exhaustive
+   transporter coverage beyond what Guide to Pharmacology annotates.
+   Any UniProt present in TCDB that is not already classified as a
+   receptor by Guide to Pharmacology is assigned ``'transporter'``.
+
+Priority order: receptor (G2P or Intercell) > transporter (G2P, TCDB,
+or Intercell) > other.
+
+- ``'receptor'``: protein is a GPCR, ion channel, NHR, or catalytic
+  receptor in Guide to Pharmacology, or annotated as a receptor in
+  OmniPath Intercell (aggregates CellPhoneDB, HPMR, CellChatDB, etc.).
+- ``'transporter'``: protein is a transporter in Guide to Pharmacology,
+  present in TCDB, or annotated as a transporter in OmniPath Intercell.
+- ``'other'``: allosteric regulators, enzymes, and proteins absent from
+  all three sources.
 
 The classification is stored in the ``interaction_type`` field.  The
 original STITCH mode (``'activation'``, ``'inhibition'``, ``'binding'``,
@@ -49,28 +63,43 @@ if TYPE_CHECKING:
     from collections.abc import Sequence
 
 
-# Guide to Pharmacology target_type values that map to each COSMOS category.
-# Values are lowercase with underscores as returned by guidetopharma._targets.
+# Guide to Pharmacology target_type values that map to 'receptor'.
+# Values are lowercase with underscores as returned by guidetopharma.
 _G2P_RECEPTOR_TYPES = frozenset({
-    'gpcr',            # G protein-coupled receptors
+    'gpcr',                # G protein-coupled receptors
     'catalytic_receptor',  # receptor tyrosine kinases etc.
-    'nhr',             # nuclear hormone receptors
-    'vgic',            # voltage-gated ion channels
-    'lgic',            # ligand-gated ion channels
-    'other_ic',        # other ion channels
+    'nhr',                 # nuclear hormone receptors
+    'vgic',                # voltage-gated ion channels
+    'lgic',                # ligand-gated ion channels
+    'other_ic',            # other ion channels
 })
 _G2P_TRANSPORTER_TYPES = frozenset({'transporter'})
 
 
 @cache
-def _g2p_uniprot_types(organism: int) -> dict[str, str]:
+def _multidb_uniprot_types(organism: int) -> dict[str, str]:
     """
-    Build a UniProt → interaction_type dict from Guide to Pharmacology.
+    Build a UniProt → interaction_type dict from OmniPath Intercell,
+    TCDB, and Guide to Pharmacology (union).
 
-    Uses the ``guidetopharma`` subpackage (the newer, actively maintained
-    implementation). ``target_type`` values from the
-    ``targets_and_families`` table are collapsed to three categories:
-    ``'receptor'``, ``'transporter'``, or ``'other'``.
+    Classification priority (lowest → highest):
+
+    1. OmniPath Intercell transporter set → ``'transporter'``.
+    2. TCDB annotations → ``'transporter'``.
+    3. OmniPath Intercell receptor set → ``'receptor'``.
+    4. Guide to Pharmacology transporter type → ``'transporter'``
+       (unless already ``'receptor'``).
+    5. Guide to Pharmacology receptor types → ``'receptor'``
+       (highest priority; overrides everything).
+
+    OmniPath Intercell aggregates CellPhoneDB, HPMR, CellChatDB, and
+    many other sources.  TCDB provides exhaustive transporter coverage.
+    Guide to Pharmacology has the strongest receptor curation and
+    highest classification priority.
+
+    Intercell db build is expensive on first call (~minutes); subsequent
+    calls within the same Python session are instant.  If intercell
+    fails for any reason the function falls back to TCDB + G2P.
 
     Downloaded once per session per organism and cached in memory.
 
@@ -78,13 +107,39 @@ def _g2p_uniprot_types(organism: int) -> dict[str, str]:
         organism: NCBI taxonomy ID.
 
     Returns:
-        Dict mapping UniProt accession strings to category strings.
+        Dict mapping UniProt accession strings to ``'receptor'`` or
+        ``'transporter'``.  Proteins absent from all sources are not
+        present in the dict (caller defaults to ``'other'``).
     """
 
     from pypath.inputs.guidetopharma import protein_targets
+    from pypath.inputs.tcdb import tcdb_annotations
 
     result: dict[str, str] = {}
 
+    # --- Intercell: broad multi-source baseline (lowest priority) ---
+    try:
+        from pypath.core import intercell as intercell_mod
+
+        db = intercell_mod.get_db()
+
+        for entity in db.select('transporter'):
+            if isinstance(entity, str):
+                result[entity] = 'transporter'
+
+        for entity in db.select('receptor'):
+            if isinstance(entity, str):
+                result[entity] = 'receptor'
+
+    except Exception:
+        pass  # intercell unavailable; TCDB + G2P still applied below
+
+    # --- TCDB: exhaustive transporter coverage ---
+    for uniprot in tcdb_annotations(organism):
+        if result.get(uniprot) != 'receptor':
+            result[uniprot] = 'transporter'
+
+    # --- G2P: highest-priority receptor curation ---
     for targets_list in protein_targets().values():
 
         for t in targets_list:
@@ -95,9 +150,8 @@ def _g2p_uniprot_types(organism: int) -> dict[str, str]:
             if t.target_type in _G2P_RECEPTOR_TYPES:
                 result[t.uniprot] = 'receptor'
             elif t.target_type in _G2P_TRANSPORTER_TYPES:
-                result[t.uniprot] = 'transporter'
-            else:
-                result[t.uniprot] = 'other'
+                if result.get(t.uniprot) != 'receptor':
+                    result[t.uniprot] = 'transporter'
 
     return result
 
@@ -107,9 +161,9 @@ def _classify_protein(ensp: str, organism: int) -> str:
     Return the COSMOS interaction_type for a STITCH protein (ENSP).
 
     Translates the ENSP to UniProt via pypath's BioMart-backed mapping,
-    then looks up the UniProt in the Guide to Pharmacology type table.
-    Returns ``'other'`` if translation fails or the protein is absent
-    from Guide to Pharmacology.
+    then looks up the UniProt in the multi-source annotation table
+    (Guide to Pharmacology + TCDB).  Returns ``'other'`` if translation
+    fails or the protein is absent from both sources.
 
     Args:
         ensp: Ensembl protein identifier (ENSP...).
@@ -121,11 +175,11 @@ def _classify_protein(ensp: str, organism: int) -> str:
 
     import pypath.utils.mapping as mapping_mod
 
-    g2p_types = _g2p_uniprot_types(organism)
+    types = _multidb_uniprot_types(organism)
     uniprots = mapping_mod.map_name(ensp, 'ensp', 'uniprot', ncbi_tax_id=organism)
 
     for uniprot in uniprots:
-        itype = g2p_types.get(uniprot)
+        itype = types.get(uniprot)
 
         if itype:
             return itype
@@ -143,8 +197,8 @@ def stitch_interactions(
     Yield STITCH chemical-protein interactions as uniform records.
 
     Each protein target is classified by its biological role using
-    Guide to Pharmacology: ``'receptor'``, ``'transporter'``, or
-    ``'other'`` (allosteric / unknown binding).  The classification
+    Guide to Pharmacology and TCDB: ``'receptor'``, ``'transporter'``,
+    or ``'other'`` (allosteric / unknown binding).  The classification
     is stored in ``interaction_type``; the original STITCH mode is
     preserved in ``attrs['stitch_mode']``.
 
