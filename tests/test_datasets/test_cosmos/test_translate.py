@@ -380,3 +380,92 @@ class TestTranslatePknVectorized:
         df = _make_df(rows)
         result = translate_pkn(df)
         assert list(result.index) == list(range(len(result)))
+
+
+# ---------------------------------------------------------------------------
+# translate_pkn vectorized path — id_type='hmdb' (mocked UniChem)
+# ---------------------------------------------------------------------------
+
+class TestTranslatePknHmdb:
+    """Verify translate_pkn normalises old HMDB IDs before the dict lookup."""
+
+    _FAKE_MAPPING = {
+        'HMDB0000001': 'CHEBI:16015',
+        'HMDB0000190': 'CHEBI:17289',
+    }
+
+    def _make_row(self, source, target='P00533', id_type_a='hmdb',
+                  id_type_b='uniprot'):
+        return Interaction(
+            source=source,
+            target=target,
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a=id_type_a,
+            id_type_b=id_type_b,
+            interaction_type='catalysis',
+            resource='STITCH',
+            mor=1,
+        )
+
+    def test_new_format_hmdb_translates(self):
+        """7-digit HMDB ID is looked up directly."""
+        rows = [self._make_row('HMDB0000001')]
+        df = _make_df(rows)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = translate_pkn(df)
+        assert len(result) == 1
+        assert result.iloc[0]['source'] == 'CHEBI:16015'
+
+    def test_old_format_hmdb_normalised_then_translates(self):
+        """5-digit HMDB ID is normalised to 7-digit before lookup."""
+        rows = [self._make_row('HMDB00190')]
+        df = _make_df(rows)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = translate_pkn(df)
+        assert len(result) == 1
+        assert result.iloc[0]['source'] == 'CHEBI:17289'
+
+    def test_old_and_new_same_id_same_output(self):
+        """Old-format and new-format of the same HMDB ID produce the same ChEBI."""
+        rows = [self._make_row('HMDB00001'), self._make_row('HMDB0000001')]
+        df = _make_df(rows)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = translate_pkn(df)
+        assert len(result) == 2
+        assert (result['source'] == 'CHEBI:16015').all()
+
+    def test_unmapped_hmdb_drops_row(self):
+        """HMDB ID with no ChEBI mapping causes the row to be dropped."""
+        rows = [
+            self._make_row('HMDB9999999'),   # not in mapping → dropped
+            self._make_row('HMDB0000001'),   # maps → kept
+        ]
+        df = _make_df(rows)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = translate_pkn(df)
+        assert len(result) == 1
+        assert result.iloc[0]['source'] == 'CHEBI:16015'
+
+    def test_id_type_a_updated_to_chebi(self):
+        """After translation, id_type_a is updated from 'hmdb' to 'chebi'."""
+        rows = [self._make_row('HMDB0000001')]
+        df = _make_df(rows)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            return_value=self._FAKE_MAPPING,
+        ):
+            result = translate_pkn(df)
+        assert result.iloc[0]['id_type_a'] == 'chebi'
