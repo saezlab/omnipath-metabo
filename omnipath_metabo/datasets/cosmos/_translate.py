@@ -798,12 +798,36 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
             'Dropped %d rows: source ID could not be translated.',
             n_failed_source,
         )
+        breakdown = (
+            df[df['source'].isna()]
+            .groupby(['resource', 'id_type_a'])
+            .size()
+        )
+        for (resource, id_type), count in breakdown.items():
+            _log.warning(
+                '  source: %d rows from %s (id_type=%s)',
+                count,
+                resource,
+                id_type,
+            )
 
     if n_failed_target:
         _log.warning(
             'Dropped %d rows: target ID could not be translated.',
             n_failed_target,
         )
+        breakdown = (
+            df[df['target'].isna()]
+            .groupby(['resource', 'id_type_b'])
+            .size()
+        )
+        for (resource, id_type), count in breakdown.items():
+            _log.warning(
+                '  target: %d rows from %s (id_type=%s)',
+                count,
+                resource,
+                id_type,
+            )
 
     df = df.dropna(subset=['source', 'target']).copy()
 

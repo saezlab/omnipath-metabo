@@ -113,7 +113,7 @@ def _multidb_uniprot_types(organism: int) -> dict[str, str]:
     """
 
     from pypath.inputs.guidetopharma import protein_targets
-    from pypath.inputs.tcdb import tcdb_annotations
+    from pypath.inputs.tcdb import tcdb_classes
 
     result: dict[str, str] = {}
 
@@ -135,9 +135,10 @@ def _multidb_uniprot_types(organism: int) -> dict[str, str]:
         pass  # intercell unavailable; TCDB + G2P still applied below
 
     # --- TCDB: exhaustive transporter coverage ---
-    for uniprot in tcdb_annotations(organism):
-        if result.get(uniprot) != 'receptor':
-            result[uniprot] = 'transporter'
+    # Every entry in TCDB is a transporter by definition; no family-name
+    # lookup needed.
+    for uniprot in tcdb_classes():
+        result[uniprot] = 'transporter'
 
     # --- G2P: highest-priority receptor curation ---
     for targets_list in protein_targets().values():
