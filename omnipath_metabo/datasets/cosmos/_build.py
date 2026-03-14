@@ -407,18 +407,27 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
     Build the transporter subset of the COSMOS PKN.
 
     Convenience wrapper around :func:`build` that enables only
-    transporter-relevant resources (TCDB, SLC, GEM, Recon3D, STITCH)
-    and post-filters to keep only transporter interactions.
+    transporter-relevant resources (TCDB, SLC, GEM, Recon3D) and
+    post-filters to keep only transporter interactions.
+
+    STITCH is excluded because it is a general chemical-protein interaction
+    database (last updated 2015) that does not annotate transport specifically.
+    Classifying STITCH interactions as transport by checking whether the
+    protein appears in TCDB is methodologically unsound: a protein can be a
+    transporter for some substrates while acting as a kinase, receptor, or
+    enzyme for others. Dedicated transporter databases (TCDB, SLC, GEM,
+    Recon3D) provide direct, mechanistically-annotated transport interactions
+    and are actively maintained. See ADR 0002 in saezverse.
 
     Post-filter predicate:
         - ``interaction_type == 'transport'``
         - ``resource.startswith('GEM_transporter')``
-        - STITCH rows where ``interaction_type == 'transporter'``
 
     Args:
         *args: Passed through to :func:`build`.
-        **kwargs: Passed through to :func:`build`.  ``brenda`` and
-            ``mrclinksdb`` are disabled unless explicitly re-enabled.
+        **kwargs: Passed through to :func:`build`.  ``brenda``,
+            ``mrclinksdb``, and ``stitch`` are disabled unless explicitly
+            re-enabled.
 
     Returns:
         :class:`CosmosBundle` containing only transporter interactions,
@@ -426,11 +435,11 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
     """
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('stitch', False)
     bundle = build(*args, **kwargs)
     return _filter_bundle(bundle, lambda row: (
         row.interaction_type == 'transport' or
-        row.resource.startswith('GEM_transporter') or
-        (row.resource == 'STITCH' and row.interaction_type == 'transporter')
+        row.resource.startswith('GEM_transporter')
     ))
 
 
