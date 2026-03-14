@@ -37,25 +37,40 @@ applies the expert-curation blacklist.
 import logging
 import warnings
 import pandas as pd
+from omnipath_metabo.datasets import cosmos
+from omnipath_metabo.datasets.cosmos._record import Interaction
 
 warnings.filterwarnings('ignore', module='paramiko')
 warnings.filterwarnings('ignore', module='rdata')
 
 logging.basicConfig(level=logging.WARNING, format='%(message)s')
-
-
+  
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
-  
-from omnipath_metabo.datasets import cosmos
-from omnipath_metabo.datasets.cosmos._record import Interaction
-transporters = cosmos.build_transporters()
 
+# transporter
+transporters = cosmos.build_transporters(
+    recon3d={'include_orphans':False},
+    gem={'include_orphans': False})
 df = pd.DataFrame(transporters.network, columns=Interaction._fields)
 df.groupby(['resource']).size()
 df[df['resource']=='TCDB']
-df[df['resource']=='STITCH']
+df[df['resource']=='SLC']
+df[df['resource']=='Recon3D']
+df[df['resource']=='GEM_transporter:Human-GEM']
+df_r = df[df['resource'] == 'GEM_transporter:Human-GEM']    
+for col in ['source_type', 'target_type', 'id_type_a',            
+    'id_type_b','interaction_type']:  
+    print(df_r[col].value_counts())
+
+
+
+
+
+
+
+
 
 bundle = cosmos.build()
 
