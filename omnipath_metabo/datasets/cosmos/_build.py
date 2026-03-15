@@ -272,6 +272,7 @@ def _filter_bundle(bundle: CosmosBundle, predicate) -> CosmosBundle:
 
 def build(
     *args: dict | 'Path' | str,
+    row_filter=None,
     **kwargs,
 ) -> CosmosBundle:
     """
@@ -294,6 +295,12 @@ def build(
     Args:
         *args:
             Configuration overrides as dicts or YAML file paths.
+        row_filter:
+            Optional callable ``(Interaction) → bool``.  When provided,
+            applied *before* ID translation so that rows known to be
+            unneeded are dropped early and never translated.  This avoids
+            paying the cost of translating metabolic GEM edges when only
+            transporter edges are requested, for example.
         **kwargs:
             Top-level config keys.  Resource names are accepted as
             shorthand, e.g.::
@@ -345,6 +352,16 @@ def build(
         len(df),
         len(active_names),
     )
+
+    if row_filter is not None:
+        n_before_filter = len(df)
+        mask = df.apply(lambda r: row_filter(Interaction(*r)), axis=1)
+        df = df[mask].reset_index(drop=True)
+        _log.info(
+            '[COSMOS] Pre-translation filter: %d/%d edges retained.',
+            len(df),
+            n_before_filter,
+        )
 
     metabolites: list = []
     proteins: list = []
@@ -408,7 +425,7 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
 
     Convenience wrapper around :func:`build` that enables only
     transporter-relevant resources (TCDB, SLC, GEM, Recon3D) and
-    post-filters to keep only transporter interactions.
+    filters to keep only transporter interactions.
 
     STITCH is excluded because it is a general chemical-protein interaction
     database (last updated 2015) that does not annotate transport specifically.
@@ -419,8 +436,12 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
     Recon3D) provide direct, mechanistically-annotated transport interactions
     and are actively maintained. See ADR 0002 in saezverse.
 
-    Post-filter predicate:
-        - ``interaction_type == 'transport'``
+    The filter is applied *before* ID translation so that metabolic GEM edges
+    (``resource='GEM:<gem>'``) are discarded early and never translated,
+    avoiding redundant computation.
+
+    Filter predicate:
+        - ``interaction_type in ('transport', 'transporter')``
         - ``resource.startswith('GEM_transporter')``
 
     Args:
@@ -433,14 +454,16 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing only transporter interactions,
         with provenance filtered to the surviving edges.
     """
+    def _is_transport(row: Interaction) -> bool:
+        return (
+            row.interaction_type in ('transport', 'transporter') or
+            row.resource.startswith('GEM_transporter')
+        )
+
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('stitch', False)
-    bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, lambda row: (
-        row.interaction_type in ('transport', 'transporter') or
-        row.resource.startswith('GEM_transporter')
-    ))
+    return build(*args, row_filter=_is_transport, **kwargs)
 
 
 def build_receptors(*args, **kwargs) -> CosmosBundle:

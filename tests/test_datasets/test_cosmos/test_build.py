@@ -294,9 +294,16 @@ def _all_categories_bundle():
 @pytest.fixture
 def _mock_build_fn(_all_categories_bundle):
     """Patch build() to return a controlled CosmosBundle for subset filter tests."""
+
+    def _fake_build(*a, row_filter=None, **kw):
+        rows = list(_ALL_ROWS)
+        if row_filter is not None:
+            rows = [r for r in rows if row_filter(r)]
+        return CosmosBundle(network=rows)
+
     with patch(
         'omnipath_metabo.datasets.cosmos._build.build',
-        side_effect=lambda *a, **kw: CosmosBundle(network=list(_ALL_ROWS)),
+        side_effect=_fake_build,
     ) as mock:
         yield mock
 
