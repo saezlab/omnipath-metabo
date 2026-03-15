@@ -433,3 +433,47 @@ class TestOrganism:
             }
         ]
         assert len(_run(reactions, organism=9606)) > 0
+
+
+# ---------------------------------------------------------------------------
+# cell_surface_only
+# ---------------------------------------------------------------------------
+
+_RXN_PLASMA_SURFACE = {
+    'id': 'PLASMA_TRANS',
+    'gene_reaction_rule': '1234_AT1',
+    'metabolites': {'glc_c': -1, 'glc_e': 1},
+    'lower_bound': 0,
+    'upper_bound': 1000,
+    'reversible': False,
+}
+
+_RXN_MITO_ONLY = {
+    'id': 'MITO_TRANS',
+    'gene_reaction_rule': '5678_AT1',
+    'metabolites': {'atp_c': -1, 'atp_m': 1},
+    'lower_bound': 0,
+    'upper_bound': 1000,
+    'reversible': False,
+}
+
+
+class TestCellSurfaceOnly:
+
+    def test_plasma_membrane_kept(self):
+        recs = _run([_RXN_PLASMA_SURFACE], cell_surface_only=True)
+        assert len(recs) > 0
+
+    def test_intracellular_dropped(self):
+        recs = _run([_RXN_MITO_ONLY], cell_surface_only=True)
+        assert recs == []
+
+    def test_mixed_only_plasma_survives(self):
+        recs = _run([_RXN_PLASMA_SURFACE, _RXN_MITO_ONLY], cell_surface_only=True)
+        rxn_ids = {r.attrs['reaction_id'] for r in recs}
+        assert 'PLASMA_TRANS' in rxn_ids
+        assert 'MITO_TRANS' not in rxn_ids
+
+    def test_false_keeps_intracellular(self):
+        recs = _run([_RXN_MITO_ONLY], cell_surface_only=False)
+        assert len(recs) > 0

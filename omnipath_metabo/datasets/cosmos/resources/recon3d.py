@@ -165,6 +165,7 @@ def recon3d_transporter_interactions(
     organism: int = 9606,
     include_reverse: bool = True,
     include_orphans: bool = True,
+    cell_surface_only: bool = False,
 ) -> Generator[Interaction, None, None]:
     """
     Yield Recon3D transporter interactions as uniform Interaction records.
@@ -201,6 +202,12 @@ def recon3d_transporter_interactions(
             using the reaction ID as a pseudo-enzyme node with
             ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.
             Default: ``True``.
+        cell_surface_only:
+            If ``True``, restrict to transport events where at least one
+            compartment is extracellular (``'e'``).  Applied per
+            transported metabolite before edges are appended, so
+            intracellular-only events (``c↔m``, ``c↔r``, ``c↔l``, etc.)
+            are dropped.  Default: ``False``.
 
     Yields:
         :class:`~omnipath_metabo.datasets.cosmos._record.Interaction`
@@ -271,6 +278,15 @@ def recon3d_transporter_interactions(
 
         if not transported:
             continue
+
+        if cell_surface_only:
+            transported = [
+                (base, in_comp, out_comp)
+                for base, in_comp, out_comp in transported
+                if in_comp == 'e' or out_comp == 'e'
+            ]
+            if not transported:
+                continue
 
         if not enzymes:
             # Orphan transport reaction: use reaction ID as pseudo-enzyme.

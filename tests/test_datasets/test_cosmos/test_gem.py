@@ -412,3 +412,126 @@ class TestGemOrphans:
             records = list(gem_interactions(gem='TestGEM'))
 
         assert all(not r.attrs.get('orphan') for r in records)
+
+
+# ---------------------------------------------------------------------------
+# Tests: cell_surface_only
+# ---------------------------------------------------------------------------
+
+# Transport reactions used by TestCellSurfaceOnly:
+#   _RXN_PLASMA  : glc crosses c↔e  (plasma membrane) → kept
+#   _RXN_MITO   : atp crosses c↔m  (mitochondrial)   → dropped
+#   Transport subsystem annotation triggers the transport_groups path.
+
+_RXN_PLASMA = _reaction(
+    rid='T_PLASMA',
+    subsystem='Transport reactions',
+    gene_reaction_rule='ENSG001',
+    mets={'MAM_glc_c': -1, 'MAM_glc_e': 1},
+    lb=0, ub=1000,
+)
+_RXN_MITO = _reaction(
+    rid='T_MITO',
+    subsystem='Transport reactions',
+    gene_reaction_rule='ENSG002',
+    mets={'MAM_atp_c': -1, 'MAM_atp_m': 1},
+    lb=0, ub=1000,
+)
+_METS_TRANSPORT = [
+    _metabolite('MAM_glc_c', 'c'), _metabolite('MAM_glc_e', 'e'),
+    _metabolite('MAM_atp_c', 'c'), _metabolite('MAM_atp_m', 'm'),
+]
+# GemInteraction edges for the two transport reactions (source→enzyme direction only;
+# gem_interactions normally gets these from metatlas_gem_network).
+_INT_PLASMA = _interaction(
+    src='MAM_glc_c', tgt='ENSG001',
+    src_type='metabolite', tgt_type='gene',
+    src_comp='c', tgt_comp='',
+    rxn_id='T_PLASMA',
+)
+_INT_PLASMA_OUT = _interaction(
+    src='ENSG001', tgt='MAM_glc_e',
+    src_type='gene', tgt_type='metabolite',
+    src_comp='', tgt_comp='e',
+    rxn_id='T_PLASMA',
+)
+_INT_MITO = _interaction(
+    src='MAM_atp_c', tgt='ENSG002',
+    src_type='metabolite', tgt_type='gene',
+    src_comp='c', tgt_comp='',
+    rxn_id='T_MITO',
+)
+_INT_MITO_OUT = _interaction(
+    src='ENSG002', tgt='MAM_atp_m',
+    src_type='gene', tgt_type='metabolite',
+    src_comp='', tgt_comp='m',
+    rxn_id='T_MITO',
+)
+
+
+def _run_cell_surface(reactions, interactions, metabolites, **kwargs):
+    from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
+
+    def _network(**kw):
+        yield from interactions
+
+    def _yaml_reactions(**kw):
+        yield from reactions
+
+    def _yaml_metabolites(**kw):
+        yield from metabolites
+
+    with (
+        patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
+              side_effect=_network),
+        patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
+              side_effect=_yaml_reactions),
+        patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
+              side_effect=_yaml_metabolites),
+    ):
+        return list(gem_interactions(gem='TestGEM', **kwargs))
+
+
+class TestCellSurfaceOnly:
+
+    def test_plasma_membrane_reaction_kept(self):
+        recs = _run_cell_surface(
+            [_RXN_PLASMA], [_INT_PLASMA, _INT_PLASMA_OUT], _METS_TRANSPORT,
+            cell_surface_only=True,
+        )
+        assert len(recs) > 0
+
+    def test_intracellular_reaction_dropped(self):
+        recs = _run_cell_surface(
+            [_RXN_MITO], [_INT_MITO, _INT_MITO_OUT], _METS_TRANSPORT,
+            cell_surface_only=True,
+        )
+        assert recs == []
+
+    def test_both_reactions_only_plasma_survives(self):
+        all_ints = [_INT_PLASMA, _INT_PLASMA_OUT, _INT_MITO, _INT_MITO_OUT]
+        recs = _run_cell_surface(
+            [_RXN_PLASMA, _RXN_MITO], all_ints, _METS_TRANSPORT,
+            cell_surface_only=True,
+        )
+        rxn_ids = {r.attrs['reaction_id'] for r in recs}
+        assert 'T_PLASMA' in rxn_ids
+        assert 'T_MITO' not in rxn_ids
+
+    def test_both_edges_of_plasma_reaction_kept(self):
+        # met→enzyme AND enzyme→met must both survive (no edge-pair breakage).
+        all_ints = [_INT_PLASMA, _INT_PLASMA_OUT]
+        recs = _run_cell_surface(
+            [_RXN_PLASMA], all_ints, _METS_TRANSPORT,
+            cell_surface_only=True,
+        )
+        source_types = {r.source_type for r in recs}
+        assert 'small_molecule' in source_types
+        assert 'protein' in source_types
+
+    def test_false_keeps_intracellular(self):
+        recs = _run_cell_surface(
+            [_RXN_MITO], [_INT_MITO, _INT_MITO_OUT], _METS_TRANSPORT,
+            cell_surface_only=False,
+        )
+        assert len(recs) > 0

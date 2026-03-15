@@ -419,7 +419,7 @@ def build(
     )
 
 
-def build_transporters(*args, **kwargs) -> CosmosBundle:
+def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> CosmosBundle:
     """
     Build the transporter subset of the COSMOS PKN.
 
@@ -455,14 +455,26 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
         with provenance filtered to the surviving edges.
     """
     def _is_transport(row: Interaction) -> bool:
-        return (
+        is_transport_type = (
             row.interaction_type in ('transport', 'transporter') or
             row.resource.startswith('GEM_transporter')
         )
+        if not is_transport_type:
+            return False
+        if cell_surface_only:
+            return 'e' in row.locations
+        return True
 
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('stitch', False)
+    if cell_surface_only:
+        kwargs.setdefault('gem', {})
+        if isinstance(kwargs['gem'], dict):
+            kwargs['gem']['cell_surface_only'] = True
+        kwargs.setdefault('recon3d', {})
+        if isinstance(kwargs['recon3d'], dict):
+            kwargs['recon3d']['cell_surface_only'] = True
     return build(*args, row_filter=_is_transport, **kwargs)
 
 

@@ -177,6 +177,7 @@ def gem_interactions(
     organism: int = 9606,
     include_reverse: bool = True,
     include_orphans: bool = True,
+    cell_surface_only: bool = False,
 ) -> Generator[Interaction, None, None]:
     """
     Yield GEM metabolite-enzyme interactions as uniform records.
@@ -220,6 +221,13 @@ def gem_interactions(
         include_orphans:
             If ``True``, include reactions with no gene rule, using the
             reaction ID as a pseudo-enzyme node.  Default: ``True``.
+        cell_surface_only:
+            If ``True``, restrict transport reactions to those where at
+            least one crossing metabolite touches the extracellular
+            compartment (``'e'``).  Entire reaction groups are dropped
+            before edge breakdown, so met→enzyme / enzyme→met pairs are
+            always preserved.  Metabolic (non-transport) edges are
+            unaffected.  Default: ``False``.
 
     Yields:
         :class:`Interaction` records.  For metabolite → enzyme edges,
@@ -364,6 +372,21 @@ def gem_interactions(
 
     for (rxn_id, gem_name), edges in transport_groups.items():
         crossing = _crossing_metabolites(edges)
+
+        if cell_surface_only:
+            crossing_comps: set[str] = set()
+            for rec in edges:
+                if rec.source_type == 'metabolite':
+                    base = _strip_compartment(rec.source, rec.source_compartment)
+                    if base in crossing:
+                        crossing_comps.add(rec.source_compartment)
+                if rec.target_type == 'metabolite':
+                    base = _strip_compartment(rec.target, rec.target_compartment)
+                    if base in crossing:
+                        crossing_comps.add(rec.target_compartment)
+            if 'e' not in crossing_comps:
+                continue
+
         for rec in edges:
             if rec.source_type == 'metabolite':
                 met_base = _strip_compartment(rec.source, rec.source_compartment)
