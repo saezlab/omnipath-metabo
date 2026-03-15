@@ -37,11 +37,9 @@ resources:
 
   gem:
     gem: Human-GEM
-    metab_max_degree: 400
     include_reverse: true
     include_orphans: true
 
   recon3d:
-    metab_max_degree: 400
     include_reverse: true
     include_orphans: true

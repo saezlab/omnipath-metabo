@@ -38,7 +38,7 @@ from __future__ import annotations
 
 __all__ = ['gem_interactions']
 
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Generator
 from typing import TYPE_CHECKING
 
@@ -95,10 +95,53 @@ def _strip_compartment(met_id: str, compartment: str) -> str:
     return met_id
 
 
+def _crossing_metabolites(edges: list) -> set[str]:
+    """
+    Return base metabolite IDs that cross a compartment boundary.
+
+    Given all GemInteraction edges for a single reaction, finds metabolites
+    whose base ID (compartment suffix stripped) appears on both the reactant
+    side (``source_type == 'metabolite'``) and the product side
+    (``target_type == 'metabolite'``) with *different* compartment codes.
+
+    Cofactors consumed and regenerated within the same compartment (e.g.
+    ``atp_c → adp_c`` within the cytoplasm) never satisfy this condition
+    and are excluded.  ATP as a cofactor in an ABC transporter also fails
+    because ATP and ADP have different base IDs — there is no base ID that
+    appears on *both* sides with a compartment change.
+
+    Args:
+        edges: All GemInteraction records for a single reaction (may span
+            multiple enzymes and/or forward + reverse edges).
+
+    Returns:
+        Set of base metabolite IDs (compartment suffix stripped) that
+        physically cross a membrane in this reaction.
+    """
+
+    reactant_comps: dict[str, str] = {}
+    product_comps: dict[str, str] = {}
+
+    for rec in edges:
+
+        if rec.source_type == 'metabolite':
+            base = _strip_compartment(rec.source, rec.source_compartment)
+            reactant_comps[base] = rec.source_compartment
+
+        if rec.target_type == 'metabolite':
+            base = _strip_compartment(rec.target, rec.target_compartment)
+            product_comps[base] = rec.target_compartment
+
+    return {
+        base
+        for base, comp in reactant_comps.items()
+        if base in product_comps and product_comps[base] != comp
+    }
+
+
 def gem_interactions(
     gem: str | list[str] = 'Human-GEM',
     organism: int = 9606,
-    metab_max_degree: int = 400,
     include_reverse: bool = True,
     include_orphans: bool = True,
 ) -> Generator[Interaction, None, None]:
@@ -113,15 +156,21 @@ def gem_interactions(
     Reversible reactions additionally produce a reversed pair with
     ``attrs['reverse'] = True``.
 
-    High-degree metabolites (likely cofactors) are filtered out: any
-    metabolite appearing in more than *metab_max_degree* edges across the
-    full collected edge set is excluded.
+    Transport reactions (subsystem ``'Transport reactions'``) are filtered
+    by compartment-crossing: only metabolites whose base ID appears on
+    both the reactant and product side of the reaction with *different*
+    compartment codes are kept.  This mechanistically excludes cofactors
+    (e.g. ATP hydrolysed and regenerated within the same compartment) while
+    preserving genuine transport substrates that physically cross a membrane.
+
+    Metabolic reactions (all other subsystems) are not filtered: every
+    metabolite in the reaction generates edges.
 
     Orphan reactions (no gene rule) are retained when *include_orphans*
     is ``True``.  The reaction ID is used as a pseudo-enzyme node with
-    ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.  These
-    edges pass through ID translation unchanged and can be identified and
-    filtered downstream by ``attrs['orphan']``.
+    ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.  Orphan
+    transport reactions apply the same compartment-crossing filter as
+    enzyme-annotated transport reactions.
 
     Args:
         gem:
@@ -132,10 +181,6 @@ def gem_interactions(
             NCBI taxonomy ID.  Accepted for API consistency with other
             resources; GEMs are inherently organism-specific so this
             parameter is not used for filtering.
-        metab_max_degree:
-            Maximum number of edges a metabolite may participate in.
-            Metabolites exceeding this threshold are treated as cofactors
-            and removed.  Default: 400 (matches OmnipathR reference).
         include_reverse:
             If ``True``, include reversed edges for reversible reactions
             (``attrs['reverse'] = True``).  Default: ``True``.
@@ -174,23 +219,33 @@ def gem_interactions(
 
     gems = [gem] if isinstance(gem, str) else list(gem)
 
-    # Two-pass: collect everything first, then filter by metabolite degree.
-    raw: list[tuple] = []  # (GemInteraction, gem_name)
-
     # Pre-build transport reaction ID sets (reuses already-cached YAML).
     transport_ids: dict[str, frozenset[str]] = {
         gem_name: _transport_reaction_ids(gem_name)
         for gem_name in gems
     }
 
+    # Collect edges in two streams:
+    #   - metabolic_raw: non-transport reactions, yielded without filtering.
+    #   - transport_groups: transport reactions grouped by (reaction_id,
+    #     gem_name) so compartment-crossing detection can be applied per
+    #     reaction before yielding.
+    metabolic_raw: list[tuple] = []
+    transport_groups: dict[tuple, list] = defaultdict(list)
+
     for gem_name in gems:
+
+        t_ids = transport_ids[gem_name]
 
         for rec in metatlas_gem_network(gem=gem_name):
 
             if not include_reverse and rec.reverse:
                 continue
 
-            raw.append((rec, gem_name))
+            if rec.reaction_id in t_ids:
+                transport_groups[(rec.reaction_id, gem_name)].append(rec)
+            else:
+                metabolic_raw.append((rec, gem_name))
 
         if include_orphans:
 
@@ -215,66 +270,74 @@ def gem_interactions(
                 if isinstance(mets, list):
                     mets = dict(mets)
 
-                reactants = [m for m, c in mets.items() if c * direction < 0]
-                products = [m for m, c in mets.items() if c * direction > 0]
+                reactant_ids = [m for m, c in mets.items() if c * direction < 0]
+                product_ids = [m for m, c in mets.items() if c * direction > 0]
 
-                for met_id in reactants:
-                    raw.append((GemInteraction(
+                is_transport = rxn_id in t_ids
+
+                def _add_orphan(orphan_rec: GemInteraction) -> None:
+                    if is_transport:
+                        transport_groups[(rxn_id, gem_name)].append(orphan_rec)
+                    else:
+                        metabolic_raw.append((orphan_rec, gem_name))
+
+                for met_id in reactant_ids:
+                    _add_orphan(GemInteraction(
                         source=met_id, target=rxn_id,
                         source_type='metabolite', target_type='reaction',
                         source_compartment=met_comp.get(met_id, ''),
                         target_compartment='',
                         reaction_id=rxn_id, reverse=False,
-                    ), gem_name))
+                    ))
 
-                for met_id in products:
-                    raw.append((GemInteraction(
+                for met_id in product_ids:
+                    _add_orphan(GemInteraction(
                         source=rxn_id, target=met_id,
                         source_type='reaction', target_type='metabolite',
                         source_compartment='',
                         target_compartment=met_comp.get(met_id, ''),
                         reaction_id=rxn_id, reverse=False,
-                    ), gem_name))
+                    ))
 
                 if include_reverse and reversible:
 
-                    for met_id in products:
-                        raw.append((GemInteraction(
+                    for met_id in product_ids:
+                        _add_orphan(GemInteraction(
                             source=met_id, target=rxn_id,
                             source_type='metabolite', target_type='reaction',
                             source_compartment=met_comp.get(met_id, ''),
                             target_compartment='',
                             reaction_id=rxn_id, reverse=True,
-                        ), gem_name))
+                        ))
 
-                    for met_id in reactants:
-                        raw.append((GemInteraction(
+                    for met_id in reactant_ids:
+                        _add_orphan(GemInteraction(
                             source=rxn_id, target=met_id,
                             source_type='reaction', target_type='metabolite',
                             source_compartment='',
                             target_compartment=met_comp.get(met_id, ''),
                             reaction_id=rxn_id, reverse=True,
-                        ), gem_name))
+                        ))
 
-    # Count each metabolite's total degree across all collected edges.
-    metab_degree: Counter = Counter()
+    # Apply compartment-crossing filter to all transport reactions
+    # (both enzyme-annotated and orphan, since both land in transport_groups).
+    transport_raw: list[tuple] = []
 
-    for rec, _ in raw:
+    for (rxn_id, gem_name), edges in transport_groups.items():
+        crossing = _crossing_metabolites(edges)
+        for rec in edges:
+            if rec.source_type == 'metabolite':
+                met_base = _strip_compartment(rec.source, rec.source_compartment)
+            else:
+                met_base = _strip_compartment(rec.target, rec.target_compartment)
+            if met_base in crossing:
+                transport_raw.append((rec, gem_name))
 
-        if rec.source_type == 'metabolite':
-            base_id = _strip_compartment(rec.source, rec.source_compartment)
-            metab_degree[base_id] += 1
-
-        if rec.target_type == 'metabolite':
-            base_id = _strip_compartment(rec.target, rec.target_compartment)
-            metab_degree[base_id] += 1
-
-    # Build Interaction objects, skipping high-degree (cofactor) metabolites.
-    # We collect them first so we can deduplicate across GEMs and attach
-    # provenance (attrs['gems']) before yielding.
+    # Build Interaction objects from both streams.
+    # Collect first so deduplication across GEMs can attach attrs['gems'].
     all_interactions: list[tuple[Interaction, str]] = []
 
-    for rec, gem_name in raw:
+    for rec, gem_name in metabolic_raw + transport_raw:
 
         is_orphan = rec.source_type == 'reaction' or rec.target_type == 'reaction'
 
@@ -299,9 +362,6 @@ def gem_interactions(
             target_type = 'small_molecule'
             id_type_a = 'reaction_id' if is_orphan else 'ensembl'
             id_type_b = 'metatlas'
-
-        if metab_degree[met_id] > metab_max_degree:
-            continue
 
         locations = (compartment,) if compartment else ()
 

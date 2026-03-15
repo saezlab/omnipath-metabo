@@ -367,36 +367,50 @@ class TestOrphanReactions:
 # ---------------------------------------------------------------------------
 
 class TestCofactorFilter:
+    """Compartment-crossing is the sole cofactor filter.
 
-    def _make_many_transport_reactions(self, n, met_id='ubiq'):
-        """Create n transport reactions all sharing the same metabolite."""
+    A metabolite that does not change compartment (e.g. ATP hydrolysed and
+    regenerated in the cytoplasm) is excluded because it never satisfies the
+    crossing test, regardless of how many reactions it appears in.  A
+    metabolite that does cross compartments is always kept, even if it
+    appears in many reactions.
+    """
 
-        return [
+    def test_same_compartment_metabolite_excluded(self):
+        # atp_c → adp_c: both cytoplasm, no crossing → excluded
+        reactions = [
             {
-                'id': f'TRANS_{i}',
-                'gene_reaction_rule': f'{1000 + i}_AT1',
-                'metabolites': {f'{met_id}_c': -1, f'{met_id}_e': 1},
+                'id': 'ABC1',
+                'gene_reaction_rule': '1234_AT1',
+                'metabolites': {
+                    'atp_c': -1,   # cofactor, same compartment both sides
+                    'adp_c': 1,
+                    'sub_e': -1,   # actual substrate, crosses membrane
+                    'sub_c': 1,
+                },
                 'lower_bound': 0,
                 'upper_bound': 1000,
                 'reversible': False,
             }
-            for i in range(n)
         ]
+        recs = _run(reactions)
+        mets = {r.source if r.source_type == 'small_molecule' else r.target for r in recs}
+        assert 'sub' in mets
+        assert 'atp' not in mets
+        assert 'adp' not in mets
 
-    def test_high_degree_metabolite_filtered(self):
-        # 10 reactions each contributing 2 edges → degree = 20 per metabolite
-        reactions = self._make_many_transport_reactions(10, 'ubiq')
-        recs = _run(reactions, metab_max_degree=5)
-        assert recs == []
-
-    def test_low_degree_metabolite_kept(self):
-        reactions = self._make_many_transport_reactions(2, 'rare')
-        recs = _run(reactions, metab_max_degree=100)
+    def test_high_frequency_crossing_metabolite_kept(self):
+        # A metabolite that crosses compartments in many reactions is still kept.
+        reactions = [
+            {
+                'id': f'TRANS_{i}',
+                'gene_reaction_rule': f'{1000 + i}_AT1',
+                'metabolites': {f'ubiq_c': -1, f'ubiq_e': 1},
+                'lower_bound': 0,
+                'upper_bound': 1000,
+                'reversible': False,
+            }
+            for i in range(10)
+        ]
+        recs = _run(reactions)
         assert len(recs) > 0
-
-    def test_threshold_is_exclusive(self):
-        # degree == threshold should be kept; degree > threshold dropped
-        reactions = self._make_many_transport_reactions(3, 'borderline')
-        # degree = 6 (3 reactions × 2 edges each)
-        assert _run(reactions, metab_max_degree=6) != []
-        assert _run(reactions, metab_max_degree=5) == []

@@ -68,7 +68,7 @@ from __future__ import annotations
 __all__ = ['recon3d_transporter_interactions']
 
 import re
-from collections import Counter, defaultdict
+from collections import defaultdict
 from collections.abc import Generator
 
 from .._record import Interaction
@@ -163,7 +163,6 @@ def _parse_gene_rule(
 
 def recon3d_transporter_interactions(
     organism: int = 9606,
-    metab_max_degree: int = 400,
     include_reverse: bool = True,
     include_orphans: bool = True,
 ) -> Generator[Interaction, None, None]:
@@ -177,7 +176,8 @@ def recon3d_transporter_interactions(
 
     Only transported metabolites generate edges.  Metabolites that appear on
     both sides of a reaction but within the *same* compartment (e.g. a
-    cofactor regenerated in the same location) are excluded.
+    cofactor regenerated in the same location) are excluded by the
+    compartment-crossing test — no separate degree filter is needed.
 
     Two directed edges are generated per transported metabolite per enzyme:
 
@@ -188,21 +188,12 @@ def recon3d_transporter_interactions(
     ``attrs['reverse'] = True`` where ``transport_from`` and ``transport_to``
     are swapped.
 
-    High-degree metabolites are filtered in a two-pass approach: all
-    candidate edges are collected first, metabolite degrees are counted, then
-    only edges involving metabolites with degree ≤ *metab_max_degree* are
-    yielded.
-
     Args:
         organism:
             NCBI taxonomy ID.  Accepted for API consistency with other
             resource processors; Recon3D is a human-only reconstruction
             so this parameter does not filter data.  Passing a non-human
             taxon ID does not produce species-specific output.
-        metab_max_degree:
-            Maximum number of edges a metabolite may participate in.
-            Metabolites exceeding this threshold are treated as cofactors
-            and removed.  Default: 400.
         include_reverse:
             If ``True``, include reversed edges for reversible transport
             reactions (``attrs['reverse'] = True``).  Default: ``True``.
@@ -340,29 +331,12 @@ def recon3d_transporter_interactions(
                         rxn_id, True, out_comp, in_comp, is_complex, isoforms,
                     ))
 
-    # Count each metabolite's total degree across all candidate edges.
-    metab_degree: Counter = Counter()
-
-    for item in raw:
-        if item[1] == 'metabolite':
-            metab_degree[item[0]] += 1
-
-        if item[4] == 'metabolite':
-            metab_degree[item[3]] += 1
-
-    n_filtered = 0
-
     for (
         src, src_type, src_comp,
         tgt, tgt_type, tgt_comp,
         rxn_id, is_reverse, transport_from, transport_to, is_complex,
         isoforms,
     ) in raw:
-        met = src if src_type == 'metabolite' else tgt
-
-        if metab_degree[met] > metab_max_degree:
-            n_filtered += 1
-            continue
 
         is_orphan = src_type == 'reaction' or tgt_type == 'reaction'
 
