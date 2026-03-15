@@ -190,10 +190,9 @@ def recon3d_transporter_interactions(
 
     Args:
         organism:
-            NCBI taxonomy ID.  Accepted for API consistency with other
-            resource processors; Recon3D is a human-only reconstruction
-            so this parameter does not filter data.  Passing a non-human
-            taxon ID does not produce species-specific output.
+            NCBI taxonomy ID.  Only human (9606) is supported; any other
+            value causes the function to yield nothing, consistent with
+            the behaviour of other human-only resources (e.g. SLC).
         include_reverse:
             If ``True``, include reversed edges for reversible transport
             reactions (``attrs['reverse'] = True``).  Default: ``True``.
@@ -218,6 +217,9 @@ def recon3d_transporter_interactions(
         ``attrs['reverse']`` to identify and label them, not to create
         new edges from them.
     """
+    if organism != 9606:
+        return
+
     from pypath.inputs.recon3d._gem import recon3d_reactions
 
     reactions = recon3d_reactions()

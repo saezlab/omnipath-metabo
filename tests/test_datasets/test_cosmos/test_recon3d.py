@@ -414,3 +414,22 @@ class TestCofactorFilter:
         ]
         recs = _run(reactions)
         assert len(recs) > 0
+
+
+class TestOrganism:
+
+    def test_non_human_yields_nothing(self):
+        assert _run([], organism=10090) == []
+
+    def test_human_proceeds_normally(self):
+        reactions = [
+            {
+                'id': 'T1',
+                'gene_reaction_rule': '1234_AT1',
+                'metabolites': {'glc_e': -1, 'glc_c': 1},
+                'lower_bound': 0,
+                'upper_bound': 1000,
+                'reversible': False,
+            }
+        ]
+        assert len(_run(reactions, organism=9606)) > 0
