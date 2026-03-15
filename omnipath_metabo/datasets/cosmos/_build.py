@@ -438,7 +438,7 @@ def build_transporters(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('stitch', False)
     bundle = build(*args, **kwargs)
     return _filter_bundle(bundle, lambda row: (
-        row.interaction_type == 'transport' or
+        row.interaction_type in ('transport', 'transporter') or
         row.resource.startswith('GEM_transporter')
     ))
 
