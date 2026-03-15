@@ -38,6 +38,7 @@ from __future__ import annotations
 
 __all__ = ['gem_interactions']
 
+import re
 from collections import defaultdict
 from collections.abc import Generator
 from typing import TYPE_CHECKING
@@ -139,6 +140,38 @@ def _crossing_metabolites(edges: list) -> set[str]:
     }
 
 
+_ENSG_RE = re.compile(r'^ENSG\d{11}$')
+
+
+def _detect_gene_id_type(gem_name: str) -> str:
+    """
+    Detect the gene identifier type used in a GEM's gene-reaction rules.
+
+    Human-GEM uses Ensembl gene IDs (``ENSG00000000000``).  Mouse-GEM and
+    other species GEMs from MetAtlas use gene symbols (e.g. ``Adh1``).
+    The type is determined by checking the first non-empty gene token
+    against the ENSG pattern.
+
+    Args:
+        gem_name: GEM name (e.g. ``'Human-GEM'``, ``'Mouse-GEM'``).
+
+    Returns:
+        ``'ensembl'`` if genes look like ENSG IDs, ``'genesymbol'``
+        otherwise.
+    """
+
+    from pypath.inputs.metatlas._gem import metatlas_gem_yaml_reactions
+
+    for rxn in metatlas_gem_yaml_reactions(gem=gem_name):
+        rule = rxn.gene_reaction_rule or ''
+        # Extract the first gene token from the rule string.
+        token = re.split(r'[\s()]+', rule.strip())[0]
+        if token and token.lower() not in ('or', 'and'):
+            return 'ensembl' if _ENSG_RE.match(token) else 'genesymbol'
+
+    return 'ensembl'  # safe default
+
+
 def gem_interactions(
     gem: str | list[str] = 'Human-GEM',
     organism: int = 9606,
@@ -222,6 +255,12 @@ def gem_interactions(
     # Pre-build transport reaction ID sets (reuses already-cached YAML).
     transport_ids: dict[str, frozenset[str]] = {
         gem_name: _transport_reaction_ids(gem_name)
+        for gem_name in gems
+    }
+
+    # Pre-detect gene ID type per GEM (samples first gene token from grRules).
+    gene_id_types: dict[str, str] = {
+        gem_name: _detect_gene_id_type(gem_name)
         for gem_name in gems
     }
 
@@ -340,6 +379,7 @@ def gem_interactions(
     for rec, gem_name in metabolic_raw + transport_raw:
 
         is_orphan = rec.source_type == 'reaction' or rec.target_type == 'reaction'
+        gene_id_type = gene_id_types[gem_name]
 
         if rec.source_type == 'metabolite':
             met_id = _strip_compartment(rec.source, rec.source_compartment)
@@ -350,7 +390,7 @@ def gem_interactions(
             source_type = 'small_molecule'
             target_type = 'protein'
             id_type_a = 'metatlas'
-            id_type_b = 'reaction_id' if is_orphan else 'ensembl'
+            id_type_b = 'reaction_id' if is_orphan else gene_id_type
 
         else:
             enzyme_id = rec.source
@@ -360,7 +400,7 @@ def gem_interactions(
             target = met_id
             source_type = 'protein'
             target_type = 'small_molecule'
-            id_type_a = 'reaction_id' if is_orphan else 'ensembl'
+            id_type_a = 'reaction_id' if is_orphan else gene_id_type
             id_type_b = 'metatlas'
 
         locations = (compartment,) if compartment else ()
