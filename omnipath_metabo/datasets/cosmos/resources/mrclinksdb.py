@@ -27,11 +27,7 @@ __all__ = ['mrclinksdb_interactions']
 from collections.abc import Generator
 
 from .._record import Interaction
-
-ORGANISM_NAMES = {
-    9606: 'human',
-    10090: 'mouse',
-}
+from ..location import ORGANISM_NAMES
 
 
 def mrclinksdb_interactions(
@@ -52,7 +48,7 @@ def mrclinksdb_interactions(
     from pypath.inputs.mrclinksdb import _interactions
 
     from ..location import (
-        locations_to_abbreviations,
+        resolve_protein_locations,
         tcdb_locations,
         uniprot_locations,
     )
@@ -77,13 +73,7 @@ def mrclinksdb_interactions(
         if not receptor or not pubchem:
             continue
 
-        if receptor not in all_locations:
-            continue
-
-        abbreviations = locations_to_abbreviations(
-            all_locations[receptor],
-            location_mapping,
-        )
+        abbreviations = resolve_protein_locations(receptor, all_locations, location_mapping)
 
         if not abbreviations:
             continue

@@ -54,7 +54,7 @@ def tcdb_interactions(
     from pypath.utils import reflists
 
     from ..location import (
-        locations_to_abbreviations,
+        resolve_protein_locations,
         tcdb_locations,
         uniprot_locations,
     )
@@ -70,12 +70,8 @@ def tcdb_interactions(
         if r.transporter_uniprot not in species_proteins:
             continue
 
-        if r.transporter_uniprot not in all_locations:
-            continue
-
-        abbreviations = locations_to_abbreviations(
-            all_locations[r.transporter_uniprot],
-            location_mapping,
+        abbreviations = resolve_protein_locations(
+            r.transporter_uniprot, all_locations, location_mapping,
         )
 
         if not abbreviations:

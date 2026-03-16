@@ -88,43 +88,58 @@ PROCESSORS = {
 # Provenance helpers
 # ---------------------------------------------------------------------------
 
-def _collect_metabolites(prov: pd.DataFrame) -> list:
+def _collect_entities(
+    prov: pd.DataFrame,
+    entity_type: str,
+    make_record,
+    exclude_reaction_id: bool = False,
+) -> list:
     """
-    Build :class:`~._record.CosmosMetabolite` provenance records.
+    Build provenance records for one entity type from both source and target columns.
 
     Args:
-        prov: Merged DataFrame with columns for translated IDs (``source``,
-            ``target``) and original IDs (``_orig_source``, ``_orig_target``,
+        prov: Merged DataFrame with translated IDs (``source``, ``target``),
+            original IDs (``_orig_source``, ``_orig_target``,
             ``_orig_id_type_a``, ``_orig_id_type_b``), plus ``source_type``,
             ``target_type``, ``resource``.
+        entity_type: ``'small_molecule'`` or ``'protein'``.
+        make_record: Callable ``(canonical_id, orig_id, id_type, resource)``
+            that returns the appropriate record namedtuple.
+        exclude_reaction_id: If ``True``, skip rows where ``id_type``
+            is ``'reaction_id'`` (used for orphan pseudo-enzymes).
 
     Returns:
-        Deduplicated list of :class:`CosmosMetabolite` records.
+        Deduplicated list of records.
     """
     records = []
     seen: set = set()
 
-    for entity_col, chebi_col, orig_col, id_type_col in [
+    for entity_col, id_col, orig_col, id_type_col in [
         ('source_type', 'source', '_orig_source', '_orig_id_type_a'),
         ('target_type', 'target', '_orig_target', '_orig_id_type_b'),
     ]:
-        mask = prov[entity_col] == 'small_molecule'
+        mask = prov[entity_col] == entity_type
+        if exclude_reaction_id:
+            mask = mask & (prov[id_type_col] != 'reaction_id')
         for _, row in prov[mask].iterrows():
-            chebi = row[chebi_col]
+            canonical = row[id_col]
             orig = row[orig_col]
             id_type = row[id_type_col]
             resource = row['resource']
-            key = (chebi, orig, id_type, resource)
+            key = (canonical, orig, id_type, resource)
             if key not in seen:
                 seen.add(key)
-                records.append(CosmosMetabolite(
-                    chebi=chebi,
-                    original_id=orig,
-                    id_type=id_type,
-                    resource=resource,
-                ))
+                records.append(make_record(canonical, orig, id_type, resource))
 
     return records
+
+
+def _collect_metabolites(prov: pd.DataFrame) -> list:
+    """Build :class:`~._record.CosmosMetabolite` provenance records."""
+    return _collect_entities(
+        prov, 'small_molecule',
+        lambda c, o, t, r: CosmosMetabolite(chebi=c, original_id=o, id_type=t, resource=r),
+    )
 
 
 def _collect_proteins(prov: pd.DataFrame) -> list:
@@ -133,41 +148,12 @@ def _collect_proteins(prov: pd.DataFrame) -> list:
 
     Orphan reaction-ID pseudo-enzymes (``id_type == 'reaction_id'``) are
     excluded — they are not real proteins.
-
-    Args:
-        prov: Merged DataFrame (same structure as for
-            :func:`_collect_metabolites`).
-
-    Returns:
-        Deduplicated list of :class:`CosmosProtein` records.
     """
-    records = []
-    seen: set = set()
-
-    for entity_col, uniprot_col, orig_col, id_type_col in [
-        ('source_type', 'source', '_orig_source', '_orig_id_type_a'),
-        ('target_type', 'target', '_orig_target', '_orig_id_type_b'),
-    ]:
-        mask = (
-            (prov[entity_col] == 'protein') &
-            (prov[id_type_col] != 'reaction_id')
-        )
-        for _, row in prov[mask].iterrows():
-            uniprot = row[uniprot_col]
-            orig = row[orig_col]
-            id_type = row[id_type_col]
-            resource = row['resource']
-            key = (uniprot, orig, id_type, resource)
-            if key not in seen:
-                seen.add(key)
-                records.append(CosmosProtein(
-                    uniprot=uniprot,
-                    original_id=orig,
-                    id_type=id_type,
-                    resource=resource,
-                ))
-
-    return records
+    return _collect_entities(
+        prov, 'protein',
+        lambda c, o, t, r: CosmosProtein(uniprot=c, original_id=o, id_type=t, resource=r),
+        exclude_reaction_id=True,
+    )
 
 
 def _collect_reactions(df: pd.DataFrame) -> list:

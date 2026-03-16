@@ -27,11 +27,7 @@ __all__ = ['brenda_regulations']
 from collections.abc import Generator
 
 from .._record import Interaction
-
-ORGANISM_NAMES = {
-    9606: 'human',
-    10090: 'mouse',
-}
+from ..location import ORGANISM_NAMES
 
 
 def brenda_regulations(

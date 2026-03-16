@@ -36,8 +36,10 @@ Compartment abbreviations:
 from __future__ import annotations
 
 __all__ = [
+    'ORGANISM_NAMES',
     'uniprot_locations',
     'locations_to_abbreviations',
+    'resolve_protein_locations',
     'tcdb_locations',
     'tcdb_routes',
     'slc_locations',
@@ -48,6 +50,11 @@ from functools import cache
 from typing import TYPE_CHECKING
 
 import pandas as pd
+
+ORGANISM_NAMES: dict[int, str] = {
+    9606: 'human',
+    10090: 'mouse',
+}
 
 from .data import data_path
 
@@ -121,6 +128,35 @@ def locations_to_abbreviations(
         for loc in locations
         if loc.location in location_mapping
     }
+
+
+def resolve_protein_locations(
+    uniprot_id: str,
+    all_locations: dict,
+    location_mapping: dict,
+) -> set[str] | None:
+    """
+    Return compartment abbreviations for a protein, or ``None`` if unavailable.
+
+    Combines the ``all_locations`` presence check and
+    :func:`locations_to_abbreviations` into a single call.  Returns ``None``
+    when the protein has no location data or none of its locations map to a
+    known abbreviation.
+
+    Args:
+        uniprot_id: UniProt accession to look up.
+        all_locations: Mapping from UniProt ID to sets of location namedtuples,
+            as returned by :func:`uniprot_locations`.
+        location_mapping: Dict mapping location names to abbreviations,
+            as returned by :func:`tcdb_locations` or :func:`slc_locations`.
+
+    Returns:
+        Set of compartment abbreviations, or ``None``.
+    """
+    if uniprot_id not in all_locations:
+        return None
+    abbreviations = locations_to_abbreviations(all_locations[uniprot_id], location_mapping)
+    return abbreviations or None
 
 
 @cache
