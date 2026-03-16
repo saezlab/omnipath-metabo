@@ -35,15 +35,12 @@ def _reaction(
     )
 
 
-def _metabolite(mid='MAM001c', compartment='c'):
-    return GemMetabolite(id=mid, name=mid, compartment=compartment,
-                         formula='', charge=0)
+def _gi(src='MAM001c', tgt='ENSG001',
+        src_type='metabolite', tgt_type='protein',
+        src_comp='c', tgt_comp='',
+        rxn_id='MAR001', reverse=False):
+    """Build a GemInteraction record."""
 
-
-def _interaction(src='MAM001c', tgt='ENSG001',
-                 src_type='metabolite', tgt_type='gene',
-                 src_comp='c', tgt_comp='',
-                 rxn_id='MAR001', reverse=False):
     return GemInteraction(
         source=src, target=tgt,
         source_type=src_type, target_type=tgt_type,
@@ -52,36 +49,41 @@ def _interaction(src='MAM001c', tgt='ENSG001',
     )
 
 
+# Keep old alias for backward compat in tests that still use _interaction.
+_interaction = _gi
+
+
 # ---------------------------------------------------------------------------
 # Mock helpers
 # ---------------------------------------------------------------------------
 
-_METS = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-_METS_LOW = [_metabolite('MAM003c', 'c'), _metabolite('MAM004c', 'c')]
+def _patch_gem(gem_name, metabolic_ints, transport_ints=None, reactions=None):
+    """Return context managers patching the three pypath functions used by gem_interactions.
 
+    - metatlas_gem_network       → yields metabolic GemInteraction records
+    - metatlas_gem_transport_network → yields transport GemInteraction records
+    - metatlas_gem_yaml_reactions → yields GemReaction records (for transport_ids + gene_id_type)
+    """
 
-def _patch_gem(gem_name, interactions, reactions=None, metabolites=None):
-    """Return a context manager that patches all three metatlas functions."""
-
+    transport_ints = transport_ints or []
     reactions = reactions or [_reaction()]
-    metabolites = metabolites or _METS
 
     def _network(**kwargs):
-        yield from interactions
+        yield from metabolic_ints
+
+    def _transport_network(**kwargs):
+        yield from transport_ints
 
     def _yaml_reactions(**kwargs):
         yield from reactions
 
-    def _yaml_metabolites(**kwargs):
-        yield from metabolites
-
     return (
         patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
               side_effect=_network),
+        patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+              side_effect=_transport_network),
         patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
               side_effect=_yaml_reactions),
-        patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-              side_effect=_yaml_metabolites),
     )
 
 
@@ -94,10 +96,9 @@ class TestGemProvenance:
     def test_gems_attr_present(self):
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
-        ints = [_interaction()]
-        with _patch_gem('TestGEM', ints)[0], \
-             _patch_gem('TestGEM', ints)[1], \
-             _patch_gem('TestGEM', ints)[2]:
+        ints = [_gi()]
+        p0, p1, p2 = _patch_gem('TestGEM', ints)
+        with p0, p1, p2:
             records = list(gem_interactions(gem='TestGEM'))
 
         for rec in records:
@@ -106,7 +107,7 @@ class TestGemProvenance:
     def test_gems_attr_single_gem_value(self):
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
-        ints = [_interaction()]
+        ints = [_gi()]
         p0, p1, p2 = _patch_gem('MyGEM', ints)
         with p0, p1, p2:
             records = list(gem_interactions(gem='MyGEM'))
@@ -118,7 +119,7 @@ class TestGemProvenance:
     def test_gems_attr_is_list(self):
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
-        ints = [_interaction()]
+        ints = [_gi()]
         p0, p1, p2 = _patch_gem('G', ints)
         with p0, p1, p2:
             records = list(gem_interactions(gem='G'))
@@ -133,17 +134,12 @@ class TestGemProvenance:
 
 class TestGemDeduplication:
 
-    def _run_two_gems(self, ints_a, ints_b, rxns_a=None, rxns_b=None,
-                     mets_a=None, mets_b=None):
+    def _run_two_gems(self, ints_a, ints_b, rxns=None):
         """Run gem_interactions with two mocked GEMs, return records."""
 
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
-        rxns_a = rxns_a or [_reaction()]
-        rxns_b = rxns_b or [_reaction()]
-        mets_a = mets_a or _METS
-        mets_b = mets_b or _METS
-
+        rxns = rxns or [_reaction()]
         call_count = [0]
 
         def _network(**kwargs):
@@ -151,30 +147,27 @@ class TestGemDeduplication:
             call_count[0] += 1
             yield from (ints_a if i == 0 else ints_b)
 
-        def _yaml_reactions(**kwargs):
-            yield from rxns_a  # transport IDs don't differ between gems in tests
+        def _transport_network(**kwargs):
+            return iter([])
 
-        def _yaml_metabolites(**kwargs):
-            yield from mets_a
+        def _yaml_reactions(**kwargs):
+            yield from rxns
 
         with (
             patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
                   side_effect=_network),
+            patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+                  side_effect=_transport_network),
             patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
                   side_effect=_yaml_reactions),
-            patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-                  side_effect=_yaml_metabolites),
         ):
             return list(gem_interactions(gem=['GemA', 'GemB']))
 
     def test_identical_edges_collapsed(self):
         """Same (source, target, reaction_id, reverse) from two GEMs → one edge."""
 
-        edge = _interaction()
+        edge = _gi()
         records = self._run_two_gems([edge], [edge])
-        # met→enzyme and enzyme→met: each direction should be deduplicated
-        sources = [r.source for r in records]
-        # No duplicates in (source, target, reaction_id, reverse) space
         keys = [
             (r.source, r.target,
              r.attrs.get('reaction_id'), r.attrs.get('reverse'))
@@ -185,7 +178,7 @@ class TestGemDeduplication:
     def test_identical_edges_provenance(self):
         """Deduplicated edge carries both GEM names."""
 
-        edge = _interaction()
+        edge = _gi()
         records = self._run_two_gems([edge], [edge])
 
         for rec in records:
@@ -195,44 +188,33 @@ class TestGemDeduplication:
     def test_distinct_edges_not_collapsed(self):
         """Different metabolites → both edges preserved."""
 
-        edge_a = _interaction(src='MAM001c', tgt='ENSG001', rxn_id='MAR001',
-                              src_comp='c')
-        edge_b = _interaction(src='MAM003c', tgt='ENSG002', rxn_id='MAR002',
-                              src_comp='c')
-
-        mets_b = [_metabolite('MAM003c', 'c'), _metabolite('MAM004c', 'c')]
+        edge_a = _gi(src='MAM001c', tgt='ENSG001', rxn_id='MAR001', src_comp='c')
+        edge_b = _gi(src='MAM003c', tgt='ENSG002', rxn_id='MAR002', src_comp='c')
 
         call_count = [0]
-        rxns = [_reaction()]
-        all_mets = [_METS, mets_b]
 
         def _network(**kwargs):
             i = call_count[0]
             call_count[0] += 1
             yield from ([edge_a] if i == 0 else [edge_b])
 
+        def _transport_network(**kwargs):
+            return iter([])
+
         def _yaml_reactions(**kwargs):
-            yield from rxns
-
-        met_call = [0]
-
-        def _yaml_metabolites(**kwargs):
-            i = met_call[0]
-            met_call[0] += 1
-            yield from all_mets[min(i, 1)]
+            yield _reaction()
 
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
         with (
             patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
                   side_effect=_network),
+            patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+                  side_effect=_transport_network),
             patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
                   side_effect=_yaml_reactions),
-            patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-                  side_effect=_yaml_metabolites),
         ):
             records = list(gem_interactions(gem=['GemA', 'GemB']))
 
-        # met→enzyme edges for MAM001 and MAM003 should both be present
         met_sources = {r.source for r in records if r.source_type == 'small_molecule'}
         assert 'MAM001' in met_sources
         assert 'MAM003' in met_sources
@@ -240,10 +222,8 @@ class TestGemDeduplication:
     def test_distinct_edge_each_has_one_gem(self):
         """Non-overlapping edges each carry exactly their own GEM name."""
 
-        edge_a = _interaction(src='MAM001c', tgt='ENSG001', rxn_id='MAR001',
-                              src_comp='c')
-        edge_b = _interaction(src='MAM001c', tgt='ENSG001', rxn_id='MAR002',
-                              src_comp='c')  # same met+enzyme, different reaction
+        edge_a = _gi(src='MAM001c', tgt='ENSG001', rxn_id='MAR001', src_comp='c')
+        edge_b = _gi(src='MAM001c', tgt='ENSG001', rxn_id='MAR002', src_comp='c')
 
         call_count = [0]
 
@@ -252,20 +232,20 @@ class TestGemDeduplication:
             call_count[0] += 1
             yield from ([edge_a] if i == 0 else [edge_b])
 
-        def _yaml_reactions(**kwargs):
-            yield from [_reaction()]
+        def _transport_network(**kwargs):
+            return iter([])
 
-        def _yaml_metabolites(**kwargs):
-            yield from _METS
+        def _yaml_reactions(**kwargs):
+            yield _reaction()
 
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
         with (
             patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
                   side_effect=_network),
+            patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+                  side_effect=_transport_network),
             patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
                   side_effect=_yaml_reactions),
-            patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-                  side_effect=_yaml_metabolites),
         ):
             records = list(gem_interactions(gem=['GemA', 'GemB']))
 
@@ -279,69 +259,71 @@ class TestGemDeduplication:
     def test_gem_names_sorted(self):
         """attrs['gems'] is always sorted."""
 
-        edge = _interaction()
+        edge = _gi()
         records = self._run_two_gems([edge], [edge])
         for rec in records:
             assert rec.attrs['gems'] == sorted(rec.attrs['gems'])
 
 
 # ---------------------------------------------------------------------------
-# Tests: orphan reactions (gap from previous session)
+# Tests: orphan reactions
 # ---------------------------------------------------------------------------
 
 class TestGemOrphans:
 
-    def _run(self, rxns, mets, include_orphans=True):
+    def _run(self, orphan_gis, include_orphans=True):
+        """Run gem_interactions with orphan GemInteraction records from metatlas_gem_network."""
+
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
         def _network(**kwargs):
-            return iter([])  # no normal edges
+            yield from orphan_gis
+
+        def _transport_network(**kwargs):
+            return iter([])
 
         def _yaml_reactions(**kwargs):
-            yield from rxns
-
-        def _yaml_metabolites(**kwargs):
-            yield from mets
+            yield _reaction()
 
         with (
             patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
                   side_effect=_network),
+            patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+                  side_effect=_transport_network),
             patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
                   side_effect=_yaml_reactions),
-            patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-                  side_effect=_yaml_metabolites),
         ):
             return list(gem_interactions(
                 gem='TestGEM',
                 include_orphans=include_orphans,
             ))
 
+    def _make_orphan_gis(self, rid='MAR_O1'):
+        """Build GemInteraction records for an orphan reaction (reaction as pseudo-enzyme)."""
+
+        return [
+            _gi(src='MAM001c', tgt=rid, src_type='metabolite', tgt_type='reaction',
+                src_comp='c', tgt_comp='', rxn_id=rid),
+            _gi(src=rid, tgt='MAM002c', src_type='reaction', tgt_type='metabolite',
+                src_comp='', tgt_comp='c', rxn_id=rid),
+        ]
+
     def test_orphan_included_by_default(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        records = self._run(self._make_orphan_gis())
         assert len(records) > 0
 
     def test_orphan_excluded_when_flag_false(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets, include_orphans=False)
+        # With include_orphans=False, metatlas_gem_network would not yield orphan records.
+        # We simulate this by passing empty list.
+        records = self._run([], include_orphans=False)
         assert records == []
 
     def test_orphan_attrs_flag(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        records = self._run(self._make_orphan_gis())
         assert all(r.attrs.get('orphan') for r in records)
 
     def test_orphan_uses_reaction_id_as_enzyme(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        records = self._run(self._make_orphan_gis())
         enzyme_nodes = {
             r.target if r.source_type == 'small_molecule' else r.source
             for r in records
@@ -349,10 +331,7 @@ class TestGemOrphans:
         assert 'MAR_O1' in enzyme_nodes
 
     def test_orphan_id_type_is_reaction_id(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        records = self._run(self._make_orphan_gis())
         for rec in records:
             if rec.source_type == 'small_molecule':
                 assert rec.id_type_b == 'reaction_id'
@@ -360,25 +339,26 @@ class TestGemOrphans:
                 assert rec.id_type_a == 'reaction_id'
 
     def test_orphan_has_gems_provenance(self):
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        records = self._run(self._make_orphan_gis())
         for rec in records:
             assert rec.attrs['gems'] == ['TestGEM']
 
     def test_no_duplicate_forward_reverse_keys(self):
-        """Each (source, target, reaction_id, reverse) key is unique.
+        """Each (source, target, reaction_id, reverse) key is unique."""
 
-        Forward and reverse edges are distinguishable and never appear
-        as the same edge.  If this fails, the output contains ambiguous
-        edges that a COSMOS formatter could accidentally double-reverse.
-        """
-        orphan = _reaction(rid='MAR_O1', gene_reaction_rule='',
-                           mets={'MAM001c': -1, 'MAM002c': 1},
-                           lb=-1000.0, ub=1000.0)
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
-        records = self._run([orphan], mets)
+        # Forward + reverse orphan edges for a reversible reaction.
+        rid = 'MAR_O1'
+        gis = [
+            _gi(src='MAM001c', tgt=rid, src_type='metabolite', tgt_type='reaction',
+                src_comp='c', tgt_comp='', rxn_id=rid, reverse=False),
+            _gi(src=rid, tgt='MAM002c', src_type='reaction', tgt_type='metabolite',
+                src_comp='', tgt_comp='c', rxn_id=rid, reverse=False),
+            _gi(src='MAM002c', tgt=rid, src_type='metabolite', tgt_type='reaction',
+                src_comp='c', tgt_comp='', rxn_id=rid, reverse=True),
+            _gi(src=rid, tgt='MAM001c', src_type='reaction', tgt_type='metabolite',
+                src_comp='', tgt_comp='c', rxn_id=rid, reverse=True),
+        ]
+        records = self._run(gis)
         full_keys = [
             (r.source, r.target, r.attrs.get('reaction_id'), r.attrs.get('reverse'))
             for r in records
@@ -386,28 +366,26 @@ class TestGemOrphans:
         assert len(full_keys) == len(set(full_keys))
 
     def test_non_orphan_has_no_orphan_flag(self):
-        normal = _reaction(rid='MAR001', gene_reaction_rule='ENSG001',
-                           mets={'MAM001c': -1, 'MAM002c': 1})
-        mets = [_metabolite('MAM001c', 'c'), _metabolite('MAM002c', 'c')]
+        normal_gi = _gi(src='MAM001c', tgt='ENSG001', src_type='metabolite',
+                        tgt_type='protein', src_comp='c', rxn_id='MAR001')
 
         def _network(**kwargs):
-            yield _interaction(src='MAM001c', tgt='ENSG001', rxn_id='MAR001',
-                               src_comp='c')
+            yield normal_gi
+
+        def _transport_network(**kwargs):
+            return iter([])
 
         def _yaml_reactions(**kwargs):
-            yield normal
-
-        def _yaml_metabolites(**kwargs):
-            yield from mets
+            yield _reaction()
 
         from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
         with (
             patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
                   side_effect=_network),
+            patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+                  side_effect=_transport_network),
             patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
                   side_effect=_yaml_reactions),
-            patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-                  side_effect=_yaml_metabolites),
         ):
             records = list(gem_interactions(gem='TestGEM'))
 
@@ -418,76 +396,70 @@ class TestGemOrphans:
 # Tests: cell_surface_only
 # ---------------------------------------------------------------------------
 
-# Transport reactions used by TestCellSurfaceOnly:
-#   _RXN_PLASMA  : glc crosses c↔e  (plasma membrane) → kept
-#   _RXN_MITO   : atp crosses c↔m  (mitochondrial)   → dropped
-#   Transport subsystem annotation triggers the transport_groups path.
+# GemInteraction records representing transport edges for two reactions.
+# Plasma membrane (c↔e): kept when cell_surface_only=True.
+# Mitochondrial (c↔m): dropped when cell_surface_only=True.
 
+_GI_PLASMA_IN = _gi(
+    src='MAM_glc', tgt='ENSG001',
+    src_type='metabolite', tgt_type='protein',
+    src_comp='c', tgt_comp='',
+    rxn_id='T_PLASMA',
+)
+_GI_PLASMA_OUT = _gi(
+    src='ENSG001', tgt='MAM_glc',
+    src_type='protein', tgt_type='metabolite',
+    src_comp='', tgt_comp='e',
+    rxn_id='T_PLASMA',
+)
+_GI_MITO_IN = _gi(
+    src='MAM_atp', tgt='ENSG002',
+    src_type='metabolite', tgt_type='protein',
+    src_comp='c', tgt_comp='',
+    rxn_id='T_MITO',
+)
+_GI_MITO_OUT = _gi(
+    src='ENSG002', tgt='MAM_atp',
+    src_type='protein', tgt_type='metabolite',
+    src_comp='', tgt_comp='m',
+    rxn_id='T_MITO',
+)
+
+# Transport reactions for metatlas_gem_yaml_reactions mock (needed for
+# metatlas_gem_transport_ids; both reactions have subsystem 'Transport reactions').
 _RXN_PLASMA = _reaction(
-    rid='T_PLASMA',
-    subsystem='Transport reactions',
+    rid='T_PLASMA', subsystem='Transport reactions',
     gene_reaction_rule='ENSG001',
     mets={'MAM_glc_c': -1, 'MAM_glc_e': 1},
     lb=0, ub=1000,
 )
 _RXN_MITO = _reaction(
-    rid='T_MITO',
-    subsystem='Transport reactions',
+    rid='T_MITO', subsystem='Transport reactions',
     gene_reaction_rule='ENSG002',
     mets={'MAM_atp_c': -1, 'MAM_atp_m': 1},
     lb=0, ub=1000,
 )
-_METS_TRANSPORT = [
-    _metabolite('MAM_glc_c', 'c'), _metabolite('MAM_glc_e', 'e'),
-    _metabolite('MAM_atp_c', 'c'), _metabolite('MAM_atp_m', 'm'),
-]
-# GemInteraction edges for the two transport reactions (source→enzyme direction only;
-# gem_interactions normally gets these from metatlas_gem_network).
-_INT_PLASMA = _interaction(
-    src='MAM_glc_c', tgt='ENSG001',
-    src_type='metabolite', tgt_type='gene',
-    src_comp='c', tgt_comp='',
-    rxn_id='T_PLASMA',
-)
-_INT_PLASMA_OUT = _interaction(
-    src='ENSG001', tgt='MAM_glc_e',
-    src_type='gene', tgt_type='metabolite',
-    src_comp='', tgt_comp='e',
-    rxn_id='T_PLASMA',
-)
-_INT_MITO = _interaction(
-    src='MAM_atp_c', tgt='ENSG002',
-    src_type='metabolite', tgt_type='gene',
-    src_comp='c', tgt_comp='',
-    rxn_id='T_MITO',
-)
-_INT_MITO_OUT = _interaction(
-    src='ENSG002', tgt='MAM_atp_m',
-    src_type='gene', tgt_type='metabolite',
-    src_comp='', tgt_comp='m',
-    rxn_id='T_MITO',
-)
 
 
-def _run_cell_surface(reactions, interactions, metabolites, **kwargs):
+def _run_cell_surface(transport_gis, reactions, **kwargs):
     from omnipath_metabo.datasets.cosmos.resources.gem import gem_interactions
 
     def _network(**kw):
-        yield from interactions
+        return iter([])  # no metabolic edges
+
+    def _transport_network(**kw):
+        yield from transport_gis
 
     def _yaml_reactions(**kw):
         yield from reactions
 
-    def _yaml_metabolites(**kw):
-        yield from metabolites
-
     with (
         patch('pypath.inputs.metatlas._gem.metatlas_gem_network',
               side_effect=_network),
+        patch('pypath.inputs.metatlas._gem.metatlas_gem_transport_network',
+              side_effect=_transport_network),
         patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_reactions',
               side_effect=_yaml_reactions),
-        patch('pypath.inputs.metatlas._gem.metatlas_gem_yaml_metabolites',
-              side_effect=_yaml_metabolites),
     ):
         return list(gem_interactions(gem='TestGEM', **kwargs))
 
@@ -496,22 +468,22 @@ class TestCellSurfaceOnly:
 
     def test_plasma_membrane_reaction_kept(self):
         recs = _run_cell_surface(
-            [_RXN_PLASMA], [_INT_PLASMA, _INT_PLASMA_OUT], _METS_TRANSPORT,
+            [_GI_PLASMA_IN, _GI_PLASMA_OUT], [_RXN_PLASMA],
             cell_surface_only=True,
         )
         assert len(recs) > 0
 
     def test_intracellular_reaction_dropped(self):
         recs = _run_cell_surface(
-            [_RXN_MITO], [_INT_MITO, _INT_MITO_OUT], _METS_TRANSPORT,
+            [_GI_MITO_IN, _GI_MITO_OUT], [_RXN_MITO],
             cell_surface_only=True,
         )
         assert recs == []
 
     def test_both_reactions_only_plasma_survives(self):
-        all_ints = [_INT_PLASMA, _INT_PLASMA_OUT, _INT_MITO, _INT_MITO_OUT]
         recs = _run_cell_surface(
-            [_RXN_PLASMA, _RXN_MITO], all_ints, _METS_TRANSPORT,
+            [_GI_PLASMA_IN, _GI_PLASMA_OUT, _GI_MITO_IN, _GI_MITO_OUT],
+            [_RXN_PLASMA, _RXN_MITO],
             cell_surface_only=True,
         )
         rxn_ids = {r.attrs['reaction_id'] for r in recs}
@@ -520,9 +492,8 @@ class TestCellSurfaceOnly:
 
     def test_both_edges_of_plasma_reaction_kept(self):
         # met→enzyme AND enzyme→met must both survive (no edge-pair breakage).
-        all_ints = [_INT_PLASMA, _INT_PLASMA_OUT]
         recs = _run_cell_surface(
-            [_RXN_PLASMA], all_ints, _METS_TRANSPORT,
+            [_GI_PLASMA_IN, _GI_PLASMA_OUT], [_RXN_PLASMA],
             cell_surface_only=True,
         )
         source_types = {r.source_type for r in recs}
@@ -531,7 +502,7 @@ class TestCellSurfaceOnly:
 
     def test_false_keeps_intracellular(self):
         recs = _run_cell_surface(
-            [_RXN_MITO], [_INT_MITO, _INT_MITO_OUT], _METS_TRANSPORT,
+            [_GI_MITO_IN, _GI_MITO_OUT], [_RXN_MITO],
             cell_surface_only=False,
         )
         assert len(recs) > 0

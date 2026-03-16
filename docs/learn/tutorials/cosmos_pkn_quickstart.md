@@ -52,7 +52,8 @@ pd.set_option('display.width', None)
 # transporter
 transporters = cosmos.build_transporters(
     recon3d={'include_orphans':False},
-    gem={'include_orphans': False})
+    gem={'include_orphans': False},
+    cell_surface_only=True)
 df = pd.DataFrame(transporters.network, columns=Interaction._fields)
 df.groupby(['resource']).size()
 df[df['resource']=='TCDB']
@@ -65,6 +66,11 @@ for col in ['source_type', 'target_type', 'id_type_a',
     print(df_r[col].value_counts())
 
 
+transporters = cosmos.build_transporters(
+    recon3d={'include_orphans':False},
+    gem={'include_orphans': False,'gem':'Mouse-GEM'}, 
+    organism = 10090,
+    cell_surface_only=True)
 
 
 

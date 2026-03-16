@@ -16,149 +16,28 @@
 """
 Recon3D transporter interactions for COSMOS PKN.
 
-Identifies transport reactions from Recon3D by detecting metabolites that
-appear on both the reactant and product side of a reaction with different
-compartment codes — the hallmark of membrane transport.  Only these
-transport events are included; general metabolic reactions in Recon3D are
-not covered here (Human-GEM via gem.py is the source for metabolic edges).
+Thin wrapper around
+:func:`pypath.inputs.recon3d.recon3d_transporter_network` that converts
+``GemInteraction`` records into COSMOS ``Interaction`` records.
 
-For each transport event two directed edges are generated per enzyme:
+The transport detection algorithm (compartment-crossing filter) lives in
+pypath.  This module handles COSMOS-specific concerns: the
+``cell_surface_only`` filter, ``Interaction`` record building, and
+``id_type`` / resource labelling.
 
-- *metabolite[in_comp] → enzyme*: metabolite enters the transporter.
-- *enzyme → metabolite[out_comp]*: metabolite exits on the other side.
-
-This produces a condensed representation: only metabolites that physically
-cross a membrane generate edges.  Cofactors that are consumed and produced
-within the same compartment (e.g. ATP→ADP in the cytoplasm) are excluded
-even if they appear on both sides of the reaction.
-
-Metabolite IDs are BiGG base IDs (compartment suffix stripped; id_type
-``'bigg'``).  Enzyme IDs are Entrez Gene IDs with ``_ATN`` isoform suffixes
-stripped (id_type ``'entrez'``).  Both are translated downstream by
-:func:`~omnipath_metabo.datasets.cosmos._translate.translate_pkn`.
-
-.. note::
-
-    **Human-only resource.**  Recon3D is a human (*Homo sapiens*) metabolic
-    reconstruction — no equivalent model exists for other species.  For
-    multi-species transporter coverage, use ``gem.py`` with a Chalmers
-    Sysbio / MetAtlas GEM (e.g. ``Mouse-GEM``, ``Rat-GEM``) and filter by
-    ``resource='GEM_transporter:<gem-name>'``; those models carry an
-    explicit ``'Transport reactions'`` subsystem annotation.
-
-Transport direction is stored in ``attrs['transport_from']`` and
-``attrs['transport_to']``.  The ``locations`` tuple carries the metabolite
-compartment for each edge (source compartment for met→enzyme edges; target
-compartment for enzyme→met edges).
-
-Reference implementations:
-    - ``recon3D_BIGG/script/recon3DBIGG_to_df.R`` — per-metabolite enzyme
-      labelling for pure transport reactions (all reactants == all products
-      by base ID).
-    - ``Generation-PKN-COSMOS/src/final_functions_PKN_COSMOS.R``
-      (``.format_GSMM_COSMOS``) — transporter detection by self-join on
-      metabolite base IDs within each enzyme's edge set.
-    - OmnipathR ``chalmers_gem.R`` (``chalmers_gem_network``) — self-join
-      on (ri, source, target, reverse) to mark ``transporter = TRUE`` on
-      edges where the same metabolite appears on both sides of a reaction.
+For reference on the transport detection approach and the original R
+implementations, see the docstring of
+``pypath.inputs.recon3d._gem.recon3d_transporter_network``.
 """
 
 from __future__ import annotations
 
 __all__ = ['recon3d_transporter_interactions']
 
-import re
 from collections import defaultdict
 from collections.abc import Generator
 
 from .._record import Interaction
-
-
-def _strip_compartment(met_id: str) -> tuple[str, str]:
-    """
-    Split a BiGG metabolite ID into (base_id, compartment).
-
-    BiGG encodes compartment as a single-letter suffix after the last
-    underscore: ``'atp_c'`` → ``('atp', 'c')``.  If the last segment is
-    not a single letter the full ID is returned with an empty string.
-
-    Args:
-        met_id: BiGG metabolite ID including compartment suffix.
-
-    Returns:
-        Tuple of (base_id, compartment_code).
-    """
-    parts = met_id.rsplit('_', 1)
-
-    if len(parts) == 2 and len(parts[1]) == 1 and parts[1].isalpha():
-        return parts[0], parts[1]
-
-    return met_id, ''
-
-
-def _parse_gene_rule(
-    rule: str,
-) -> list[tuple[str, dict[str, str]]]:
-    """
-    Parse a Recon3D gene_reaction_rule into clean Entrez enzyme identifiers.
-
-    Strips ``_ATN`` isoform suffixes from gene IDs before building complex
-    subunit strings, and records the stripped designations in a per-enzyme
-    isoform map.  OR-separated parts become separate isoenzymes; AND-
-    separated parts become underscore-joined complex subunit IDs.
-
-    Args:
-        rule: Gene-reaction rule string
-            (e.g. ``'1234_AT1 or (5678_AT1 and 9012_AT2)'``).
-
-    Returns:
-        List of ``(enzyme_id, isoforms)`` tuples.  *enzyme_id* has
-        ``_ATN`` suffixes stripped.  *isoforms* maps each base Entrez ID
-        that carried an isoform designation to its designation string
-        (e.g. ``{'5678': 'AT1', '9012': 'AT2'}``); the dict is empty when
-        no gene in this enzyme group carried an isoform suffix.
-        Returns an empty list for orphan reactions (empty/whitespace rule).
-    """
-    if not rule or not rule.strip():
-        return []
-
-    rule = re.sub(r'[()]', '', rule).strip()
-    enzymes = []
-
-    for or_part in re.split(r'\bor\b', rule, flags=re.IGNORECASE):
-        raw_genes = [
-            g.strip()
-            for g in re.split(r'\band\b', or_part, flags=re.IGNORECASE)
-            if g.strip()
-        ]
-
-        if not raw_genes:
-            continue
-
-        bases: list[str] = []
-        isoforms: dict[str, str] = {}
-
-        for g in raw_genes:
-            m = re.search(r'(_AT\d+)$', g)
-
-            if m:
-                base = g[:m.start()]
-                isoforms[base] = m.group(1)[1:]  # e.g. 'AT1', 'AT2'
-            else:
-                base = g
-
-            if base:
-                bases.append(base)
-
-        bases = [b for b in bases if b]
-
-        if not bases:
-            continue
-
-        enzyme_id = '_'.join(sorted(bases)) if len(bases) > 1 else bases[0]
-        enzymes.append((enzyme_id, isoforms))
-
-    return enzymes
 
 
 def recon3d_transporter_interactions(
@@ -170,30 +49,20 @@ def recon3d_transporter_interactions(
     """
     Yield Recon3D transporter interactions as uniform Interaction records.
 
-    Transport reactions are identified by detecting metabolites whose
-    BiGG base ID (compartment suffix stripped) appears on both the reactant
-    and product side of a reaction with *different* compartment codes.  This
-    is the molecular signature of membrane transport.
-
-    Only transported metabolites generate edges.  Metabolites that appear on
-    both sides of a reaction but within the *same* compartment (e.g. a
-    cofactor regenerated in the same location) are excluded by the
-    compartment-crossing test — no separate degree filter is needed.
+    Delegates transport detection to
+    :func:`pypath.inputs.recon3d.recon3d_transporter_network`.  The
+    compartment-crossing filter (keeping only metabolites that physically
+    cross a membrane) is applied in pypath.
 
     Two directed edges are generated per transported metabolite per enzyme:
 
     - ``met[in_comp] → enzyme``: the metabolite enters the transporter.
     - ``enzyme → met[out_comp]``: the metabolite exits on the other side.
 
-    Reversible reactions produce an additional reversed pair with
-    ``attrs['reverse'] = True`` where ``transport_from`` and ``transport_to``
-    are swapped.
-
     Args:
         organism:
             NCBI taxonomy ID.  Only human (9606) is supported; any other
-            value causes the function to yield nothing, consistent with
-            the behaviour of other human-only resources (e.g. SLC).
+            value causes the function to yield nothing.
         include_reverse:
             If ``True``, include reversed edges for reversible transport
             reactions (``attrs['reverse'] = True``).  Default: ``True``.
@@ -204,10 +73,9 @@ def recon3d_transporter_interactions(
             Default: ``True``.
         cell_surface_only:
             If ``True``, restrict to transport events where at least one
-            compartment is extracellular (``'e'``).  Applied per
-            transported metabolite before edges are appended, so
-            intracellular-only events (``c↔m``, ``c↔r``, ``c↔l``, etc.)
-            are dropped.  Default: ``False``.
+            compartment is extracellular (``'e'``).  Applied per reaction
+            group so met→enzyme / enzyme→met pairs are always kept or
+            dropped together.  Default: ``False``.
 
     Yields:
         :class:`~omnipath_metabo.datasets.cosmos._record.Interaction`
@@ -224,182 +92,75 @@ def recon3d_transporter_interactions(
         ``attrs['reverse']`` to identify and label them, not to create
         new edges from them.
     """
+
     if organism != 9606:
         return
 
-    from pypath.inputs.recon3d._gem import recon3d_reactions
+    from pypath.inputs.recon3d._gem import recon3d_transporter_network
 
-    reactions = recon3d_reactions()
+    # Group by reaction_id for cell_surface_only filter.
+    groups: defaultdict[str, list] = defaultdict(list)
 
-    # Two-pass: collect all candidate edge tuples first, then filter by
-    # metabolite degree.  Tuple layout (12 fields):
-    #   src, src_type, src_comp,
-    #   tgt, tgt_type, tgt_comp,
-    #   rxn_id, is_reverse, transport_from, transport_to, is_complex,
-    #   isoforms
-    raw: list[tuple] = []
-    n_transport_rxn = 0
+    for rec in recon3d_transporter_network(
+        include_reverse=include_reverse,
+        include_orphans=include_orphans,
+    ):
+        groups[rec.reaction_id].append(rec)
 
-    for rxn in reactions:
-        enzymes = _parse_gene_rule(rxn['gene_reaction_rule'])
-
-        if not enzymes and not include_orphans:
-            continue
-
-        mets: dict = rxn['metabolites']
-        lb = rxn['lower_bound']
-        ub = rxn['upper_bound']
-        rxn_id = rxn['id']
-        reversible = rxn['reversible']
-        direction = 1 if lb + ub >= 0 else -1
-
-        # Partition metabolites into reactants (consumed) and products
-        # (produced), respecting the reaction direction sign.
-        reactant_comps: defaultdict[str, list[str]] = defaultdict(list)
-        product_comps: defaultdict[str, list[str]] = defaultdict(list)
-
-        for met_full, coef in mets.items():
-            base, comp = _strip_compartment(met_full)
-
-            if coef * direction < 0:
-                reactant_comps[base].append(comp)
-            elif coef * direction > 0:
-                product_comps[base].append(comp)
-
-        # Transported metabolites: same base_id on both sides AND at least
-        # one (in_comp, out_comp) pair with different compartments.
-        transported: list[tuple[str, str, str]] = []
-
-        for base in set(reactant_comps) & set(product_comps):
-            for in_comp in reactant_comps[base]:
-                for out_comp in product_comps[base]:
-                    if in_comp != out_comp:
-                        transported.append((base, in_comp, out_comp))
-
-        if not transported:
-            continue
+    for rxn_id, edges in groups.items():
 
         if cell_surface_only:
-            transported = [
-                (base, in_comp, out_comp)
-                for base, in_comp, out_comp in transported
-                if in_comp == 'e' or out_comp == 'e'
-            ]
-            if not transported:
+            if not any(
+                e.source_compartment == 'e' or e.target_compartment == 'e'
+                for e in edges
+            ):
                 continue
 
-        if not enzymes:
-            # Orphan transport reaction: use reaction ID as pseudo-enzyme.
-            n_transport_rxn += 1
+        for rec in edges:
 
-            for base_id, in_comp, out_comp in transported:
-                raw.append((
-                    base_id, 'metabolite', in_comp,
-                    rxn_id, 'reaction', '',
-                    rxn_id, False, in_comp, out_comp, False, {},
-                ))
-                raw.append((
-                    rxn_id, 'reaction', '',
-                    base_id, 'metabolite', out_comp,
-                    rxn_id, False, in_comp, out_comp, False, {},
-                ))
+            is_orphan = rec.source_type == 'reaction' or rec.target_type == 'reaction'
 
-                if reversible and include_reverse:
-                    raw.append((
-                        base_id, 'metabolite', out_comp,
-                        rxn_id, 'reaction', '',
-                        rxn_id, True, out_comp, in_comp, False, {},
-                    ))
-                    raw.append((
-                        rxn_id, 'reaction', '',
-                        base_id, 'metabolite', in_comp,
-                        rxn_id, True, out_comp, in_comp, False, {},
-                    ))
+            if rec.source_type == 'metabolite':
+                source = rec.source
+                source_type = 'small_molecule'
+                id_type_a = 'bigg'
+                target = rec.target
+                target_type = 'protein'
+                id_type_b = 'reaction_id' if is_orphan else 'entrez'
+                locations = (rec.source_compartment,) if rec.source_compartment else ()
 
-            continue
+            else:
+                source = rec.source
+                source_type = 'protein'
+                id_type_a = 'reaction_id' if is_orphan else 'entrez'
+                target = rec.target
+                target_type = 'small_molecule'
+                id_type_b = 'bigg'
+                locations = (rec.target_compartment,) if rec.target_compartment else ()
 
-        n_transport_rxn += 1
+            is_complex = '_' in (rec.source if source_type == 'protein' else rec.target) and not is_orphan
 
-        for base_id, in_comp, out_comp in transported:
-            for enzyme, isoforms in enzymes:
-                is_complex = '_' in enzyme
+            attrs = {
+                'reverse': rec.reverse,
+                'reaction_id': rec.reaction_id,
+                'enzyme_complex': is_complex,
+                'transport_from': rec.source_compartment if rec.source_type == 'metabolite' else rec.target_compartment,
+                'transport_to': rec.target_compartment if rec.target_type == 'metabolite' else rec.source_compartment,
+            }
 
-                # Forward: met[in_comp] → enzyme → met[out_comp]
-                raw.append((
-                    base_id, 'metabolite', in_comp,
-                    enzyme, 'protein', '',
-                    rxn_id, False, in_comp, out_comp, is_complex, isoforms,
-                ))
-                raw.append((
-                    enzyme, 'protein', '',
-                    base_id, 'metabolite', out_comp,
-                    rxn_id, False, in_comp, out_comp, is_complex, isoforms,
-                ))
+            if is_orphan:
+                attrs['orphan'] = True
 
-                if reversible and include_reverse:
-                    # Reverse: met[out_comp] → enzyme → met[in_comp]
-                    raw.append((
-                        base_id, 'metabolite', out_comp,
-                        enzyme, 'protein', '',
-                        rxn_id, True, out_comp, in_comp, is_complex, isoforms,
-                    ))
-                    raw.append((
-                        enzyme, 'protein', '',
-                        base_id, 'metabolite', in_comp,
-                        rxn_id, True, out_comp, in_comp, is_complex, isoforms,
-                    ))
-
-    for (
-        src, src_type, src_comp,
-        tgt, tgt_type, tgt_comp,
-        rxn_id, is_reverse, transport_from, transport_to, is_complex,
-        isoforms,
-    ) in raw:
-
-        is_orphan = src_type == 'reaction' or tgt_type == 'reaction'
-
-        if src_type == 'metabolite':
-            source = src
-            source_type = 'small_molecule'
-            id_type_a = 'bigg'
-            target = tgt
-            target_type = 'protein'
-            id_type_b = 'reaction_id' if is_orphan else 'entrez'
-            locations = (src_comp,) if src_comp else ()
-
-        else:
-            source = src
-            source_type = 'protein'
-            id_type_a = 'reaction_id' if is_orphan else 'entrez'
-            target = tgt
-            target_type = 'small_molecule'
-            id_type_b = 'bigg'
-            locations = (tgt_comp,) if tgt_comp else ()
-
-        attrs = {
-            'reverse': is_reverse,
-            'reaction_id': rxn_id,
-            'enzyme_complex': is_complex,
-            'transport_from': transport_from,
-            'transport_to': transport_to,
-        }
-
-        if is_orphan:
-            attrs['orphan'] = True
-
-        if isoforms and not is_orphan:
-            attrs['isoforms'] = isoforms
-
-        yield Interaction(
-            source=source,
-            target=target,
-            source_type=source_type,
-            target_type=target_type,
-            id_type_a=id_type_a,
-            id_type_b=id_type_b,
-            interaction_type='transport',
-            resource='Recon3D',
-            mor=1,
-            locations=locations,
-            attrs=attrs,
-        )
+            yield Interaction(
+                source=source,
+                target=target,
+                source_type=source_type,
+                target_type=target_type,
+                id_type_a=id_type_a,
+                id_type_b=id_type_b,
+                interaction_type='transport',
+                resource='Recon3D',
+                mor=1,
+                locations=locations,
+                attrs=attrs,
+            )
