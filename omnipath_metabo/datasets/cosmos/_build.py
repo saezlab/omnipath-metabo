@@ -253,6 +253,50 @@ def _filter_bundle(bundle: CosmosBundle, predicate) -> CosmosBundle:
 
 
 # ---------------------------------------------------------------------------
+# Location enrichment
+# ---------------------------------------------------------------------------
+
+def _enrich_stitch_locations(df: pd.DataFrame, organism: int) -> pd.DataFrame:
+    """
+    Add subcellular location abbreviations to STITCH rows post-translation.
+
+    Called after ``translate_pkn()`` so protein IDs are already UniProt ACs
+    — no additional ID mapping is needed.  Location data is loaded once and
+    applied via dict lookup, keeping this step fast.
+
+    Rows where no location can be resolved retain an empty tuple (consistent
+    with other resources that have no location information).
+
+    Args:
+        df: Translated PKN DataFrame containing a ``'resource'`` column.
+        organism: NCBI taxonomy ID used to filter UniProt location data.
+
+    Returns:
+        DataFrame with ``'locations'`` column updated for STITCH rows.
+    """
+    from .location import resolve_protein_locations, tcdb_locations, uniprot_locations
+
+    stitch_mask = df['resource'] == 'STITCH'
+
+    if not stitch_mask.any():
+        return df
+
+    all_locations = uniprot_locations(organism=organism, reviewed=True)
+    loc_map = tcdb_locations()
+
+    def _loc(uniprot: str) -> tuple:
+        abbr = resolve_protein_locations(uniprot, all_locations, loc_map)
+        return tuple(sorted(abbr)) if abbr else ()
+
+    df = df.copy()
+    df.loc[stitch_mask, 'locations'] = (
+        df.loc[stitch_mask, 'target'].apply(_loc)
+    )
+
+    return df
+
+
+# ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
 
@@ -389,6 +433,7 @@ def build(
         proteins = _collect_proteins(prov)
         reactions = _collect_reactions(df)
         df = df.drop(columns=['_row_id'])
+        df = _enrich_stitch_locations(df, organism)
 
     else:
         if cfg.get('apply_blacklist', True):
