@@ -432,9 +432,10 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
 
     Args:
         *args: Passed through to :func:`build`.
-        **kwargs: Passed through to :func:`build`.  ``brenda``,
-            ``mrclinksdb``, and ``stitch`` are disabled unless explicitly
-            re-enabled.
+        **kwargs: Passed through to :func:`build`.  ``brenda`` and
+            ``stitch`` are disabled unless explicitly re-enabled.
+            ``mrclinksdb`` is enabled: its transport-classified records
+            (``interaction_type='transport'``) are included.
 
     Returns:
         :class:`CosmosBundle` containing only transporter interactions,
@@ -452,7 +453,6 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
         return True
 
     kwargs.setdefault('brenda', False)
-    kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('stitch', False)
     if cell_surface_only:
         kwargs.setdefault('gem', {})
@@ -492,10 +492,7 @@ def build_receptors(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, lambda row: (
-        row.interaction_type == 'ligand_receptor' or
-        (row.resource == 'STITCH' and row.interaction_type == 'receptor')
-    ))
+    return _filter_bundle(bundle, lambda row: row.interaction_type == 'ligand_receptor')
 
 
 def build_allosteric(*args, **kwargs) -> CosmosBundle:

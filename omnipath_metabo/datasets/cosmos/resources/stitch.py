@@ -82,6 +82,10 @@ def _multidb_uniprot_types(organism: int) -> dict[str, str]:
     Build a UniProt → interaction_type dict from OmniPath Intercell,
     TCDB, and Guide to Pharmacology (union).
 
+    The result is cached to disk (pickle) in the pypath cache directory
+    so that the expensive intercell database build is skipped on
+    subsequent sessions.  Delete the file to force a rebuild.
+
     Classification priority (lowest → highest):
 
     1. OmniPath Intercell transporter set → ``'transporter'``.
@@ -111,6 +115,17 @@ def _multidb_uniprot_types(organism: int) -> dict[str, str]:
         ``'transporter'``.  Proteins absent from all sources are not
         present in the dict (caller defaults to ``'other'``).
     """
+
+    import pickle
+    from pathlib import Path
+
+    import pypath.share.settings as _settings
+
+    cache_path = Path(_settings.get('cachedir')) / f'cosmos_protein_types_{organism}.pkl'
+
+    if cache_path.exists():
+        with cache_path.open('rb') as _f:
+            return pickle.load(_f)
 
     from pypath.inputs.guidetopharma import protein_targets
     from pypath.inputs.tcdb import tcdb_classes
@@ -153,6 +168,9 @@ def _multidb_uniprot_types(organism: int) -> dict[str, str]:
             elif t.target_type in _G2P_TRANSPORTER_TYPES:
                 if result.get(t.uniprot) != 'receptor':
                     result[t.uniprot] = 'transporter'
+
+    with cache_path.open('wb') as _f:
+        pickle.dump(result, _f)
 
     return result
 
@@ -264,7 +282,8 @@ def stitch_interactions(
         else:
             mor = 0
 
-        interaction_type = _classify_protein(protein_id, organism)
+        ptype = _classify_protein(protein_id, organism)
+        interaction_type = 'ligand_receptor' if ptype == 'receptor' else ptype
 
         yield Interaction(
             source=chemical_id,

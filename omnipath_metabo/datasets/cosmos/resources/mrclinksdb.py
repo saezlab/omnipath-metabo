@@ -18,6 +18,14 @@ MRCLinksDB receptor-metabolite processing for COSMOS PKN.
 
 MRCLinksDB provides receptor-metabolite interaction data with
 subcellular localization information.
+
+Each protein is classified as ``'receptor'``, ``'transporter'``, or
+``'other'`` using the same multi-source strategy as STITCH
+(Guide to Pharmacology > OmniPath Intercell > TCDB).  The classification
+is stored in ``interaction_type``:
+
+- ``'ligand_receptor'``: receptor or unclassified protein
+- ``'transport'``: transporter protein
 """
 
 from __future__ import annotations
@@ -53,9 +61,12 @@ def mrclinksdb_interactions(
         uniprot_locations,
     )
 
+    from .stitch import _multidb_uniprot_types
+
     organism_name = ORGANISM_NAMES.get(organism, str(organism))
     location_mapping = tcdb_locations()
     all_locations = uniprot_locations(organism=organism, reviewed=True)
+    protein_types = _multidb_uniprot_types(organism)
 
     for rec in _interactions.mrclinksdb_interaction(organism=organism_name):
 
@@ -78,6 +89,9 @@ def mrclinksdb_interactions(
         if not abbreviations:
             continue
 
+        ptype = protein_types.get(receptor, 'other')
+        interaction_type = 'transport' if ptype == 'transporter' else 'ligand_receptor'
+
         yield Interaction(
             source=pubchem,
             target=receptor,
@@ -85,7 +99,7 @@ def mrclinksdb_interactions(
             target_type='protein',
             id_type_a='pubchem',
             id_type_b='uniprot',
-            interaction_type='ligand_receptor',
+            interaction_type=interaction_type,
             resource='MRCLinksDB',
             mor=1,
             locations=tuple(sorted(abbreviations)),
