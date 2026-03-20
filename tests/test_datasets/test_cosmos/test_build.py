@@ -267,8 +267,10 @@ _TRANSPORT_GEM_BY_RESOURCE = _row('gem_reaction', 'GEM_transporter:Human-GEM')
 _TRANSPORT_STITCH = _row('transporter', 'STITCH')
 
 # receptor rows
+# Note: stitch_interactions() maps receptor proteins to 'ligand_receptor',
+# not 'receptor' — the _classify_protein result 'receptor' is renamed there.
 _RECEPTOR_MRC = _row('ligand_receptor', 'MRCLinksDB')
-_RECEPTOR_STITCH = _row('receptor', 'STITCH')
+_RECEPTOR_STITCH = _row('ligand_receptor', 'STITCH')
 
 # allosteric rows
 _ALLOSTERIC_BRENDA = _row('allosteric_regulation', 'BRENDA')
@@ -361,9 +363,11 @@ class TestBuildTransporters:
         build_transporters()
         assert _mock_build_fn.call_args.kwargs.get('brenda') is False
 
-    def test_disables_mrclinksdb_by_default(self, _mock_build_fn):
+    def test_enables_mrclinksdb_by_default(self, _mock_build_fn):
+        # MRCLinksDB is intentionally included: transport-classified records
+        # (interaction_type='transport') contribute to the transporter subset.
         build_transporters()
-        assert _mock_build_fn.call_args.kwargs.get('mrclinksdb') is False
+        assert _mock_build_fn.call_args.kwargs.get('mrclinksdb') is not False
 
     def test_can_reenable_brenda(self, _mock_build_fn):
         build_transporters(brenda={})
@@ -392,7 +396,7 @@ class TestBuildReceptors:
         df = _net(build_receptors())
         stitch_rows = df[df['resource'].eq('STITCH')]
         assert len(stitch_rows) == 1
-        assert stitch_rows.iloc[0]['interaction_type'] == 'receptor'
+        assert stitch_rows.iloc[0]['interaction_type'] == 'ligand_receptor'
 
     def test_excludes_transport_rows(self, _mock_build_fn):
         df = _net(build_receptors())
@@ -431,6 +435,98 @@ class TestBuildReceptors:
     def test_can_reenable_tcdb(self, _mock_build_fn):
         build_receptors(tcdb={})
         assert _mock_build_fn.call_args.kwargs.get('tcdb') == {}
+
+
+# ---------------------------------------------------------------------------
+# Helpers for cell_surface_only tests
+# ---------------------------------------------------------------------------
+
+def _receptor_row(locations: tuple) -> Interaction:
+    """ligand_receptor row with given locations tuple."""
+    return Interaction(
+        source='CHEBI:1',
+        target='P00001',
+        source_type='small_molecule',
+        target_type='protein',
+        id_type_a='chebi',
+        id_type_b='uniprot',
+        interaction_type='ligand_receptor',
+        resource='MRCLinksDB',
+        mor=1,
+        locations=locations,
+    )
+
+
+@pytest.fixture
+def _mock_build_receptors_fn():
+    """Patch build() for cell_surface_only receptor tests with location-bearing rows."""
+
+    rows = [
+        _receptor_row(('c', 'e')),   # surface receptor → kept with cell_surface_only
+        _receptor_row(('c', 'm')),   # mitochondrial receptor → dropped
+        _receptor_row(()),           # no location → dropped
+        _receptor_row(('e',)),       # surface only → kept
+        Interaction(                  # transport row with 'e' → not a receptor, dropped
+            source='CHEBI:2',
+            target='P00002',
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a='chebi',
+            id_type_b='uniprot',
+            interaction_type='transport',
+            resource='MRCLinksDB',
+            mor=1,
+            locations=('e',),
+        ),
+    ]
+
+    def _fake_build(*a, row_filter=None, **kw):
+        result = list(rows)
+        if row_filter is not None:
+            result = [r for r in result if row_filter(r)]
+        return CosmosBundle(network=result)
+
+    with patch(
+        'omnipath_metabo.datasets.cosmos._build.build',
+        side_effect=_fake_build,
+    ):
+        yield
+
+
+class TestBuildReceptorsCellSurfaceOnly:
+    """Tests for build_receptors(cell_surface_only=True/False)."""
+
+    def test_default_keeps_all_ligand_receptor(self, _mock_build_receptors_fn):
+        # Without cell_surface_only, all ligand_receptor rows survive regardless of location.
+        bundle = build_receptors()
+        df = _net(bundle)
+        assert len(df[df['interaction_type'] == 'ligand_receptor']) == 4
+
+    def test_cell_surface_only_keeps_e_location(self, _mock_build_receptors_fn):
+        bundle = build_receptors(cell_surface_only=True)
+        df = _net(bundle)
+        surviving = [row for row in bundle.network if 'e' in row.locations]
+        assert len(surviving) == 2
+
+    def test_cell_surface_only_drops_no_e_location(self, _mock_build_receptors_fn):
+        bundle = build_receptors(cell_surface_only=True)
+        assert all('e' in row.locations for row in bundle.network)
+
+    def test_cell_surface_only_drops_empty_location(self, _mock_build_receptors_fn):
+        bundle = build_receptors(cell_surface_only=True)
+        assert all(row.locations != () for row in bundle.network)
+
+    def test_cell_surface_only_still_requires_ligand_receptor(self, _mock_build_receptors_fn):
+        # transport row with 'e' must NOT survive — interaction_type check comes first
+        bundle = build_receptors(cell_surface_only=True)
+        df = _net(bundle)
+        assert 'transport' not in df['interaction_type'].values
+
+    def test_cell_surface_only_false_equivalent_to_default(self, _mock_build_receptors_fn):
+        assert (
+            len(build_receptors(cell_surface_only=False).network)
+            == len(build_receptors().network)
+        )
 
 
 # ---------------------------------------------------------------------------

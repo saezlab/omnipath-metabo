@@ -509,7 +509,7 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
     return build(*args, row_filter=_is_transport, **kwargs)
 
 
-def build_receptors(*args, **kwargs) -> CosmosBundle:
+def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosBundle:
     """
     Build the receptor subset of the COSMOS PKN.
 
@@ -517,12 +517,29 @@ def build_receptors(*args, **kwargs) -> CosmosBundle:
     receptor-relevant resources (MRCLinksDB, STITCH) and post-filters
     to keep only receptor/ligand interactions.
 
+    Unlike :func:`build_transporters`, the ``cell_surface_only`` filter is
+    applied *after* ID translation (via :func:`_filter_bundle`) rather than
+    as a pre-translation ``row_filter``.  This is necessary because STITCH
+    proteins have no location data at yield time — locations are assigned
+    post-translation by :func:`_enrich_stitch_locations` inside
+    :func:`build`.  MRCLinksDB locations are set at yield time and would
+    support pre-filtering, but using a single post-translation pass keeps
+    the implementation uniform.
+
     Post-filter predicate:
         - ``interaction_type == 'ligand_receptor'``
-        - STITCH rows where ``interaction_type == 'receptor'``
+        - If ``cell_surface_only=True``: also ``'e' in row.locations``
 
     Args:
         *args: Passed through to :func:`build`.
+        cell_surface_only:
+            If ``True``, retain only interactions where the receptor
+            protein is annotated to the plasma membrane / cell surface
+            (``'e'`` in ``locations``).  Useful for cell-cell
+            communication models (COSMOS intercellular layer, NicheNet,
+            etc.) where only surface-exposed receptors are relevant.
+            Locations are derived from UniProt subcellular location
+            annotations mapped via the TCDB location table.
         **kwargs: Passed through to :func:`build`.  ``tcdb``, ``slc``,
             ``brenda``, ``gem``, and ``recon3d`` are disabled unless
             explicitly re-enabled.
@@ -531,13 +548,20 @@ def build_receptors(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing only receptor interactions,
         with provenance filtered to the surviving edges.
     """
+    def _is_receptor(row: Interaction) -> bool:
+        if row.interaction_type != 'ligand_receptor':
+            return False
+        if cell_surface_only:
+            return 'e' in row.locations
+        return True
+
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, lambda row: row.interaction_type == 'ligand_receptor')
+    return _filter_bundle(bundle, _is_receptor)
 
 
 def build_allosteric(*args, **kwargs) -> CosmosBundle:
