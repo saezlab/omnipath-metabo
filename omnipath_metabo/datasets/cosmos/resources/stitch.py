@@ -247,6 +247,8 @@ def stitch_interactions(
         ``'transporter'``, or ``'other'``.
     """
 
+    import logging as _logging
+
     from pypath.inputs.new_stitch import interactions
 
     allowed = None
@@ -254,6 +256,7 @@ def stitch_interactions(
     if mode is not None:
         allowed = (mode,) if isinstance(mode, str) else tuple(mode)
 
+    n_yielded = 0
     for rec in interactions(ncbi_tax_id=organism):
 
         if rec.final_score < score_threshold:
@@ -285,6 +288,7 @@ def stitch_interactions(
         ptype = _classify_protein(protein_id, organism)
         interaction_type = 'ligand_receptor' if ptype == 'receptor' else ptype
 
+        n_yielded += 1
         yield Interaction(
             source=chemical_id,
             target=protein_id,
@@ -296,4 +300,12 @@ def stitch_interactions(
             resource='STITCH',
             mor=mor,
             attrs={'stitch_mode': rec.mode},
+        )
+
+    if n_yielded == 0:
+        _logging.getLogger(__name__).warning(
+            '[COSMOS] STITCH returned no interactions for organism %d. '
+            'The STITCH file for this organism may not be available '
+            '(STITCH 5 covers human and selected model organisms).',
+            organism,
         )

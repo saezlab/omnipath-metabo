@@ -46,7 +46,7 @@ _TRANSPORT_RECON = _make_interaction('transport', 'Recon3D')
 _TRANSPORT_STITCH = _make_interaction('transporter', 'STITCH')
 
 _RECEPTOR_MRC = _make_interaction('ligand_receptor', 'MRCLinksDB')
-_RECEPTOR_STITCH = _make_interaction('receptor', 'STITCH')
+_RECEPTOR_STITCH = _make_interaction('ligand_receptor', 'STITCH')
 
 _ENZYME_BRENDA = _make_interaction('allosteric_regulation', 'BRENDA')
 _ENZYME_GEM = _make_interaction('catalysis', 'GEM:Human-GEM')
@@ -178,7 +178,7 @@ class TestBuildReceptors:
     def test_stitch_receptor_kept(self):
         bundle = self._run([_RECEPTOR_STITCH])
         assert len(bundle.network) == 1
-        assert bundle.network[0].interaction_type == 'receptor'
+        assert bundle.network[0].interaction_type == 'ligand_receptor'
 
     def test_no_transport_rows(self):
         bundle = self._run(_ALL_INTERACTIONS)
