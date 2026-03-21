@@ -660,10 +660,21 @@ def _build_protein_mapping(
     if id_type == 'reaction_id':
         return {uid: uid for uid in unique_ids}
 
+    try:
+        from tqdm import tqdm as _tqdm
+        _has_tqdm = True
+    except ImportError:
+        _has_tqdm = False
+
+    def _progress(iterable, desc):
+        if _has_tqdm:
+            return _tqdm(iterable, desc = desc, unit = 'id')
+        return iterable
+
     if id_type == 'entrez':
         bigg_map = _entrez_to_uniprot_bigg()
         result: dict[str, str | None] = {}
-        for uid in unique_ids:
+        for uid in _progress(unique_ids, 'entrez → uniprot'):
             uniprot = bigg_map.get(uid)
             if not uniprot:
                 res = mapping_mod.map_name(uid, 'ncbigene', 'uniprot',
@@ -674,7 +685,7 @@ def _build_protein_mapping(
 
     if id_type == 'ensp':
         result = {}
-        for uid in unique_ids:
+        for uid in _progress(unique_ids, 'ensp → uniprot'):
             res = mapping_mod.map_name(uid, 'ensp', 'uniprot',
                                        ncbi_tax_id=organism)
             result[uid] = next(iter(res)) if res else None
@@ -682,7 +693,7 @@ def _build_protein_mapping(
 
     if id_type == 'ensembl':
         result = {}
-        for uid in unique_ids:
+        for uid in _progress(unique_ids, 'ensembl → uniprot'):
             res = mapping_mod.map_name(uid, 'ensg', 'uniprot',
                                        ncbi_tax_id=organism)
             result[uid] = next(iter(res)) if res else None
@@ -690,7 +701,7 @@ def _build_protein_mapping(
 
     if id_type == 'genesymbol':
         result = {}
-        for uid in unique_ids:
+        for uid in _progress(unique_ids, 'genesymbol → uniprot'):
             res = mapping_mod.map_name(uid, 'genesymbol', 'uniprot',
                                        ncbi_tax_id=organism)
             result[uid] = next(iter(res)) if res else None
@@ -720,9 +731,20 @@ def _translate_column(
         entity_type_col: Column holding the entity_type for *col*.
         organism: NCBI taxonomy ID.
     """
-    for (id_type, entity_type), idx in df.groupby(
-        [id_type_col, entity_type_col]
-    ).groups.items():
+    groups = df.groupby([id_type_col, entity_type_col]).groups
+
+    try:
+        from tqdm import tqdm
+        groups = tqdm(
+            groups.items(),
+            total = len(groups),
+            desc = f'translating {col}',
+            unit = 'group',
+        )
+    except ImportError:
+        groups = groups.items()
+
+    for (id_type, entity_type), idx in groups:
         ids = df.loc[idx, col]
 
         if entity_type == 'small_molecule':
@@ -731,6 +753,15 @@ def _translate_column(
             mapping = _build_protein_mapping(id_type, ids, organism)
         else:
             continue
+
+        try:
+            groups.set_description(
+                f'translating {col}: {id_type} → '
+                f'{"chebi" if entity_type == "small_molecule" else "uniprot"}'
+                f' ({len(idx)} rows)'
+            )
+        except AttributeError:
+            pass
 
         df.loc[idx, col] = ids.map(mapping)
 
