@@ -35,6 +35,7 @@ applies the expert-curation blacklist.
 
 ```python
 import logging
+logging.basicConfig(level=logging.INFO)
 import warnings
 import pandas as pd
 from omnipath_metabo.datasets import cosmos
@@ -60,6 +61,8 @@ df[df['resource']=='TCDB']
 df[df['resource']=='SLC']
 df[df['resource']=='Recon3D']
 df[df['resource']=='GEM_transporter:Human-GEM']
+df[df['resource']=='MRCLinksDB']
+
 df_r = df[df['resource'] == 'GEM_transporter:Human-GEM']    
 for col in ['source_type', 'target_type', 'id_type_a',            
     'id_type_b','interaction_type']:  
@@ -72,12 +75,28 @@ transporters = cosmos.build_transporters(
     organism = 10090,
     cell_surface_only=True)
 
+# Receptors — MRCLinksDB + STITCH-receptor
+receptors = cosmos.build_receptors(cell_surface_only=True)
+df = pd.DataFrame(receptors.network, columns=Interaction._fields)
+df.groupby(['resource']).size()
+df[df['resource']=='STITCH']
+
+receptors = cosmos.build_receptors(organism = 10090,cell_surface_only=True)
 
 
+# allosteric
+allosteric = cosmos.build_allosteric()
+df = pd.DataFrame(transporters.network, columns=Interaction._fields)
 
 
-
-
+allosteric = cosmos.build_allosteric(stitch={'score_threshold':
+  900})
+allosteric = cosmos.build_allosteric(stitch=False)  
+  
+  
+  
+  
+  
 bundle = cosmos.build()
 
 print(f'Network edges : {len(bundle.network):,}')

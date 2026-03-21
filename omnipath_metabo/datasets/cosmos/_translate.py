@@ -290,6 +290,35 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
 
 
 @cache
+def _hmdb_synonyms_chebi() -> dict[str, str]:
+    """
+    HMDB compound name/synonym → ChEBI ID mapping (lowercase keys).
+
+    Delegates to :func:`pypath.inputs.hmdb.metabolites.synonyms_chebi`,
+    which parses the HMDB XML once and is disk-cached by pypath curl.
+    """
+
+    from pypath.inputs.hmdb.metabolites import synonyms_chebi
+
+    return synonyms_chebi()
+
+
+@cache
+def _ramp_synonyms_chebi() -> dict[str, str]:
+    """
+    RaMP synonym → ChEBI ID mapping (lowercase keys).
+
+    Delegates to :func:`pypath.inputs.ramp._mapping.ramp_synonyms_chebi`,
+    which inverts the RaMP ChEBI → synonym table.  RaMP aggregates
+    HMDB, ChEBI, KEGG, WikiPathways, and Reactome synonyms.
+    """
+
+    from pypath.inputs.ramp._mapping import ramp_synonyms_chebi
+
+    return ramp_synonyms_chebi()
+
+
+@cache
 def _pubchem_to_hmdb() -> dict[str, str]:
     """
     Build a PubChem CID → HMDB ID mapping via UniChem.
@@ -614,17 +643,67 @@ def _build_metab_mapping(
         return result
 
     if id_type == 'synonym':
-        # Bulk call: pypath fetches and disk-caches one URL per name so that
-        # subsequent builds need no HTTP requests for previously seen names.
-        from pypath.inputs.pubchem import pubchem_names_cids
+        # Four-step fallback chain (bulk sources first, per-name HTTP last):
+        #
+        # 1. HMDB  — bulk XML, single download; covers common metabolomics
+        #            compounds with direct name→ChEBI mapping.
+        # 2. RaMP  — bulk SQLite; aggregates HMDB + ChEBI + KEGG + others;
+        #            broader synonym coverage than HMDB alone.
+        # 3. PubChem REST — per-name HTTP (disk-cached by pypath curl);
+        #            covers drugs and synthetic substrates absent from HMDB/RaMP.
+        # 4. PubChem CID → HMDB → ChEBI bridge — handles the case where
+        #            PubChem knows the CID but UniChem lacks a ChEBI mapping.
 
-        name_to_cids = pubchem_names_cids(unique_ids)
-        chebi_map = _pubchem_to_chebi()
+        result: dict[str, str | None] = {uid: None for uid in unique_ids}
 
-        return {
-            uid: chebi_map.get(next(iter(cids))) if cids else None
-            for uid, cids in name_to_cids.items()
-        }
+        # Step 1: HMDB bulk name lookup
+        hmdb_map = _hmdb_synonyms_chebi()
+
+        for uid in unique_ids:
+            chebi = hmdb_map.get(uid.lower())
+            if chebi:
+                result[uid] = chebi
+
+        # Step 2: RaMP synonym lookup for still-unresolved names
+        unresolved = [uid for uid, v in result.items() if v is None]
+
+        if unresolved:
+            ramp_map = _ramp_synonyms_chebi()
+
+            for uid in unresolved:
+                chebi = ramp_map.get(uid.lower())
+                if chebi:
+                    result[uid] = chebi
+
+        # Step 3: PubChem REST → ChEBI via UniChem
+        unresolved = [uid for uid, v in result.items() if v is None]
+
+        if unresolved:
+            from pypath.inputs.pubchem import pubchem_names_cids
+
+            name_to_cids = pubchem_names_cids(unresolved)
+            pubchem_chebi = _pubchem_to_chebi()
+
+            for uid, cids in name_to_cids.items():
+                if cids and result[uid] is None:
+                    result[uid] = pubchem_chebi.get(next(iter(cids)))
+
+        # Step 4: PubChem CID → HMDB → ChEBI bridge
+        # For names where PubChem returned a CID but UniChem has no ChEBI entry.
+        unresolved = [uid for uid, v in result.items() if v is None]
+
+        if unresolved:
+            pub_hmdb = _pubchem_to_hmdb()
+            hmdb_chebi = _hmdb_to_chebi()
+
+            for uid in unresolved:
+                cids = name_to_cids.get(uid, set())
+                if cids:
+                    hmdb_id = pub_hmdb.get(next(iter(cids)))
+                    if hmdb_id:
+                        result[uid] = hmdb_chebi.get(_normalise_hmdb(hmdb_id))
+
+        return result
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return {uid: None for uid in unique_ids}
@@ -797,13 +876,21 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     _translate_column(df, 'source', 'id_type_a', 'source_type', organism)
     _translate_column(df, 'target', 'id_type_b', 'target_type', organism)
 
+    n_total = len(df)
     n_failed_source = df['source'].isna().sum()
     n_failed_target = df['target'].isna().sum()
 
+    # Per-group totals — resource/id_type columns are unchanged by translation.
+    total_by_source = df.groupby(['resource', 'id_type_a']).size()
+    total_by_target = df.groupby(['resource', 'id_type_b']).size()
+
     if n_failed_source:
+        pct_total = n_failed_source / n_total * 100 if n_total else 0
         _log.warning(
-            'Dropped %d rows: source ID could not be translated.',
+            'Dropped %d/%d (%.0f%%) rows: source ID could not be translated.',
             n_failed_source,
+            n_total,
+            pct_total,
         )
         breakdown = (
             df[df['source'].isna()]
@@ -811,17 +898,24 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
             .size()
         )
         for (resource, id_type), count in breakdown.items():
+            total = total_by_source.get((resource, id_type), count)
+            pct = count / total * 100 if total else 0
             _log.warning(
-                '  source: %d rows from %s (id_type=%s)',
+                '  source: %d/%d (%.0f%%) from %s (id_type=%s)',
                 count,
+                total,
+                pct,
                 resource,
                 id_type,
             )
 
     if n_failed_target:
+        pct_total = n_failed_target / n_total * 100 if n_total else 0
         _log.warning(
-            'Dropped %d rows: target ID could not be translated.',
+            'Dropped %d/%d (%.0f%%) rows: target ID could not be translated.',
             n_failed_target,
+            n_total,
+            pct_total,
         )
         breakdown = (
             df[df['target'].isna()]
@@ -829,9 +923,13 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
             .size()
         )
         for (resource, id_type), count in breakdown.items():
+            total = total_by_target.get((resource, id_type), count)
+            pct = count / total * 100 if total else 0
             _log.warning(
-                '  target: %d rows from %s (id_type=%s)',
+                '  target: %d/%d (%.0f%%) from %s (id_type=%s)',
                 count,
+                total,
+                pct,
                 resource,
                 id_type,
             )

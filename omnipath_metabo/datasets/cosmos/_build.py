@@ -212,6 +212,73 @@ def _collect_reactions(df: pd.DataFrame) -> list:
     ]
 
 
+def _report_resource_overlaps(
+    bundle: CosmosBundle,
+    category: str,
+    translate: bool = True,
+) -> None:
+    """
+    Log unique edge counts and pairwise overlaps between resources.
+
+    Diagnostic only — no edges are removed.  Called at the end of each
+    ``build_*()`` function when ``translate_ids=True``.
+
+    For the transporter and receptor categories the edge identity key is
+    ``(source, target, compartment)`` with one entry per location
+    (multi-compartment rows are exploded), using only
+    ``source_type == 'small_molecule'`` rows.  For transporters this
+    also avoids double-counting bidirectional GEM / Recon3D edges.
+
+    For all other categories the key is ``(source, target)``.
+
+    Args:
+        bundle: Finalized :class:`CosmosBundle` after filtering.
+        category: Human-readable name used in log messages
+            (e.g. ``'transporter'``, ``'receptor'``).
+        translate: If ``False``, skip reporting — IDs are not yet
+            in canonical form so counts would be misleading.
+    """
+    if not translate or not bundle.network:
+        return
+
+    def _label(resource: str) -> str:
+        if resource.startswith('GEM_transporter:'):
+            return 'GEM_transporter'
+        if resource.startswith('GEM:'):
+            return 'GEM'
+        return resource
+
+    resource_edges: dict[str, set] = {}
+
+    for row in bundle.network:
+        label = _label(row.resource)
+        if category in ('transporter', 'receptor'):
+            if row.source_type != 'small_molecule':
+                continue
+            locs = row.locations if row.locations else (None,)
+            keys = {(row.source, row.target, loc) for loc in locs}
+        else:
+            keys = {(row.source, row.target)}
+
+        resource_edges.setdefault(label, set()).update(keys)
+
+    if not resource_edges:
+        return
+
+    labels = sorted(resource_edges)
+    lines = [f'[COSMOS] {category} edge counts:']
+
+    for label in labels:
+        lines.append(f'  {label:<20}: {len(resource_edges[label]):,} unique')
+
+    for i, la in enumerate(labels):
+        for lb in labels[i + 1:]:
+            n = len(resource_edges[la] & resource_edges[lb])
+            lines.append(f'  {la} \u2229 {lb}: {n:,}')
+
+    _log.info('\n'.join(lines))
+
+
 def _filter_bundle(bundle: CosmosBundle, predicate) -> CosmosBundle:
     """
     Return a copy of *bundle* keeping only network rows that satisfy *predicate*.
@@ -506,7 +573,9 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
         kwargs.setdefault('recon3d', {})
         if isinstance(kwargs['recon3d'], dict):
             kwargs['recon3d']['cell_surface_only'] = True
-    return build(*args, row_filter=_is_transport, **kwargs)
+    bundle = build(*args, row_filter=_is_transport, **kwargs)
+    _report_resource_overlaps(bundle, 'transporter', kwargs.get('translate_ids', True))
+    return bundle
 
 
 def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosBundle:
@@ -561,7 +630,9 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, _is_receptor)
+    bundle = _filter_bundle(bundle, _is_receptor)
+    _report_resource_overlaps(bundle, 'receptor', kwargs.get('translate_ids', True))
+    return bundle
 
 
 def build_allosteric(*args, **kwargs) -> CosmosBundle:
@@ -597,10 +668,12 @@ def build_allosteric(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, lambda row: (
+    bundle = _filter_bundle(bundle, lambda row: (
         row.interaction_type == 'allosteric_regulation' or
         (row.resource == 'STITCH' and row.interaction_type == 'other')
     ))
+    _report_resource_overlaps(bundle, 'allosteric', kwargs.get('translate_ids', True))
+    return bundle
 
 
 def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
@@ -643,4 +716,6 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('recon3d', False)
     kwargs.setdefault('stitch', False)
     bundle = build(*args, **kwargs)
-    return _filter_bundle(bundle, lambda row: row.resource.startswith('GEM:'))
+    bundle = _filter_bundle(bundle, lambda row: row.resource.startswith('GEM:'))
+    _report_resource_overlaps(bundle, 'enzyme-metabolite', kwargs.get('translate_ids', True))
+    return bundle

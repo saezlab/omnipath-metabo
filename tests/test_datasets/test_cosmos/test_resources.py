@@ -179,7 +179,7 @@ class TestStitchNewFeatures:
         from omnipath_metabo.datasets.cosmos.resources import stitch_interactions
 
         records = list(stitch_interactions(organism=9606, score_threshold=900))
-        valid_types = {'receptor', 'transporter', 'other'}
+        valid_types = {'ligand_receptor', 'transporter', 'other'}
         for rec in records[:50]:
             assert rec.interaction_type in valid_types, (
                 f'Unexpected interaction_type: {rec.interaction_type!r}'
