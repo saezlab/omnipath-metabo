@@ -51,10 +51,7 @@ from __future__ import annotations
 
 __all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot']
 
-import json
 import logging
-import urllib.parse
-import urllib.request
 from functools import cache
 
 import pandas as pd
@@ -64,9 +61,6 @@ _log = logging.getLogger(__name__)
 _UNICHEM_PUBCHEM = 'PubChem'
 _UNICHEM_CHEBI = 'ChEBI'
 _UNICHEM_HMDB = 'HMDB'
-_PUBCHEM_NAME_URL = (
-    'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/cids/JSON'
-)
 
 
 @cache
@@ -119,14 +113,13 @@ def _hmdb_to_chebi() -> dict[str, str]:
     }
 
 
-@cache
 def _name_to_chebi(name: str) -> str | None:
     """
     Translate a compound synonym/name to ChEBI.
 
-    Resolves the name to a PubChem CID via the PubChem REST API, then maps
-    that CID to ChEBI via the cached UniChem mapping. Results are cached per
-    unique name to avoid redundant HTTP calls.
+    Delegates to :func:`pypath.inputs.pubchem.pubchem_name_cids`, which
+    caches each name→CIDs lookup on disk via pypath's curl infrastructure.
+    Subsequent calls for the same name incur no HTTP request.
 
     Args:
         name: Compound name or synonym (e.g. ``'NAD+'``, ``'ATP'``).
@@ -135,21 +128,14 @@ def _name_to_chebi(name: str) -> str | None:
         ChEBI ID string (e.g. ``'CHEBI:57540'``), or ``None`` if lookup fails.
     """
 
-    url = _PUBCHEM_NAME_URL.format(urllib.parse.quote(name))
+    from pypath.inputs.pubchem import pubchem_name_cids
 
-    try:
-        with urllib.request.urlopen(url, timeout=10) as resp:
-            data = json.loads(resp.read())
+    cids = pubchem_name_cids(name)
 
-        cids = data.get('IdentifierList', {}).get('CID', [])
-
-        if not cids:
-            return None
-
-        return _pubchem_to_chebi().get(str(cids[0]))
-
-    except Exception:
+    if not cids:
         return None
+
+    return _pubchem_to_chebi().get(next(iter(cids)))
 
 
 @cache
@@ -628,8 +614,17 @@ def _build_metab_mapping(
         return result
 
     if id_type == 'synonym':
-        # One HTTP call per unique name; @cache deduplicates repeated calls.
-        return {uid: _name_to_chebi(uid) for uid in unique_ids}
+        # Bulk call: pypath fetches and disk-caches one URL per name so that
+        # subsequent builds need no HTTP requests for previously seen names.
+        from pypath.inputs.pubchem import pubchem_names_cids
+
+        name_to_cids = pubchem_names_cids(unique_ids)
+        chebi_map = _pubchem_to_chebi()
+
+        return {
+            uid: chebi_map.get(next(iter(cids))) if cids else None
+            for uid, cids in name_to_cids.items()
+        }
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return {uid: None for uid in unique_ids}
