@@ -68,8 +68,6 @@ _PUBCHEM_NAME_URL = (
     'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/cids/JSON'
 )
 
-_HMDB_DIGITS = 7  # current zero-padded width of the numeric part
-
 
 @cache
 def _pubchem_to_chebi() -> dict[str, str]:
@@ -90,27 +88,10 @@ def _pubchem_to_chebi() -> dict[str, str]:
 
 
 def _normalise_hmdb(hmdb_id: str) -> str:
-    """
-    Normalise a HMDB identifier to the current 7-digit zero-padded format.
 
-    HMDB IDs were historically distributed in a 5-digit format
-    (e.g. ``HMDB00001``).  The current format uses 7 digits
-    (e.g. ``HMDB0000001``).  This function converts old-format IDs
-    transparently; IDs already in the new format are returned unchanged.
+    from pypath.utils.metabo import normalise_hmdb
 
-    Args:
-        hmdb_id: HMDB identifier string (e.g. ``'HMDB00001'`` or
-            ``'HMDB0000001'``).
-
-    Returns:
-        HMDB ID with 7-digit zero-padded numeric part
-        (e.g. ``'HMDB0000001'``).
-    """
-
-    if not hmdb_id.upper().startswith('HMDB'):
-        return hmdb_id
-
-    return 'HMDB' + hmdb_id[4:].zfill(_HMDB_DIGITS)
+    return normalise_hmdb(hmdb_id)
 
 
 @cache
