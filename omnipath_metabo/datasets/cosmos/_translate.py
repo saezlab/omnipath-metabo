@@ -296,11 +296,21 @@ def _hmdb_synonyms_chebi() -> dict[str, str]:
 
     Delegates to :func:`pypath.inputs.hmdb.metabolites.synonyms_chebi`,
     which parses the HMDB XML once and is disk-cached by pypath curl.
+    Returns an empty dict if the download fails (e.g. Cloudflare block).
     """
 
-    from pypath.inputs.hmdb.metabolites import synonyms_chebi
+    try:
 
-    return synonyms_chebi()
+        from pypath.inputs.hmdb.metabolites import synonyms_chebi
+
+        result = synonyms_chebi()
+        _log.info(f'[COSMOS] HMDB synonym→ChEBI map loaded: {len(result):,} entries')
+        return result
+
+    except Exception as e:
+
+        _log.warning(f'[COSMOS] HMDB synonym→ChEBI unavailable ({type(e).__name__}), skipping')
+        return {}
 
 
 @cache
@@ -311,11 +321,21 @@ def _ramp_synonyms_chebi() -> dict[str, str]:
     Delegates to :func:`pypath.inputs.ramp._mapping.ramp_synonyms_chebi`,
     which inverts the RaMP ChEBI → synonym table.  RaMP aggregates
     HMDB, ChEBI, KEGG, WikiPathways, and Reactome synonyms.
+    Returns an empty dict if the download fails.
     """
 
-    from pypath.inputs.ramp._mapping import ramp_synonyms_chebi
+    try:
 
-    return ramp_synonyms_chebi()
+        from pypath.inputs.ramp._mapping import ramp_synonyms_chebi
+
+        result = ramp_synonyms_chebi()
+        _log.info(f'[COSMOS] RaMP synonym→ChEBI map loaded: {len(result):,} entries')
+        return result
+
+    except Exception as e:
+
+        _log.warning(f'[COSMOS] RaMP synonym→ChEBI unavailable ({type(e).__name__}), skipping')
+        return {}
 
 
 @cache
