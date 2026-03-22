@@ -25,7 +25,8 @@ a fixed metabolite-source / protein-target convention.
 Translation strategies by metabolite id_type:
     - ``'chebi'``: identity (TCDB, SLC are already ChEBI)
     - ``'pubchem'``: UniChem PubChem→ChEBI bulk mapping (STITCH, MRCLinksDB)
-    - ``'synonym'``: name→PubChem CID via PubChem REST API, then CID→ChEBI (BRENDA)
+    - ``'synonym'``: name→ChEBI via HMDB bulk XML, RaMP bulk SQLite, then
+      PubChem REST (filtered to plausible chemical names) (BRENDA)
     - ``'metatlas'``: GEM metabolites.tsv ``metsNoComp`` → ``metChEBIID``
       mapping; loaded once per GEM name from the ``resource`` column.
     - ``'bigg'``: Recon3D BiGG base metabolite ID → ChEBI, built from the
@@ -52,6 +53,7 @@ from __future__ import annotations
 __all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot']
 
 import logging
+import re
 from functools import cache
 
 import pandas as pd
@@ -61,6 +63,29 @@ _log = logging.getLogger(__name__)
 _UNICHEM_PUBCHEM = 'PubChem'
 _UNICHEM_CHEBI = 'ChEBI'
 _UNICHEM_HMDB = 'HMDB'
+
+# Patterns that indicate an experimental description rather than a chemical name.
+_RE_NOT_CHEMICAL = re.compile(
+    r'%'                        # percentages (e.g. "10.2% residual...")
+    r'|\d+\s*(?:n|µ|u|m)M\b'  # concentrations (100 nM, 50 µM, 1 mM)
+    r'|\b(?:activity|cells?|incubat|treatment|inhibitor|assay|compound'
+    r'|concentration|after|protein|pathway|signaling|signalling)\b',
+    re.IGNORECASE,
+)
+_MAX_CHEMICAL_NAME_LEN = 100
+
+
+def _looks_like_chemical_name(name: str) -> bool:
+    """
+    Return True if *name* looks like a chemical name rather than an
+    experimental description.
+
+    Filters out strings containing percentages, concentration units, or
+    assay-specific vocabulary that BRENDA includes as "synonyms" but are
+    not resolvable compound names.
+    """
+
+    return len(name) <= _MAX_CHEMICAL_NAME_LEN and not _RE_NOT_CHEMICAL.search(name)
 
 
 @cache
@@ -117,25 +142,30 @@ def _name_to_chebi(name: str) -> str | None:
     """
     Translate a compound synonym/name to ChEBI.
 
-    Delegates to :func:`pypath.inputs.pubchem.pubchem_name_cids`, which
-    caches each name→CIDs lookup on disk via pypath's curl infrastructure.
-    Subsequent calls for the same name incur no HTTP request.
+    Tries HMDB and RaMP bulk maps first. Falls back to PubChem REST only
+    for names that pass :func:`_looks_like_chemical_name`.
 
     Args:
         name: Compound name or synonym (e.g. ``'NAD+'``, ``'ATP'``).
 
     Returns:
-        ChEBI ID string (e.g. ``'CHEBI:57540'``), or ``None`` if lookup fails.
+        ChEBI ID string (e.g. ``'CHEBI:57540'``), or ``None`` if not found.
     """
 
-    from pypath.inputs.pubchem import pubchem_name_cids
+    key = name.lower()
+    chebi = _hmdb_synonyms_chebi().get(key) or _ramp_synonyms_chebi().get(key)
 
-    cids = pubchem_name_cids(name)
+    if chebi:
+        return chebi
 
-    if not cids:
-        return None
+    if _looks_like_chemical_name(name):
+        from pypath.inputs.pubchem import pubchem_name_cids
 
-    return _pubchem_to_chebi().get(next(iter(cids)))
+        cids = pubchem_name_cids(name)
+        if cids:
+            return _pubchem_to_chebi().get(next(iter(cids)))
+
+    return None
 
 
 @cache
@@ -663,16 +693,15 @@ def _build_metab_mapping(
         return result
 
     if id_type == 'synonym':
-        # Four-step fallback chain (bulk sources first, per-name HTTP last):
+        # Three-step fallback chain (bulk sources first, per-name HTTP last):
         #
-        # 1. HMDB  — bulk XML, single download; covers common metabolomics
-        #            compounds with direct name→ChEBI mapping.
-        # 2. RaMP  — bulk SQLite; aggregates HMDB + ChEBI + KEGG + others;
-        #            broader synonym coverage than HMDB alone.
-        # 3. PubChem REST — per-name HTTP (disk-cached by pypath curl);
-        #            covers drugs and synthetic substrates absent from HMDB/RaMP.
-        # 4. PubChem CID → HMDB → ChEBI bridge — handles the case where
-        #            PubChem knows the CID but UniChem lacks a ChEBI mapping.
+        # 1. HMDB    — bulk XML, single download; covers common metabolomics
+        #              compounds with direct name→ChEBI mapping.
+        # 2. RaMP    — bulk SQLite; aggregates HMDB + ChEBI + KEGG + others;
+        #              broader synonym coverage than HMDB alone.
+        # 3. PubChem — per-name HTTP (disk-cached); only attempted for names
+        #              that pass _looks_like_chemical_name() to skip BRENDA's
+        #              experimental-description pseudo-synonyms.
 
         result: dict[str, str | None] = {uid: None for uid in unique_ids}
 
@@ -695,33 +724,21 @@ def _build_metab_mapping(
                 if chebi:
                     result[uid] = chebi
 
-        # Step 3: PubChem REST → ChEBI via UniChem
-        unresolved = [uid for uid, v in result.items() if v is None]
+        # Step 3: PubChem REST → ChEBI for plausible chemical names only
+        candidates = [
+            uid for uid, v in result.items()
+            if v is None and _looks_like_chemical_name(uid)
+        ]
 
-        if unresolved:
+        if candidates:
             from pypath.inputs.pubchem import pubchem_names_cids
 
-            name_to_cids = pubchem_names_cids(unresolved)
+            name_to_cids = pubchem_names_cids(candidates)
             pubchem_chebi = _pubchem_to_chebi()
 
             for uid, cids in name_to_cids.items():
                 if cids and result[uid] is None:
                     result[uid] = pubchem_chebi.get(next(iter(cids)))
-
-        # Step 4: PubChem CID → HMDB → ChEBI bridge
-        # For names where PubChem returned a CID but UniChem has no ChEBI entry.
-        unresolved = [uid for uid, v in result.items() if v is None]
-
-        if unresolved:
-            pub_hmdb = _pubchem_to_hmdb()
-            hmdb_chebi = _hmdb_to_chebi()
-
-            for uid in unresolved:
-                cids = name_to_cids.get(uid, set())
-                if cids:
-                    hmdb_id = pub_hmdb.get(next(iter(cids)))
-                    if hmdb_id:
-                        result[uid] = hmdb_chebi.get(_normalise_hmdb(hmdb_id))
 
         return result
 
