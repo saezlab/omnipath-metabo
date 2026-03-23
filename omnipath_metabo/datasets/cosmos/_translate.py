@@ -102,8 +102,11 @@ def _pubchem_to_chebi() -> dict[str, str]:
 
     from pypath.inputs.unichem import unichem_mapping
 
+    _log.info('[COSMOS] Loading PubChem→ChEBI via UniChem (bulk)...')
     raw = unichem_mapping(_UNICHEM_PUBCHEM, _UNICHEM_CHEBI)
-    return {cid: next(iter(chebis)) for cid, chebis in raw.items() if chebis}
+    result = {cid: next(iter(chebis)) for cid, chebis in raw.items() if chebis}
+    _log.info('[COSMOS] PubChem→ChEBI loaded: %d entries', len(result))
+    return result
 
 
 def _normalise_hmdb(hmdb_id: str) -> str:
@@ -130,12 +133,15 @@ def _hmdb_to_chebi() -> dict[str, str]:
 
     from pypath.inputs.unichem import unichem_mapping
 
+    _log.info('[COSMOS] Loading HMDB→ChEBI via UniChem (bulk)...')
     raw = unichem_mapping(_UNICHEM_HMDB, _UNICHEM_CHEBI)
-    return {
+    result = {
         _normalise_hmdb(hmdb_id): next(iter(chebis))
         for hmdb_id, chebis in raw.items()
         if chebis
     }
+    _log.info('[COSMOS] HMDB→ChEBI loaded: %d entries', len(result))
+    return result
 
 
 def _name_to_chebi(name: str) -> str | None:
@@ -194,6 +200,7 @@ def _bigg_to_chebi() -> dict[str, str]:
 
     from pypath.inputs.recon3d._gem import recon3d_metabolites
 
+    _log.info('[COSMOS] Building BiGG→ChEBI from Recon3D JSON...')
     mapping: dict[str, str] = {}
     mnx_pending: dict[str, str] = {}  # base_id → MNX ID, for unmapped
 
@@ -215,6 +222,7 @@ def _bigg_to_chebi() -> dict[str, str]:
                 mnx_pending[base_id] = mnx_ids[0]
 
     n_direct = len(mapping)
+    _log.info('[COSMOS] BiGG→ChEBI direct: %d entries; trying MetaNetX bridge for %d more...', n_direct, len(mnx_pending))
 
     # MetaNetX bridge for metabolites without direct ChEBI
     if mnx_pending:
@@ -233,6 +241,7 @@ def _bigg_to_chebi() -> dict[str, str]:
         except Exception:
             bridged = 0
 
+    _log.info('[COSMOS] BiGG→ChEBI final: %d entries (%d direct + %d via MetaNetX)', len(mapping), n_direct, len(mapping) - n_direct)
     return mapping
 
 
@@ -262,6 +271,7 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
 
     from pypath.inputs.recon3d._gem import recon3d_genes
 
+    _log.info('[COSMOS] Building Entrez→UniProt via BiGG gene symbols...')
     result: dict[str, str] = {}
 
     for gene in recon3d_genes():
@@ -281,6 +291,7 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
         if uniprot_set:
             result[entrez] = next(iter(uniprot_set))
 
+    _log.info('[COSMOS] Entrez→UniProt (BiGG): %d entries', len(result))
     return result
 
 
@@ -306,6 +317,7 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
 
     from pypath.inputs.metatlas._gem import metatlas_gem_metabolites
 
+    _log.info('[COSMOS] Loading MetAtlas→ChEBI mapping for %s...', gem)
     mapping: dict[str, str] = {}
 
     for row in metatlas_gem_metabolites(gem=gem):
@@ -316,6 +328,7 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
         if base_id and chebi:
             mapping[base_id] = chebi
 
+    _log.info('[COSMOS] MetAtlas→ChEBI (%s): %d entries', gem, len(mapping))
     return mapping
 
 
@@ -715,6 +728,8 @@ def _build_metab_mapping(
 
         # Step 2: RaMP synonym lookup for still-unresolved names
         unresolved = [uid for uid, v in result.items() if v is None]
+        n_after_hmdb = len(unique_ids) - len(unresolved)
+        _log.info('[COSMOS] synonym→ChEBI: %d/%d resolved by HMDB; trying RaMP for %d...', n_after_hmdb, len(unique_ids), len(unresolved))
 
         if unresolved:
             ramp_map = _ramp_synonyms_chebi()
@@ -729,6 +744,12 @@ def _build_metab_mapping(
             uid for uid, v in result.items()
             if v is None and _looks_like_chemical_name(uid)
         ]
+        n_after_ramp = len(unique_ids) - len([v for v in result.values() if v is None])
+        filtered_out = len([uid for uid, v in result.items() if v is None and not _looks_like_chemical_name(uid)])
+        _log.info(
+            '[COSMOS] synonym→ChEBI: %d/%d resolved after RaMP; %d candidates for PubChem (%d filtered as non-chemical)',
+            n_after_ramp, len(unique_ids), len(candidates), filtered_out,
+        )
 
         if candidates:
             from pypath.inputs.pubchem import pubchem_names_cids
@@ -740,6 +761,8 @@ def _build_metab_mapping(
                 if cids and result[uid] is None:
                     result[uid] = pubchem_chebi.get(next(iter(cids)))
 
+        n_final = len([v for v in result.values() if v is not None])
+        _log.info('[COSMOS] synonym→ChEBI: %d/%d resolved total', n_final, len(unique_ids))
         return result
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
@@ -788,6 +811,7 @@ def _build_protein_mapping(
         return iterable
 
     if id_type == 'entrez':
+        _log.info('[COSMOS] Translating %d Entrez IDs → UniProt...', len(unique_ids))
         bigg_map = _entrez_to_uniprot_bigg()
         result: dict[str, str | None] = {}
         for uid in _progress(unique_ids, 'entrez → uniprot'):
@@ -808,6 +832,7 @@ def _build_protein_mapping(
         return result
 
     if id_type == 'ensembl':
+        _log.info('[COSMOS] Translating %d Ensembl IDs → UniProt...', len(unique_ids))
         result = {}
         for uid in _progress(unique_ids, 'ensembl → uniprot'):
             res = mapping_mod.map_name(uid, 'ensg', 'uniprot',
@@ -862,6 +887,14 @@ def _translate_column(
 
     for (id_type, entity_type), idx in groups:
         ids = df.loc[idx, col]
+        target_type = 'chebi' if entity_type == 'small_molecule' else 'uniprot'
+
+        try:
+            groups.set_description(
+                f'translating {col}: {id_type} → {target_type} ({len(idx)} rows)'
+            )
+        except AttributeError:
+            pass
 
         if entity_type == 'small_molecule':
             mapping = _build_metab_mapping(id_type, ids, df.loc[idx, 'resource'])
@@ -869,15 +902,6 @@ def _translate_column(
             mapping = _build_protein_mapping(id_type, ids, organism)
         else:
             continue
-
-        try:
-            groups.set_description(
-                f'translating {col}: {id_type} → '
-                f'{"chebi" if entity_type == "small_molecule" else "uniprot"}'
-                f' ({len(idx)} rows)'
-            )
-        except AttributeError:
-            pass
 
         df.loc[idx, col] = ids.map(mapping)
 

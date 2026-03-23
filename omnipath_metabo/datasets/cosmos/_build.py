@@ -500,7 +500,9 @@ def build(
         proteins = _collect_proteins(prov)
         reactions = _collect_reactions(df)
         df = df.drop(columns=['_row_id'])
+        _log.info('[COSMOS] Enriching STITCH locations...')
         df = _enrich_stitch_locations(df, organism)
+        _log.info('[COSMOS] Location enrichment complete.')
 
     else:
         if cfg.get('apply_blacklist', True):
