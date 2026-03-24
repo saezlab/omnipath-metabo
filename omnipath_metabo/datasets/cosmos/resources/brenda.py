@@ -57,6 +57,9 @@ def brenda_regulations(
         if not record.protein:
             continue
 
+        if record.id_type == 'genesymbol':
+            continue
+
         mor = (
             1 if record.action == 'activator' else
             -1 if record.action == 'inhibitor' else
