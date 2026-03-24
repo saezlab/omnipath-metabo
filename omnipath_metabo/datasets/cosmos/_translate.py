@@ -70,6 +70,8 @@ _PUBCHEM_NAME_URL = (
 _PUBCHEM_CID_XREFS_URL = (
     'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/xrefs/RegistryID/JSON'
 )
+# BiGG requires HTTP not HTTPS
+_BIGG_METABOLITE_URL = 'http://bigg.ucsd.edu/api/v2/universal/metabolites/{}'
 # Maximum number of unique CIDs for which the per-CID PubChem REST fallback
 # is attempted.  Above this threshold the residual set is likely irreducible
 # (drugs/xenobiotics without ChEBI) and the REST calls would waste build time.
@@ -295,17 +297,11 @@ def _bigg_to_chebi() -> dict[str, str]:
     """
     Build a BiGG base metabolite ID → ChEBI ID mapping from Recon3D.
 
-    Two-step strategy:
-
-    1. **Direct**: ChEBI cross-references embedded in the Recon3D BiGG
-       JSON (``recon3d_metabolites()``).  Covers ~28% of all Recon3D
-       metabolites and ~34% of transport metabolites.
-
-    2. **MetaNetX bridge**: For metabolites that have no direct ChEBI
-       annotation but do carry a ``metanetx.chemical`` cross-reference in
-       the BiGG JSON, the MetaNetX MNXref ``chem_xref.tsv`` is used to
-       map ``MNXM*`` → ChEBI.  Adds ~45 additional transport metabolites
-       (+2.7 pp coverage).
+    Uses ChEBI cross-references embedded in the Recon3D BiGG JSON
+    (``recon3d_metabolites()``).  Metabolites without a direct ChEBI
+    cross-reference in the JSON have no ChEBI annotation in any public
+    database (BiGG API and MetaNetX bridge both return nothing for them) —
+    the ~31% drop rate is irreducible.
 
     Downloaded once and cached for the session.
 
@@ -318,46 +314,15 @@ def _bigg_to_chebi() -> dict[str, str]:
 
     _log.info('[COSMOS] Building BiGG→ChEBI from Recon3D JSON...')
     mapping: dict[str, str] = {}
-    mnx_pending: dict[str, str] = {}  # base_id → MNX ID, for unmapped
 
     for met in recon3d_metabolites():
         base_id = met.get('base_id', '')
-
-        if not base_id:
-            continue
-
         chebis = met.get('chebi', [])
 
-        if chebis:
-            if base_id not in mapping:
-                mapping[base_id] = chebis[0]
-        else:
-            mnx_ids = met.get('metanetx', [])
+        if base_id and chebis and base_id not in mapping:
+            mapping[base_id] = chebis[0]
 
-            if mnx_ids and base_id not in mnx_pending:
-                mnx_pending[base_id] = mnx_ids[0]
-
-    n_direct = len(mapping)
-    _log.info('[COSMOS] BiGG→ChEBI direct: %d entries; trying MetaNetX bridge for %d more...', n_direct, len(mnx_pending))
-
-    # MetaNetX bridge for metabolites without direct ChEBI
-    if mnx_pending:
-        try:
-            from pypath.inputs.metanetx import metanetx_metabolite_chebi
-            mnx_to_chebi = metanetx_metabolite_chebi()
-            bridged = 0
-
-            for base_id, mnx_id in mnx_pending.items():
-                chebi = mnx_to_chebi.get(mnx_id)
-
-                if chebi and base_id not in mapping:
-                    mapping[base_id] = chebi
-                    bridged += 1
-
-        except Exception:
-            bridged = 0
-
-    _log.info('[COSMOS] BiGG→ChEBI final: %d entries (%d direct + %d via MetaNetX)', len(mapping), n_direct, len(mapping) - n_direct)
+    _log.info('[COSMOS] BiGG→ChEBI: %d entries', len(mapping))
     return mapping
 
 
