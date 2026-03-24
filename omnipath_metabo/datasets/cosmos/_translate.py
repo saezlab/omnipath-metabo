@@ -64,6 +64,19 @@ _UNICHEM_PUBCHEM = 'PubChem'
 _UNICHEM_CHEBI = 'ChEBI'
 _UNICHEM_HMDB = 'HMDB'
 
+_PUBCHEM_NAME_URL = (
+    'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/name/{}/cids/JSON'
+)
+_PUBCHEM_CID_XREFS_URL = (
+    'https://pubchem.ncbi.nlm.nih.gov/rest/pug/compound/cid/{}/xrefs/RegistryID/JSON'
+)
+# Maximum number of unique CIDs for which the per-CID PubChem REST fallback
+# is attempted.  Above this threshold the residual set is likely irreducible
+# (drugs/xenobiotics without ChEBI) and the REST calls would waste build time.
+# MRCLinksDB leaves ≤ 4 CIDs unresolved after UniChem+RaMP — well within cap.
+# STITCH leaves ~4,797 — skipped.
+_PUBCHEM_REST_MAX_CIDS = 50
+
 # Patterns that indicate an experimental description rather than a chemical name.
 _RE_NOT_CHEMICAL = re.compile(
     r'%'                        # percentages (e.g. "10.2% residual...")
@@ -106,6 +119,109 @@ def _pubchem_to_chebi() -> dict[str, str]:
     raw = unichem_mapping(_UNICHEM_PUBCHEM, _UNICHEM_CHEBI)
     result = {cid: next(iter(chebis)) for cid, chebis in raw.items() if chebis}
     _log.info('[COSMOS] PubChem→ChEBI loaded: %d entries', len(result))
+    return result
+
+
+@cache
+def _pubchem_to_chebi_ramp() -> dict[str, str]:
+    """
+    Build a PubChem CID → ChEBI ID mapping via RaMP.
+
+    Supplements :func:`_pubchem_to_chebi` (UniChem) by querying the RaMP
+    SQLite database.  RaMP aggregates cross-references from HMDB, ChEBI,
+    KEGG, WikiPathways, and Reactome, covering a different compound set
+    than UniChem.  Downloaded once and cached for the session.
+
+    Returns an empty dict if RaMP is unavailable.
+
+    Returns:
+        Dict mapping PubChem CID strings to ChEBI ID strings
+        (e.g. ``{'5793': 'CHEBI:17234'}``).
+    """
+
+    try:
+
+        from pypath.inputs.ramp._mapping import ramp_mapping
+
+        _log.info('[COSMOS] Loading PubChem→ChEBI via RaMP...')
+        # curies=False (default) strips prefixes: 'pubchem:5793' → '5793',
+        # 'chebi:17234' → '17234'.  Re-add CHEBI: prefix to match UniChem format.
+        raw = ramp_mapping('pubchem', 'chebi')
+        result = {
+            cid: 'CHEBI:' + next(iter(chebis))
+            for cid, chebis in raw.items()
+            if chebis
+        }
+        _log.info('[COSMOS] PubChem→ChEBI (RaMP): %d entries', len(result))
+        return result
+
+    except Exception as e:
+
+        _log.warning(
+            '[COSMOS] RaMP PubChem→ChEBI unavailable (%s), skipping',
+            type(e).__name__,
+        )
+        return {}
+
+
+@cache
+def _pubchempy_cids_to_chebi(cids: tuple[str, ...]) -> dict[str, str | None]:
+    """
+    Look up ChEBI IDs for PubChem CIDs via the PubChem PUG REST API.
+
+    Last-resort fallback for CIDs absent from both UniChem and RaMP.
+    Queries the ``xrefs/RegistryID`` endpoint per CID and filters for
+    ``CHEBI:``-prefixed entries.  Rate-limited to ≤ 5 requests/second per
+    PubChem policy.
+
+    Results are cached for the session; the argument must be a ``tuple``
+    to satisfy ``@cache`` hashability.
+
+    Args:
+        cids: Tuple of PubChem CID strings.
+
+    Returns:
+        Dict mapping CID strings to ChEBI IDs (or ``None`` if not found).
+    """
+
+    import json
+    import time
+    import urllib.request
+
+    result: dict[str, str | None] = {}
+
+    for cid in cids:
+
+        url = _PUBCHEM_CID_XREFS_URL.format(cid)
+
+        try:
+
+            with urllib.request.urlopen(url, timeout = 10) as resp:
+                data = json.loads(resp.read())
+
+            chebi = None
+
+            for entry in data.get('InformationList', {}).get('Information', []):
+                for rid in entry.get('RegistryID', []):
+                    if rid.startswith('CHEBI:'):
+                        chebi = rid
+                        break
+                if chebi:
+                    break
+
+            result[cid] = chebi
+
+        except Exception:
+            result[cid] = None
+
+        time.sleep(0.2)  # ≤ 5 req/s per PubChem policy
+
+    n_found = sum(1 for v in result.values() if v is not None)
+    _log.info(
+        '[COSMOS] PubChem CID→ChEBI (REST): %d/%d CIDs resolved',
+        n_found,
+        len(cids),
+    )
     return result
 
 
@@ -506,9 +622,13 @@ def _to_hmdb(source_id: str, id_type: str, gem: str = '') -> str | None:
 
     if id_type == 'synonym':
         # name → pubchem CID → HMDB
+        import json
+        import urllib.parse
+        import urllib.request
+
         url = _PUBCHEM_NAME_URL.format(urllib.parse.quote(source_id))
         try:
-            with urllib.request.urlopen(url, timeout=10) as resp:
+            with urllib.request.urlopen(url, timeout = 10) as resp:
                 data = json.loads(resp.read())
             cids = data.get('IdentifierList', {}).get('CID', [])
             if not cids:
@@ -540,7 +660,11 @@ def _to_chebi(source_id: str, id_type: str, gem: str = '') -> str | None:
         return source_id
 
     if id_type == 'pubchem':
-        return _pubchem_to_chebi().get(str(source_id))
+        cid = str(source_id)
+        return (
+            _pubchem_to_chebi().get(cid)
+            or _pubchem_to_chebi_ramp().get(cid)
+        )
 
     if id_type == 'synonym':
         return _name_to_chebi(source_id)
@@ -683,8 +807,49 @@ def _build_metab_mapping(
         return {uid: uid for uid in unique_ids}
 
     if id_type == 'pubchem':
-        mapping = _pubchem_to_chebi()
-        return {uid: mapping.get(str(uid)) for uid in unique_ids}
+        unichem = _pubchem_to_chebi()
+        ramp = _pubchem_to_chebi_ramp()
+        result: dict[str, str | None] = {}
+        residual: list[str] = []
+
+        for uid in unique_ids:
+            cid = str(uid)
+            chebi = unichem.get(cid) or ramp.get(cid)
+            result[uid] = chebi
+            if chebi is None:
+                residual.append(cid)
+
+        if residual and len(residual) <= _PUBCHEM_REST_MAX_CIDS:
+            _log.info(
+                '[COSMOS] pubchem→ChEBI: %d/%d unique CIDs unresolved after '
+                'UniChem+RaMP; trying PubChem REST for %d...',
+                len(residual),
+                len(unique_ids),
+                len(residual),
+            )
+            rest_map = _pubchempy_cids_to_chebi(tuple(sorted(residual)))
+
+            for uid in unique_ids:
+                if result[uid] is None:
+                    result[uid] = rest_map.get(str(uid))
+
+        elif residual:
+            _log.info(
+                '[COSMOS] pubchem→ChEBI: %d/%d unique CIDs unresolved after '
+                'UniChem+RaMP; skipping PubChem REST (residual %d > cap %d).',
+                len(residual),
+                len(unique_ids),
+                len(residual),
+                _PUBCHEM_REST_MAX_CIDS,
+            )
+
+        n_resolved = sum(1 for v in result.values() if v is not None)
+        _log.info(
+            '[COSMOS] pubchem→ChEBI: %d/%d unique CIDs resolved',
+            n_resolved,
+            len(unique_ids),
+        )
+        return result
 
     if id_type == 'bigg':
         mapping = _bigg_to_chebi()
