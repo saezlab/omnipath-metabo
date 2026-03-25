@@ -50,7 +50,7 @@ Translation strategies by protein id_type:
 
 from __future__ import annotations
 
-__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot']
+__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot', '_lipidmaps_to_chebi', '_metatlas_to_chebi']
 
 import logging
 import re
@@ -235,6 +235,30 @@ def _normalise_hmdb(hmdb_id: str) -> str:
 
 
 @cache
+def _lipidmaps_to_chebi() -> dict[str, str]:
+    """
+    Build a LipidMaps ID → ChEBI ID mapping via UniChem.
+
+    Uses the UniChem LipidMaps→ChEBI bulk mapping.  When a LipidMaps ID
+    maps to multiple ChEBI IDs the first one is used.  Downloaded once per
+    session and cached in memory.
+
+    Returns:
+        Dict mapping LipidMaps IDs (e.g. ``'LMFA01010001'``) to ChEBI ID
+        strings (e.g. ``'CHEBI:15756'``).
+    """
+
+    from pypath.inputs.unichem import unichem_mapping
+
+    _UNICHEM_LIPIDMAPS = 'LIPID MAPS\u00ae'
+    _log.info('[COSMOS] Loading LipidMaps→ChEBI via UniChem (bulk)...')
+    raw = unichem_mapping(_UNICHEM_LIPIDMAPS, _UNICHEM_CHEBI)
+    result = {lm_id: next(iter(chebis)) for lm_id, chebis in raw.items() if chebis}
+    _log.info('[COSMOS] LipidMaps→ChEBI loaded: %d entries', len(result))
+    return result
+
+
+@cache
 def _hmdb_to_chebi() -> dict[str, str]:
     """
     Build a HMDB ID → ChEBI ID mapping via UniChem.
@@ -382,9 +406,18 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
     Build a MetAtlas base metabolite ID → ChEBI mapping for a given GEM.
 
     Reads the GEM's ``metabolites.tsv`` (via
-    :func:`pypath.inputs.metatlas.metatlas_gem_metabolites`) and extracts
-    the ``metsNoComp`` (base ID without compartment) → ``metChEBIID``
-    correspondence.  Entries with empty ChEBI values are skipped.
+    :func:`pypath.inputs.metatlas.metatlas_gem_metabolites`) and builds
+    a ``metsNoComp`` (base ID without compartment) → ChEBI mapping using
+    a four-step fallback chain for rows where ``metChEBIID`` is absent:
+
+    1. ``metChEBIID``   — direct annotation in the GEM (authoritative).
+    2. ``metMetaNetXID`` → :func:`_metanetx_to_chebi` — covers ~25% of gap;
+       may be semicolon-separated (all values tried).
+    3. ``metLipidMapsID`` → :func:`_lipidmaps_to_chebi` — good for lipids
+       (~83% hit rate on LM IDs present).
+    4. ``metPubChemID``  → :func:`_pubchem_to_chebi` /
+       :func:`_pubchem_to_chebi_ramp` — supplementary coverage.
+    5. ``metHMDBID``     → :func:`_hmdb_to_chebi` — minor additional hits.
 
     Downloaded once per GEM name and cached for the session.
 
@@ -397,19 +430,88 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
     """
 
     from pypath.inputs.metatlas._gem import metatlas_gem_metabolites
+    from pypath.inputs.metanetx import metanetx_metabolite_chebi
 
     _log.info('[COSMOS] Loading MetAtlas→ChEBI mapping for %s...', gem)
+    rows = list(metatlas_gem_metabolites(gem=gem))
+
+    # Step 1: direct ChEBI annotation
     mapping: dict[str, str] = {}
+    missing: list[dict] = []
 
-    for row in metatlas_gem_metabolites(gem=gem):
-
+    for row in rows:
         base_id = row.get('metsNoComp', '')
         chebi = row.get('metChEBIID', '')
-
-        if base_id and chebi:
+        if not base_id:
+            continue
+        if chebi:
             mapping[base_id] = chebi
+        else:
+            missing.append(row)
 
-    _log.info('[COSMOS] MetAtlas→ChEBI (%s): %d entries', gem, len(mapping))
+    n_direct = len(mapping)
+    _log.info(
+        '[COSMOS] MetAtlas→ChEBI (%s): %d direct; %d missing, trying fallbacks...',
+        gem, n_direct, len(missing),
+    )
+
+    # Pre-load all bulk maps once (cached after first call)
+    mnx_map = metanetx_metabolite_chebi()
+    lm_map = _lipidmaps_to_chebi()
+    pc_map = _pubchem_to_chebi()
+    pc_ramp = _pubchem_to_chebi_ramp()
+    hmdb_map = _hmdb_to_chebi()
+
+    n_mnx = n_lm = n_pc = n_hmdb = 0
+
+    for row in missing:
+        base_id = row['metsNoComp']
+        if base_id in mapping:
+            continue
+
+        # Step 2: MetaNetX (may be semicolon-separated)
+        mnx_raw = row.get('metMetaNetXID', '')
+        if mnx_raw:
+            for mnx_id in mnx_raw.split(';'):
+                chebi = mnx_map.get(mnx_id.strip())
+                if chebi:
+                    mapping[base_id] = chebi
+                    n_mnx += 1
+                    break
+            if base_id in mapping:
+                continue
+
+        # Step 3: LipidMaps
+        lm_id = row.get('metLipidMapsID', '')
+        if lm_id:
+            chebi = lm_map.get(lm_id)
+            if chebi:
+                mapping[base_id] = chebi
+                n_lm += 1
+                continue
+
+        # Step 4: PubChem (UniChem then RaMP)
+        pc_id = row.get('metPubChemID', '')
+        if pc_id:
+            chebi = pc_map.get(pc_id) or pc_ramp.get(pc_id)
+            if chebi:
+                mapping[base_id] = chebi
+                n_pc += 1
+                continue
+
+        # Step 5: HMDB
+        hmdb_id = row.get('metHMDBID', '')
+        if hmdb_id:
+            chebi = hmdb_map.get(_normalise_hmdb(hmdb_id))
+            if chebi:
+                mapping[base_id] = chebi
+                n_hmdb += 1
+
+    _log.info(
+        '[COSMOS] MetAtlas→ChEBI (%s): %d total '
+        '(+%d MetaNetX, +%d LipidMaps, +%d PubChem, +%d HMDB fallback)',
+        gem, len(mapping), n_mnx, n_lm, n_pc, n_hmdb,
+    )
     return mapping
 
 

@@ -14,6 +14,8 @@ from unittest.mock import patch
 
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
+    _lipidmaps_to_chebi,
+    _metatlas_to_chebi,
     _normalise_hmdb,
     _to_chebi,
     _to_uniprot,
@@ -469,3 +471,170 @@ class TestTranslatePknHmdb:
         ):
             result = translate_pkn(df)
         assert result.iloc[0]['id_type_a'] == 'chebi'
+
+
+# ---------------------------------------------------------------------------
+# _lipidmaps_to_chebi (mocked UniChem)
+# ---------------------------------------------------------------------------
+
+class TestLipidmapsToChebi:
+
+    _FAKE_MAPPING = {
+        'LMFA01010001': {'CHEBI:15756'},
+        'LMFA01010002': {'CHEBI:15904'},
+    }
+
+    def test_returns_dict(self):
+        with patch(
+            'pypath.inputs.unichem.unichem_mapping',
+            return_value=self._FAKE_MAPPING,
+        ):
+            _lipidmaps_to_chebi.cache_clear()
+            result = _lipidmaps_to_chebi()
+        assert isinstance(result, dict)
+
+    def test_known_id_resolves(self):
+        with patch(
+            'pypath.inputs.unichem.unichem_mapping',
+            return_value=self._FAKE_MAPPING,
+        ):
+            _lipidmaps_to_chebi.cache_clear()
+            result = _lipidmaps_to_chebi()
+        assert result['LMFA01010001'] == 'CHEBI:15756'
+
+    def test_all_entries_present(self):
+        with patch(
+            'pypath.inputs.unichem.unichem_mapping',
+            return_value=self._FAKE_MAPPING,
+        ):
+            _lipidmaps_to_chebi.cache_clear()
+            result = _lipidmaps_to_chebi()
+        assert len(result) == 2
+
+    def test_unknown_id_absent(self):
+        with patch(
+            'pypath.inputs.unichem.unichem_mapping',
+            return_value=self._FAKE_MAPPING,
+        ):
+            _lipidmaps_to_chebi.cache_clear()
+            result = _lipidmaps_to_chebi()
+        assert 'LMFA_NOTEXIST' not in result
+
+
+# ---------------------------------------------------------------------------
+# _metatlas_to_chebi fallback chain (mocked external sources)
+# ---------------------------------------------------------------------------
+
+class TestMetatlasToChebiFallbacks:
+    """Verify the four-step fallback chain in _metatlas_to_chebi.
+
+    Uses mocked external sources so no network calls are made.
+    Each test covers a specific fallback step being the one that resolves
+    an ID that has no direct metChEBIID.
+    """
+
+    # Fake GEM rows: one with direct ChEBI, one per fallback step
+    _FAKE_ROWS = [
+        # direct ChEBI
+        {'metsNoComp': 'MAM00001', 'metChEBIID': 'CHEBI:111',
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+        # resolved via MetaNetX
+        {'metsNoComp': 'MAM00002', 'metChEBIID': '',
+         'metMetaNetXID': 'MNXM999', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+        # resolved via LipidMaps
+        {'metsNoComp': 'MAM00003', 'metChEBIID': '',
+         'metMetaNetXID': '', 'metLipidMapsID': 'LMFA01010001', 'metPubChemID': '', 'metHMDBID': ''},
+        # resolved via PubChem
+        {'metsNoComp': 'MAM00004', 'metChEBIID': '',
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '5793', 'metHMDBID': ''},
+        # resolved via HMDB
+        {'metsNoComp': 'MAM00005', 'metChEBIID': '',
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': 'HMDB0000001'},
+        # unresolvable — no IDs
+        {'metsNoComp': 'MAM00006', 'metChEBIID': '',
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+    ]
+
+    def _run(self):
+        """Run _metatlas_to_chebi with all external sources mocked."""
+        _metatlas_to_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.metatlas._gem.metatlas_gem_metabolites',
+                return_value=self._FAKE_ROWS,
+            ),
+            patch(
+                'pypath.inputs.metanetx.metanetx_metabolite_chebi',
+                return_value={'MNXM999': 'CHEBI:222'},
+            ),
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate._lipidmaps_to_chebi',
+                return_value={'LMFA01010001': 'CHEBI:333'},
+            ),
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi',
+                return_value={'5793': 'CHEBI:444'},
+            ),
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi_ramp',
+                return_value={},
+            ),
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+                return_value={'HMDB0000001': 'CHEBI:555'},
+            ),
+        ):
+            return _metatlas_to_chebi('FakeGEM')
+
+    def test_direct_chebi_present(self):
+        result = self._run()
+        assert result['MAM00001'] == 'CHEBI:111'
+
+    def test_metanetx_fallback(self):
+        result = self._run()
+        assert result['MAM00002'] == 'CHEBI:222'
+
+    def test_lipidmaps_fallback(self):
+        result = self._run()
+        assert result['MAM00003'] == 'CHEBI:333'
+
+    def test_pubchem_fallback(self):
+        result = self._run()
+        assert result['MAM00004'] == 'CHEBI:444'
+
+    def test_hmdb_fallback(self):
+        result = self._run()
+        assert result['MAM00005'] == 'CHEBI:555'
+
+    def test_unresolvable_absent(self):
+        result = self._run()
+        assert 'MAM00006' not in result
+
+    def test_total_resolved_count(self):
+        result = self._run()
+        assert len(result) == 5
+
+    def test_semicolon_separated_metanetx(self):
+        """If metMetaNetXID has multiple values (';'-separated), all are tried."""
+        rows = [
+            {'metsNoComp': 'MAM00010', 'metChEBIID': '',
+             'metMetaNetXID': 'MNXM_MISS;MNXM999',
+             'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+        ]
+        _metatlas_to_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.metatlas._gem.metatlas_gem_metabolites',
+                return_value=rows,
+            ),
+            patch(
+                'pypath.inputs.metanetx.metanetx_metabolite_chebi',
+                return_value={'MNXM999': 'CHEBI:222'},
+            ),
+            patch('omnipath_metabo.datasets.cosmos._translate._lipidmaps_to_chebi', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi_ramp', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi', return_value={}),
+        ):
+            result = _metatlas_to_chebi('FakeGEM')
+        assert result['MAM00010'] == 'CHEBI:222'
