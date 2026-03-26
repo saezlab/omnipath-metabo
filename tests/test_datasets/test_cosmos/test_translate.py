@@ -843,7 +843,7 @@ class TestEnsemblCompoundIdSplit:
         df = self._make_gem_df(compound)
         result = translate_pkn(df, organism=9606)
         assert len(result) == 1
-        assert result.iloc[0]['target'] == 'P99999'
+        assert result.iloc[0]['target'] == frozenset({'P99999'})
 
     def test_single_ensg_no_split(self, monkeypatch):
         """A single ENSG that resolves directly is not split."""
@@ -862,7 +862,7 @@ class TestEnsemblCompoundIdSplit:
         df = self._make_gem_df('ENSG00000001')
         result = translate_pkn(df, organism=9606)
         assert len(result) == 1
-        assert result.iloc[0]['target'] == 'P11111'
+        assert result.iloc[0]['target'] == frozenset({'P11111'})
 
     def test_unresolvable_compound_drops_row(self, monkeypatch):
         """A compound ENSG where all components fail → row dropped."""

@@ -112,10 +112,34 @@ def _fmt_met(chebi_id: str, comp: str) -> str:
     return f'Metab__{chebi_id}_{comp}' if comp else f'Metab__{chebi_id}'
 
 
-def _fmt_gene(gene_id: str, n: int, reverse: bool = False) -> str:
-    """Format a gene COSMOS node ID."""
+def _fmt_gene(gene_id, n: int, reverse: bool = False) -> str:
+    """Format a gene COSMOS node ID.
+
+    When *gene_id* is a ``frozenset`` (ambiguous 1-to-many mapping), the
+    alphabetically first accession is used for the node label so that the
+    formatted ID is deterministic and unique per reaction.
+    """
+    if isinstance(gene_id, frozenset):
+        gene_id = min(gene_id)
     node = f'Gene{n}__{gene_id}'
     return node + '_rev' if reverse else node
+
+
+def _add_gene_connectors(
+    bare_gene,
+    fmt_gene: str,
+    connectors: set[tuple[str, str]],
+) -> None:
+    """Add connector(s) from bare gene ID(s) to the formatted gene node.
+
+    When *bare_gene* is a ``frozenset``, one connector is added per AC so
+    that every UniProt accession in the set maps to the formatted node.
+    """
+    if isinstance(bare_gene, frozenset):
+        for ac in bare_gene:
+            connectors.add((ac, fmt_gene))
+    else:
+        connectors.add((bare_gene, fmt_gene))
 
 
 def _other_comp(locations: tuple) -> str:
@@ -216,7 +240,7 @@ def _format_pre_expanded_row(
         out['target'] = fmt_met
 
     connectors.add((bare_met, fmt_met))
-    connectors.add((bare_gene, fmt_gene))
+    _add_gene_connectors(bare_gene, fmt_gene, connectors)
 
     attrs['cosmos_formatted'] = True
     out['attrs'] = attrs
@@ -263,8 +287,8 @@ def _format_transporter_row(
     connectors.add((bare_met, met_other))
     if met_c != met_other:
         connectors.add((bare_met, met_c))
-    connectors.add((bare_gene, gene_fwd))
-    connectors.add((bare_gene, gene_rev))
+    _add_gene_connectors(bare_gene, gene_fwd, connectors)
+    _add_gene_connectors(bare_gene, gene_rev, connectors)
 
     fwd_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': False}
     rev_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': True}
@@ -332,7 +356,7 @@ def _format_simple_row(
         out['target'] = fmt_met
 
     connectors.add((bare_met, fmt_met))
-    connectors.add((bare_gene, fmt_gene))
+    _add_gene_connectors(bare_gene, fmt_gene, connectors)
 
     attrs['cosmos_formatted'] = True
     out['attrs'] = attrs

@@ -98,6 +98,15 @@ class TestFmtGene:
     def test_forward_explicit_false(self):
         assert _fmt_gene('ENSG00000141510', 5, reverse=False) == 'Gene5__ENSG00000141510'
 
+    def test_frozenset_uses_min_ac(self):
+        """frozenset input: alphabetically first AC used for the node label."""
+        fs = frozenset({'Q99999', 'P12345'})
+        assert _fmt_gene(fs, 1) == 'Gene1__P12345'
+
+    def test_frozenset_reverse(self):
+        fs = frozenset({'Q99999', 'P12345'})
+        assert _fmt_gene(fs, 2, reverse=True) == 'Gene2__P12345_rev'
+
 
 class TestOtherComp:
     def test_plasma_membrane(self):
@@ -379,6 +388,36 @@ class TestConnectorEdges:
         result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
         assert (conn['resource'] == 'COSMOS_formatter').all()
+
+    def test_frozenset_gene_node_uses_min_ac(self):
+        """A frozenset target → formatted node uses min() AC; one main row."""
+        df = _df(_row(
+            target=frozenset({'Q99999', 'P12345'}),
+            interaction_type='transport',
+            resource='TCDB',
+            locations=('e', 'c'),
+        ))
+        result = _call_format(df)
+        main = result[result['interaction_type'] != 'connector']
+        # 4 rows (transporter expansion), all use 'P12345' (min) in node ID
+        assert len(main) == 4
+        gene_targets = main[main['target_type'] == 'protein']['target'].tolist()
+        assert all('P12345' in t for t in gene_targets)
+
+    def test_frozenset_gene_connectors_per_ac(self):
+        """Each AC in a frozenset target gets its own connector edge."""
+        df = _df(_row(
+            target=frozenset({'Q99999', 'P12345'}),
+            interaction_type='transport',
+            resource='TCDB',
+            locations=('e', 'c'),
+        ))
+        result = _call_format(df)
+        conn = result[result['interaction_type'] == 'connector']
+        conn_sources = set(conn['source'])
+        # Both ACs must appear as connector sources
+        assert 'P12345' in conn_sources
+        assert 'Q99999' in conn_sources
 
 
 # ---------------------------------------------------------------------------

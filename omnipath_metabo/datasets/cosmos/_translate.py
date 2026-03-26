@@ -1216,14 +1216,15 @@ def _build_protein_mapping(
     if id_type == 'entrez':
         _log.info('[COSMOS] Translating %d Entrez IDs → UniProt...', len(unique_ids))
         bigg_map = _entrez_to_uniprot_bigg()
-        result: dict[str, str | None] = {}
+        result: dict[str, frozenset | None] = {}
         for uid in _progress(unique_ids, 'entrez → uniprot'):
             uniprot = bigg_map.get(uid)
-            if not uniprot:
+            if uniprot:
+                result[uid] = frozenset({uniprot})
+            else:
                 res = mapping_mod.map_name(uid, 'ncbigene', 'uniprot',
                                            ncbi_tax_id=organism)
-                uniprot = next(iter(res)) if res else None
-            result[uid] = uniprot
+                result[uid] = frozenset(res) if res else None
         return result
 
     if id_type == 'ensp':
@@ -1231,14 +1232,14 @@ def _build_protein_mapping(
         for uid in _progress(unique_ids, 'ensp → uniprot'):
             res = mapping_mod.map_name(uid, 'ensp', 'uniprot',
                                        ncbi_tax_id=organism)
-            result[uid] = next(iter(res)) if res else None
+            result[uid] = frozenset(res) if res else None
 
         # Fallback: deprecated ENSPs not in pypath's BioMart table
         missing = [uid for uid, v in result.items() if v is None]
         if missing:
             rest_map = _ensp_to_uniprot_rest(missing)
             for uid, uniprot in rest_map.items():
-                result[uid] = uniprot
+                result[uid] = frozenset({uniprot})
 
         return result
 
@@ -1249,18 +1250,17 @@ def _build_protein_mapping(
             res = mapping_mod.map_name(uid, 'ensg', 'uniprot',
                                        ncbi_tax_id=organism)
             if res:
-                result[uid] = next(iter(res))
+                result[uid] = frozenset(res)
             elif '_' in uid:
                 # Compound enzyme-complex ID (e.g. ENSG1_ENSG2_ENSG3).
-                # Try each component; take the first that resolves.
+                # Collect UniProt ACs from all resolvable components.
+                all_res: set[str] = set()
                 for part in uid.split('_'):
-                    res = mapping_mod.map_name(part, 'ensg', 'uniprot',
-                                               ncbi_tax_id=organism)
-                    if res:
-                        result[uid] = next(iter(res))
-                        break
-                else:
-                    result[uid] = None
+                    part_res = mapping_mod.map_name(part, 'ensg', 'uniprot',
+                                                    ncbi_tax_id=organism)
+                    if part_res:
+                        all_res.update(part_res)
+                result[uid] = frozenset(all_res) if all_res else None
             else:
                 result[uid] = None
 
@@ -1272,7 +1272,7 @@ def _build_protein_mapping(
         if missing_single:
             rest_map = _ensg_to_uniprot_rest(missing_single)
             for uid, uniprot in rest_map.items():
-                result[uid] = uniprot
+                result[uid] = frozenset({uniprot})
 
         return result
 
@@ -1281,7 +1281,7 @@ def _build_protein_mapping(
         for uid in _progress(unique_ids, 'genesymbol → uniprot'):
             res = mapping_mod.map_name(uid, 'genesymbol', 'uniprot',
                                        ncbi_tax_id=organism)
-            result[uid] = next(iter(res)) if res else None
+            result[uid] = frozenset(res) if res else None
         return result
 
     _log.debug('Unknown protein id_type %r, cannot translate to UniProt.', id_type)
