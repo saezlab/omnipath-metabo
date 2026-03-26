@@ -683,9 +683,13 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     planning document: direct metabolic reactions where enzymes act on
     substrates and products, as opposed to allosteric regulation.
 
-    Post-filter predicate:
-        - ``resource.startswith('GEM:')`` (metabolic GEM edges,
+    Pre-translation filter predicate:
+        - ``resource.startswith('GEM:')`` (metabolic GEM edges only,
           distinct from ``'GEM_transporter:'`` transport edges)
+
+    The filter is applied *before* ID translation so that transport GEM
+    edges (``resource='GEM_transporter:<gem>'``) are discarded early and
+    never translated — avoiding spurious drop-rate warnings.
 
     Note:
         ``'GEM_transporter:...'`` resources are excluded because
@@ -710,7 +714,6 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('recon3d', False)
     kwargs.setdefault('stitch', False)
-    bundle = build(*args, **kwargs)
-    bundle = _filter_bundle(bundle, lambda row: row.resource.startswith('GEM:'))
+    bundle = build(*args, row_filter=lambda row: row.resource.startswith('GEM:'), **kwargs)
     _report_resource_overlaps(bundle, 'enzyme-metabolite', kwargs.get('translate_ids', True))
     return bundle
