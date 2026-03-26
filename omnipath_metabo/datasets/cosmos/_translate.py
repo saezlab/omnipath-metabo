@@ -41,7 +41,10 @@ Translation strategies by protein id_type:
       ENSPs not in pypath fall back to UniProt ID Mapping REST API
     - ``'genesymbol'``: pypath ``genesymbol → uniprot`` (BRENDA fallback)
     - ``'ensembl'``: pypath ``ensg → uniprot`` via BioMart (GEM enzyme IDs
-      are ENSG; translated to UniProt for cross-network integration)
+      are ENSG; translated to UniProt for cross-network integration).
+      Compound ``_``-joined IDs (enzyme complexes, e.g. ``ENSG1_ENSG2``)
+      are split and each component tried independently.  Deprecated single
+      ENSGs fall back to UniProt ID Mapping REST API (``Ensembl → UniProtKB``)
     - ``'entrez'``: Recon3D Entrez Gene ID → UniProt.  Tries BiGG-embedded
       gene symbol → UniProt first; falls back to pypath
       ``ncbigene → uniprot`` BioMart mapping.  ``_ATN`` isoform suffixes
@@ -51,7 +54,7 @@ Translation strategies by protein id_type:
 
 from __future__ import annotations
 
-__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot', '_lipidmaps_to_chebi', '_metatlas_to_chebi', '_ensp_to_uniprot_rest']
+__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot', '_lipidmaps_to_chebi', '_metatlas_to_chebi', '_ensp_to_uniprot_rest', '_ensg_to_uniprot_rest']
 
 import json
 import logging
@@ -826,6 +829,19 @@ def _to_uniprot(target_id: str, id_type: str, organism: int) -> str | None:
             'uniprot',
             ncbi_tax_id=organism,
         )
+        if not result and '_' in target_id:
+            # Compound enzyme-complex ID: try each component
+            for part in target_id.split('_'):
+                result = mapping_mod.map_name(part, 'ensg', 'uniprot',
+                                              ncbi_tax_id=organism)
+                if result:
+                    break
+        if not result and '_' not in target_id:
+            # Single deprecated ENSG: REST fallback
+            rest_map = _ensg_to_uniprot_rest([target_id])
+            uniprot = rest_map.get(target_id)
+            if uniprot:
+                return uniprot
 
     elif id_type == 'genesymbol':
         result = mapping_mod.map_name(
@@ -1019,26 +1035,24 @@ def _build_metab_mapping(
     return {uid: None for uid in unique_ids}
 
 
-def _ensp_to_uniprot_rest(ensp_ids: list[str]) -> dict[str, str]:
+def _uniprot_idmap_batch(ids: list[str], from_db: str) -> dict[str, str]:
     """
-    Resolve Ensembl protein IDs (ENSP) to UniProt accessions via the
-    UniProt ID Mapping REST API.
+    Batch ID mapping via the UniProt ID Mapping REST API.
 
-    Used as a fallback for ENSP IDs not found in pypath's BioMart table
-    (typically deprecated/retired identifiers from older Ensembl releases).
-
-    Submits all IDs in a single batch job, polls for completion, and
-    returns resolved mappings.  IDs that fail to resolve (truly retired
-    with no UniProt record) are absent from the returned dict.
+    Submits all *ids* in one job (``from_db → UniProtKB``), polls until
+    complete, and returns a ``{input_id → UniProt_AC}`` dict for resolved
+    entries only.  Any HTTP or job error returns ``{}`` silently.
 
     Args:
-        ensp_ids: List of ENSP identifiers to resolve.
+        ids: Input identifiers to map.
+        from_db: UniProt source database name (e.g. ``'Ensembl_Protein'``,
+            ``'Ensembl'``).
 
     Returns:
-        Dict mapping each resolved ENSP to its UniProt accession.
+        Dict mapping each resolved input ID to its first UniProt accession.
     """
 
-    if not ensp_ids:
+    if not ids:
         return {}
 
     result: dict[str, str] = {}
@@ -1046,17 +1060,13 @@ def _ensp_to_uniprot_rest(ensp_ids: list[str]) -> dict[str, str]:
     try:
         resp = requests.post(
             _UNIPROT_IDMAP_RUN,
-            data={
-                'from': 'Ensembl_Protein',
-                'to': 'UniProtKB',
-                'ids': ','.join(ensp_ids),
-            },
+            data={'from': from_db, 'to': 'UniProtKB', 'ids': ','.join(ids)},
             timeout=30,
         )
         resp.raise_for_status()
         job_id = resp.json()['jobId']
     except Exception as exc:
-        _log.warning('[COSMOS] ensp→UniProt REST: submit failed (%s)', exc)
+        _log.warning('[COSMOS] UniProt idmap (%s): submit failed (%s)', from_db, exc)
         return {}
 
     deadline = time.monotonic() + _UNIPROT_IDMAP_MAX_WAIT
@@ -1069,17 +1079,16 @@ def _ensp_to_uniprot_rest(ensp_ids: list[str]) -> dict[str, str]:
                 allow_redirects=False,
             )
             if status_resp.status_code in (301, 302, 303):
-                # Job complete — redirect to results
                 break
             status_data = status_resp.json()
             job_status = status_data.get('jobStatus', '')
             if job_status == 'FINISHED':
                 break
             if job_status == 'ERROR':
-                _log.warning('[COSMOS] ensp→UniProt REST: job error for %d IDs', len(ensp_ids))
+                _log.warning('[COSMOS] UniProt idmap (%s): job error', from_db)
                 return {}
         except Exception as exc:
-            _log.warning('[COSMOS] ensp→UniProt REST: poll failed (%s)', exc)
+            _log.warning('[COSMOS] UniProt idmap (%s): poll failed (%s)', from_db, exc)
             return {}
         time.sleep(_UNIPROT_IDMAP_POLL_INTERVAL)
 
@@ -1091,27 +1100,63 @@ def _ensp_to_uniprot_rest(ensp_ids: list[str]) -> dict[str, str]:
         results_resp.raise_for_status()
         data = results_resp.json()
     except Exception as exc:
-        _log.warning('[COSMOS] ensp→UniProt REST: fetch results failed (%s)', exc)
+        _log.warning('[COSMOS] UniProt idmap (%s): fetch failed (%s)', from_db, exc)
         return {}
 
     for entry in data.get('results', []):
-        ensp = entry.get('from', '')
+        src = entry.get('from', '')
         to = entry.get('to', '')
-        if ensp and to:
-            # 'to' is either a string (AC) or a dict with 'primaryAccession'
-            if isinstance(to, dict):
-                uniprot = to.get('primaryAccession', '')
-            else:
-                uniprot = str(to)
+        if src and to and src not in result:
+            # 'to' is a string AC or a dict with 'primaryAccession'
+            uniprot = to.get('primaryAccession', '') if isinstance(to, dict) else str(to)
             if uniprot:
-                result[ensp] = uniprot
+                result[src] = uniprot
 
-    n_resolved = len(result)
     _log.info(
-        '[COSMOS] ensp→UniProt REST fallback: %d/%d resolved',
-        n_resolved, len(ensp_ids),
+        '[COSMOS] UniProt idmap (%s): %d/%d resolved',
+        from_db, len(result), len(ids),
     )
     return result
+
+
+def _ensp_to_uniprot_rest(ensp_ids: list[str]) -> dict[str, str]:
+    """
+    Resolve Ensembl protein IDs (ENSP) to UniProt accessions via the
+    UniProt ID Mapping REST API (``Ensembl_Protein → UniProtKB``).
+
+    Used as a fallback for ENSP IDs not found in pypath's BioMart table
+    (typically deprecated/retired identifiers from older Ensembl releases).
+    IDs that fail to resolve (truly retired with no UniProt record) are
+    absent from the returned dict.
+
+    Args:
+        ensp_ids: List of ENSP identifiers to resolve.
+
+    Returns:
+        Dict mapping each resolved ENSP to its UniProt accession.
+    """
+
+    return _uniprot_idmap_batch(ensp_ids, 'Ensembl_Protein')
+
+
+def _ensg_to_uniprot_rest(ensg_ids: list[str]) -> dict[str, str]:
+    """
+    Resolve Ensembl gene IDs (ENSG) to UniProt accessions via the
+    UniProt ID Mapping REST API (``Ensembl → UniProtKB``).
+
+    Used as a fallback for single ENSG IDs not found in pypath's BioMart
+    table (typically deprecated identifiers from older Ensembl releases).
+    Does **not** handle compound ``_``-joined IDs — split those before
+    calling this function.
+
+    Args:
+        ensg_ids: List of single ENSG identifiers to resolve.
+
+    Returns:
+        Dict mapping each resolved ENSG to its UniProt accession.
+    """
+
+    return _uniprot_idmap_batch(ensg_ids, 'Ensembl')
 
 
 def _build_protein_mapping(
@@ -1190,7 +1235,32 @@ def _build_protein_mapping(
         for uid in _progress(unique_ids, 'ensembl → uniprot'):
             res = mapping_mod.map_name(uid, 'ensg', 'uniprot',
                                        ncbi_tax_id=organism)
-            result[uid] = next(iter(res)) if res else None
+            if res:
+                result[uid] = next(iter(res))
+            elif '_' in uid:
+                # Compound enzyme-complex ID (e.g. ENSG1_ENSG2_ENSG3).
+                # Try each component; take the first that resolves.
+                for part in uid.split('_'):
+                    res = mapping_mod.map_name(part, 'ensg', 'uniprot',
+                                               ncbi_tax_id=organism)
+                    if res:
+                        result[uid] = next(iter(res))
+                        break
+                else:
+                    result[uid] = None
+            else:
+                result[uid] = None
+
+        # REST fallback for any still-missing single ENSGs
+        missing_single = [
+            uid for uid, v in result.items()
+            if v is None and '_' not in uid
+        ]
+        if missing_single:
+            rest_map = _ensg_to_uniprot_rest(missing_single)
+            for uid, uniprot in rest_map.items():
+                result[uid] = uniprot
+
         return result
 
     if id_type == 'genesymbol':

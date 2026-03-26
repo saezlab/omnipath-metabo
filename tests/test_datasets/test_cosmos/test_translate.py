@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
+    _ensg_to_uniprot_rest,
     _ensp_to_uniprot_rest,
     _lipidmaps_to_chebi,
     _metatlas_to_chebi,
@@ -735,3 +736,131 @@ class TestEnspToUniprotRest:
         monkeypatch.setattr(_requests, 'post', _bad_post)
         result = _ensp_to_uniprot_rest(['ENSP0001'])
         assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _ensg_to_uniprot_rest — delegates to _uniprot_idmap_batch
+# ---------------------------------------------------------------------------
+
+class TestEnsgToUniprotRest:
+    """_ensg_to_uniprot_rest is a thin wrapper — just verify delegation."""
+
+    def test_returns_dict(self, monkeypatch):
+        import requests as _requests
+
+        class _FakeSubmit:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {'jobId': 'JOB2'}
+
+        class _FakeStatus:
+            status_code = 200
+            def json(self): return {'jobStatus': 'FINISHED'}
+
+        class _FakeResults:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {
+                'results': [{'from': 'ENSG0001', 'to': 'Q11111'}],
+                'failedIds': [],
+            }
+
+        def _fake_post(url, data=None, timeout=None):
+            assert data.get('from') == 'Ensembl', 'wrong from_db'
+            return _FakeSubmit()
+
+        def _fake_get(url, timeout=None, allow_redirects=True):
+            if 'status' in url:
+                return _FakeStatus()
+            return _FakeResults()
+
+        monkeypatch.setattr(_requests, 'post', _fake_post)
+        monkeypatch.setattr(_requests, 'get', _fake_get)
+
+        result = _ensg_to_uniprot_rest(['ENSG0001'])
+        assert result == {'ENSG0001': 'Q11111'}
+
+    def test_empty_input_returns_empty(self, monkeypatch):
+        result = _ensg_to_uniprot_rest([])
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# ensembl compound-ID split logic in translate_pkn
+# ---------------------------------------------------------------------------
+
+class TestEnsemblCompoundIdSplit:
+    """Verify that _-joined compound ENSG IDs are split and resolved."""
+
+    def _make_gem_df(self, ensg_id):
+        """One GEM metabolic edge with a compound ENSG protein target."""
+        from omnipath_metabo.datasets.cosmos._record import Interaction
+        row = Interaction(
+            source='MAM00001',
+            target=ensg_id,
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a='metatlas',
+            id_type_b='ensembl',
+            interaction_type='reaction',
+            resource='GEM:Human-GEM',
+            mor=1,
+            locations=['c'],
+            attrs={},
+        )
+        return pd.DataFrame([row], columns=list(Interaction._fields))
+
+    def test_compound_ensg_split_resolves(self, monkeypatch):
+        """A _-joined ENSG that fails as a whole resolves via first component."""
+        import pypath.utils.mapping as mapping_mod
+
+        compound = 'ENSG00000001_ENSG00000002'
+
+        def _fake_map(uid, src, tgt, ncbi_tax_id=9606):
+            # Whole compound ID fails; first component resolves
+            if uid == 'ENSG00000001':
+                return {'P99999'}
+            return set()
+
+        monkeypatch.setattr(mapping_mod, 'map_name', _fake_map)
+
+        # Also mock metatlas→ChEBI so the metabolite side passes through
+        import omnipath_metabo.datasets.cosmos._translate as tr
+        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
+
+        df = self._make_gem_df(compound)
+        result = translate_pkn(df, organism=9606)
+        assert len(result) == 1
+        assert result.iloc[0]['target'] == 'P99999'
+
+    def test_single_ensg_no_split(self, monkeypatch):
+        """A single ENSG that resolves directly is not split."""
+        import pypath.utils.mapping as mapping_mod
+
+        def _fake_map(uid, src, tgt, ncbi_tax_id=9606):
+            if uid == 'ENSG00000001':
+                return {'P11111'}
+            return set()
+
+        monkeypatch.setattr(mapping_mod, 'map_name', _fake_map)
+
+        import omnipath_metabo.datasets.cosmos._translate as tr
+        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
+
+        df = self._make_gem_df('ENSG00000001')
+        result = translate_pkn(df, organism=9606)
+        assert len(result) == 1
+        assert result.iloc[0]['target'] == 'P11111'
+
+    def test_unresolvable_compound_drops_row(self, monkeypatch):
+        """A compound ENSG where all components fail → row dropped."""
+        import pypath.utils.mapping as mapping_mod
+        import omnipath_metabo.datasets.cosmos._translate as tr
+
+        monkeypatch.setattr(mapping_mod, 'map_name', lambda *a, **kw: set())
+        monkeypatch.setattr(tr, '_ensg_to_uniprot_rest', lambda ids: {})
+        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
+
+        df = self._make_gem_df('ENSG00000999_ENSG00000998')
+        result = translate_pkn(df, organism=9606)
+        assert len(result) == 0
