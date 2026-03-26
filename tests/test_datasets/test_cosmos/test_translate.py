@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
+    _ensp_to_uniprot_rest,
     _lipidmaps_to_chebi,
     _metatlas_to_chebi,
     _normalise_hmdb,
@@ -638,3 +639,99 @@ class TestMetatlasToChebiFallbacks:
         ):
             result = _metatlas_to_chebi('FakeGEM')
         assert result['MAM00010'] == 'CHEBI:222'
+
+
+# ---------------------------------------------------------------------------
+# _ensp_to_uniprot_rest — mocked HTTP
+# ---------------------------------------------------------------------------
+
+class TestEnspToUniprotRest:
+    """Unit tests for _ensp_to_uniprot_rest using mocked HTTP responses."""
+
+    def _mock_responses(self, results_payload, monkeypatch):
+        """
+        Wire up requests.post (submit) and requests.get (status + results).
+        """
+        import requests as _requests
+
+        class _FakeSubmitResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {'jobId': 'TESTJOB'}
+
+        class _FakeStatusResp:
+            status_code = 200
+            def json(self): return {'jobStatus': 'FINISHED'}
+
+        class _FakeResultsResp:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return results_payload
+
+        call_count = {'get': 0}
+
+        def _fake_post(url, data=None, timeout=None):
+            return _FakeSubmitResp()
+
+        def _fake_get(url, timeout=None, allow_redirects=True):
+            call_count['get'] += 1
+            if 'status' in url:
+                return _FakeStatusResp()
+            return _FakeResultsResp()
+
+        monkeypatch.setattr(_requests, 'post', _fake_post)
+        monkeypatch.setattr(_requests, 'get', _fake_get)
+
+    def test_returns_dict(self, monkeypatch):
+        self._mock_responses({'results': [], 'failedIds': ['ENSP0001']}, monkeypatch)
+        result = _ensp_to_uniprot_rest(['ENSP0001'])
+        assert isinstance(result, dict)
+
+    def test_resolved_ensp_present(self, monkeypatch):
+        self._mock_responses({
+            'results': [{'from': 'ENSP0001', 'to': 'P12345'}],
+            'failedIds': [],
+        }, monkeypatch)
+        result = _ensp_to_uniprot_rest(['ENSP0001'])
+        assert result['ENSP0001'] == 'P12345'
+
+    def test_failed_ensp_absent(self, monkeypatch):
+        self._mock_responses({
+            'results': [],
+            'failedIds': ['ENSP0002'],
+        }, monkeypatch)
+        result = _ensp_to_uniprot_rest(['ENSP0002'])
+        assert 'ENSP0002' not in result
+
+    def test_mixed_resolved_and_failed(self, monkeypatch):
+        self._mock_responses({
+            'results': [{'from': 'ENSP0001', 'to': 'P12345'}],
+            'failedIds': ['ENSP0002'],
+        }, monkeypatch)
+        result = _ensp_to_uniprot_rest(['ENSP0001', 'ENSP0002'])
+        assert result['ENSP0001'] == 'P12345'
+        assert 'ENSP0002' not in result
+
+    def test_to_as_dict_with_primary_accession(self, monkeypatch):
+        """UniProt sometimes returns 'to' as a dict with primaryAccession."""
+        self._mock_responses({
+            'results': [{'from': 'ENSP0003', 'to': {'primaryAccession': 'Q99999'}}],
+            'failedIds': [],
+        }, monkeypatch)
+        result = _ensp_to_uniprot_rest(['ENSP0003'])
+        assert result['ENSP0003'] == 'Q99999'
+
+    def test_empty_input_returns_empty(self, monkeypatch):
+        # Should not make any HTTP calls
+        result = _ensp_to_uniprot_rest([])
+        assert result == {}
+
+    def test_submit_failure_returns_empty(self, monkeypatch):
+        import requests as _requests
+
+        def _bad_post(url, data=None, timeout=None):
+            raise ConnectionError('network down')
+
+        monkeypatch.setattr(_requests, 'post', _bad_post)
+        result = _ensp_to_uniprot_rest(['ENSP0001'])
+        assert result == {}
