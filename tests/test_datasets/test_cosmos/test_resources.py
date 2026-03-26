@@ -379,18 +379,17 @@ class TestBuildMouse:
     """Integration test verifying build() accepts organism=10090."""
 
     def test_build_mouse_organism(self):
-        import pandas as pd
-
         from omnipath_metabo.datasets.cosmos import build
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
 
-        df = build(
+        bundle = build(
             organism=10090,
             slc=False,
             recon3d=False,
             stitch={'score_threshold': 900},
         )
-        assert isinstance(df, pd.DataFrame)
-        assert len(df) > 0
+        assert isinstance(bundle, CosmosBundle)
+        assert len(bundle.network) > 0
 
 
 class TestRecon3d:
