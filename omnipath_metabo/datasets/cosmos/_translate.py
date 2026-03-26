@@ -54,7 +54,7 @@ Translation strategies by protein id_type:
 
 from __future__ import annotations
 
-__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot', '_lipidmaps_to_chebi', '_metatlas_to_chebi', '_ensp_to_uniprot_rest', '_ensg_to_uniprot_rest']
+__all__ = ['translate_pkn', '_to_hmdb', '_to_uniprot', '_lipidmaps_to_chebi', '_metatlas_to_chebi', '_ensp_to_uniprot_rest', '_ensg_to_uniprot_rest', '_entrez_to_uniprot_rest']
 
 import json
 import logging
@@ -1172,6 +1172,26 @@ def _ensg_to_uniprot_rest(ensg_ids: list[str]) -> dict[str, str]:
     return _uniprot_idmap_batch(ensg_ids, 'Ensembl')
 
 
+def _entrez_to_uniprot_rest(entrez_ids: list[str]) -> dict[str, str]:
+    """
+    Resolve Entrez (NCBI Gene) IDs to UniProt accessions via the
+    UniProt ID Mapping REST API (``GeneID → UniProtKB``).
+
+    Used as a fallback for Entrez IDs not resolved by pypath's BioMart
+    table or the BiGG JSON annotations (typically retired gene IDs or
+    IDs absent from the BioMart snapshot).  IDs that fail to resolve
+    (no UniProt cross-reference) are absent from the returned dict.
+
+    Args:
+        entrez_ids: List of Entrez Gene ID strings (numeric, no suffix).
+
+    Returns:
+        Dict mapping each resolved Entrez ID to its UniProt accession.
+    """
+
+    return _uniprot_idmap_batch(entrez_ids, 'GeneID')
+
+
 def _build_protein_mapping(
     id_type: str,
     ids: pd.Series,
@@ -1225,6 +1245,14 @@ def _build_protein_mapping(
                 res = mapping_mod.map_name(uid, 'ncbigene', 'uniprot',
                                            ncbi_tax_id=organism)
                 result[uid] = frozenset(res) if res else None
+
+        # Fallback: Entrez IDs not in pypath's BioMart or BiGG annotations
+        missing = [uid for uid, v in result.items() if v is None]
+        if missing:
+            rest_map = _entrez_to_uniprot_rest(missing)
+            for uid, uniprot in rest_map.items():
+                result[uid] = frozenset({uniprot})
+
         return result
 
     if id_type == 'ensp':

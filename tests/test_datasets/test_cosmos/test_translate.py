@@ -16,6 +16,7 @@ from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
     _ensg_to_uniprot_rest,
     _ensp_to_uniprot_rest,
+    _entrez_to_uniprot_rest,
     _lipidmaps_to_chebi,
     _metatlas_to_chebi,
     _normalise_hmdb,
@@ -794,6 +795,66 @@ class TestEnsgToUniprotRest:
 
     def test_empty_input_returns_empty(self, monkeypatch):
         result = _ensg_to_uniprot_rest([])
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# _entrez_to_uniprot_rest — delegates to _uniprot_idmap_batch with 'GeneID'
+# ---------------------------------------------------------------------------
+
+class TestEntrezToUniprotRest:
+    """_entrez_to_uniprot_rest is a thin wrapper — verify delegation and basic flow."""
+
+    def _mock_responses(self, results_payload, monkeypatch):
+        import requests as _requests
+
+        class _FakeSubmit:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return {'jobId': 'ENTREZJOB'}
+
+        class _FakeStatus:
+            status_code = 200
+            def json(self): return {'jobStatus': 'FINISHED'}
+
+        class _FakeResults:
+            status_code = 200
+            def raise_for_status(self): pass
+            def json(self): return results_payload
+
+        def _fake_post(url, data=None, timeout=None):
+            assert data.get('from') == 'GeneID', 'wrong from_db'
+            return _FakeSubmit()
+
+        def _fake_get(url, timeout=None, allow_redirects=True):
+            if 'status' in url:
+                return _FakeStatus()
+            return _FakeResults()
+
+        monkeypatch.setattr(_requests, 'post', _fake_post)
+        monkeypatch.setattr(_requests, 'get', _fake_get)
+
+    def test_uses_gene_id_from_db(self, monkeypatch):
+        """Verifies 'from=GeneID' is passed to the UniProt API."""
+        self._mock_responses({'results': [], 'failedIds': ['1591']}, monkeypatch)
+        result = _entrez_to_uniprot_rest(['1591'])
+        assert isinstance(result, dict)
+
+    def test_resolved_entrez_present(self, monkeypatch):
+        self._mock_responses({
+            'results': [{'from': '1591', 'to': 'P05108'}],
+            'failedIds': [],
+        }, monkeypatch)
+        result = _entrez_to_uniprot_rest(['1591'])
+        assert result['1591'] == 'P05108'
+
+    def test_failed_entrez_absent(self, monkeypatch):
+        self._mock_responses({'results': [], 'failedIds': ['9999999']}, monkeypatch)
+        result = _entrez_to_uniprot_rest(['9999999'])
+        assert '9999999' not in result
+
+    def test_empty_input_returns_empty(self, monkeypatch):
+        result = _entrez_to_uniprot_rest([])
         assert result == {}
 
 
