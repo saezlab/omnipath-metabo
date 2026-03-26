@@ -45,7 +45,6 @@ def gem_interactions(
     organism: int = 9606,
     include_reverse: bool = True,
     include_orphans: bool = True,
-    cell_surface_only: bool = False,
 ) -> Generator[Interaction, None, None]:
     """
     Yield GEM metabolite-enzyme interactions as uniform records.
@@ -77,12 +76,6 @@ def gem_interactions(
             reaction ID as a pseudo-enzyme node with
             ``id_type = 'reaction_id'`` and ``attrs['orphan'] = True``.
             Default: ``True``.
-        cell_surface_only:
-            If ``True``, restrict transport reactions to those where at
-            least one edge touches the extracellular compartment (``'e'``).
-            Applied per reaction group so met→enzyme / enzyme→met pairs
-            are always kept or dropped together.  Metabolic edges are
-            unaffected.  Default: ``False``.
 
     Yields:
         :class:`Interaction` records.  For metabolite → enzyme edges,
@@ -151,19 +144,11 @@ def gem_interactions(
         ):
             transport_groups[(rec.reaction_id, gem_name)].append(rec)
 
-    # Apply cell_surface_only filter to transport reaction groups.
-    transport_raw: list[tuple] = []
-
-    for (rxn_id, gem_name), edges in transport_groups.items():
-
-        if cell_surface_only:
-            if not any(
-                e.source_compartment == 'e' or e.target_compartment == 'e'
-                for e in edges
-            ):
-                continue
-
-        transport_raw.extend((rec, gem_name) for rec in edges)
+    transport_raw: list[tuple] = [
+        (rec, gem_name)
+        for (_, gem_name), edges in transport_groups.items()
+        for rec in edges
+    ]
 
     # Build Interaction objects from both streams.
     # Tag each record with its resource prefix before merging.

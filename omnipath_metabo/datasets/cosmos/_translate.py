@@ -1395,6 +1395,12 @@ def translate_pkn(df: pd.DataFrame, organism: int = 9606) -> pd.DataFrame:
     """
     df = df.copy()
 
+    # Arrow string dtype (inferred by pandas from Interaction namedtuples) rejects
+    # frozenset values — cast source/target to object before translation.
+    for _col in ('source', 'target'):
+        if df[_col].dtype != object:
+            df[_col] = df[_col].astype(object)
+
     # Translation is direction-aware: source/target roles vary by resource.
     # GEM produces enzyme→metabolite edges (protein as source, metabolite as
     # target) in addition to the more common metabolite→protein direction.

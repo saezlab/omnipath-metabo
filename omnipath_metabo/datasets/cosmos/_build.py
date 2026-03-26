@@ -568,13 +568,6 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
 
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('stitch', False)
-    if cell_surface_only:
-        kwargs.setdefault('gem', {})
-        if isinstance(kwargs['gem'], dict):
-            kwargs['gem']['cell_surface_only'] = True
-        kwargs.setdefault('recon3d', {})
-        if isinstance(kwargs['recon3d'], dict):
-            kwargs['recon3d']['cell_surface_only'] = True
     bundle = build(*args, row_filter=_is_transport, **kwargs)
     _report_resource_overlaps(bundle, 'transporter', kwargs.get('translate_ids', True))
     return bundle
