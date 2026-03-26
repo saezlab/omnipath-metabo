@@ -432,7 +432,9 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
        (~83% hit rate on LM IDs present).
     4. ``metPubChemID``  → :func:`_pubchem_to_chebi` /
        :func:`_pubchem_to_chebi_ramp` — supplementary coverage.
-    5. ``metHMDBID``     → :func:`_hmdb_to_chebi` — minor additional hits.
+    5. ``metKEGGID``     → :func:`kegg_compound_chebi` — bulk KEGG
+       ``/conv/chebi/compound`` table; 67% hit rate on GEM KEGG IDs.
+    6. ``metHMDBID``     → :func:`_hmdb_to_chebi` — minor additional hits.
 
     Downloaded once per GEM name and cached for the session.
 
@@ -444,6 +446,7 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
         (e.g. ``'CHEBI:15389'``).
     """
 
+    from pypath.inputs.kegg import kegg_compound_chebi
     from pypath.inputs.metatlas._gem import metatlas_gem_metabolites
     from pypath.inputs.metanetx import metanetx_metabolite_chebi
 
@@ -475,9 +478,10 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
     lm_map = _lipidmaps_to_chebi()
     pc_map = _pubchem_to_chebi()
     pc_ramp = _pubchem_to_chebi_ramp()
+    kegg_map = kegg_compound_chebi()
     hmdb_map = _hmdb_to_chebi()
 
-    n_mnx = n_lm = n_pc = n_hmdb = 0
+    n_mnx = n_lm = n_pc = n_kegg = n_hmdb = 0
 
     for row in missing:
         base_id = row['metsNoComp']
@@ -514,7 +518,16 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
                 n_pc += 1
                 continue
 
-        # Step 5: HMDB
+        # Step 5: KEGG compound
+        kegg_id = row.get('metKEGGID', '')
+        if kegg_id:
+            chebi = kegg_map.get(kegg_id)
+            if chebi:
+                mapping[base_id] = chebi
+                n_kegg += 1
+                continue
+
+        # Step 6: HMDB
         hmdb_id = row.get('metHMDBID', '')
         if hmdb_id:
             chebi = hmdb_map.get(_normalise_hmdb(hmdb_id))
@@ -524,8 +537,8 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
 
     _log.info(
         '[COSMOS] MetAtlas→ChEBI (%s): %d total '
-        '(+%d MetaNetX, +%d LipidMaps, +%d PubChem, +%d HMDB fallback)',
-        gem, len(mapping), n_mnx, n_lm, n_pc, n_hmdb,
+        '(+%d MetaNetX, +%d LipidMaps, +%d PubChem, +%d KEGG, +%d HMDB fallback)',
+        gem, len(mapping), n_mnx, n_lm, n_pc, n_kegg, n_hmdb,
     )
     return mapping
 

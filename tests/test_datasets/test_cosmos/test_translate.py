@@ -539,22 +539,25 @@ class TestMetatlasToChebiFallbacks:
     _FAKE_ROWS = [
         # direct ChEBI
         {'metsNoComp': 'MAM00001', 'metChEBIID': 'CHEBI:111',
-         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
         # resolved via MetaNetX
         {'metsNoComp': 'MAM00002', 'metChEBIID': '',
-         'metMetaNetXID': 'MNXM999', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+         'metMetaNetXID': 'MNXM999', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
         # resolved via LipidMaps
         {'metsNoComp': 'MAM00003', 'metChEBIID': '',
-         'metMetaNetXID': '', 'metLipidMapsID': 'LMFA01010001', 'metPubChemID': '', 'metHMDBID': ''},
+         'metMetaNetXID': '', 'metLipidMapsID': 'LMFA01010001', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
         # resolved via PubChem
         {'metsNoComp': 'MAM00004', 'metChEBIID': '',
-         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '5793', 'metHMDBID': ''},
-        # resolved via HMDB
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '5793', 'metKEGGID': '', 'metHMDBID': ''},
+        # resolved via KEGG
         {'metsNoComp': 'MAM00005', 'metChEBIID': '',
-         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': 'HMDB0000001'},
-        # unresolvable — no IDs
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': 'C00001', 'metHMDBID': ''},
+        # resolved via HMDB
         {'metsNoComp': 'MAM00006', 'metChEBIID': '',
-         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': 'HMDB0000001'},
+        # unresolvable — no IDs
+        {'metsNoComp': 'MAM00007', 'metChEBIID': '',
+         'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
     ]
 
     def _run(self):
@@ -582,6 +585,10 @@ class TestMetatlasToChebiFallbacks:
                 return_value={},
             ),
             patch(
+                'pypath.inputs.kegg.kegg_compound_chebi',
+                return_value={'C00001': 'CHEBI:15377'},
+            ),
+            patch(
                 'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
                 return_value={'HMDB0000001': 'CHEBI:555'},
             ),
@@ -604,24 +611,28 @@ class TestMetatlasToChebiFallbacks:
         result = self._run()
         assert result['MAM00004'] == 'CHEBI:444'
 
+    def test_kegg_fallback(self):
+        result = self._run()
+        assert result['MAM00005'] == 'CHEBI:15377'
+
     def test_hmdb_fallback(self):
         result = self._run()
-        assert result['MAM00005'] == 'CHEBI:555'
+        assert result['MAM00006'] == 'CHEBI:555'
 
     def test_unresolvable_absent(self):
         result = self._run()
-        assert 'MAM00006' not in result
+        assert 'MAM00007' not in result
 
     def test_total_resolved_count(self):
         result = self._run()
-        assert len(result) == 5
+        assert len(result) == 6
 
     def test_semicolon_separated_metanetx(self):
         """If metMetaNetXID has multiple values (';'-separated), all are tried."""
         rows = [
             {'metsNoComp': 'MAM00010', 'metChEBIID': '',
              'metMetaNetXID': 'MNXM_MISS;MNXM999',
-             'metLipidMapsID': '', 'metPubChemID': '', 'metHMDBID': ''},
+             'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
         ]
         _metatlas_to_chebi.cache_clear()
         with (
@@ -636,6 +647,7 @@ class TestMetatlasToChebiFallbacks:
             patch('omnipath_metabo.datasets.cosmos._translate._lipidmaps_to_chebi', return_value={}),
             patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi', return_value={}),
             patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi_ramp', return_value={}),
+            patch('pypath.inputs.kegg.kegg_compound_chebi', return_value={}),
             patch('omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi', return_value={}),
         ):
             result = _metatlas_to_chebi('FakeGEM')
