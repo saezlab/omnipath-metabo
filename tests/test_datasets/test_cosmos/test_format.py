@@ -9,6 +9,7 @@ from omnipath_metabo.datasets.cosmos._format import (
     _assign_n,
     _fmt_gene,
     _fmt_met,
+    _fmt_rxn,
     _is_pre_expanded,
     _other_comp,
     _row_category,
@@ -106,6 +107,23 @@ class TestFmtGene:
     def test_frozenset_reverse(self):
         fs = frozenset({'Q99999', 'P12345'})
         assert _fmt_gene(fs, 2, reverse=True) == 'Gene2__P12345_rev'
+
+
+class TestFmtRxn:
+    def test_forward(self):
+        assert _fmt_rxn('MAR99999', 1) == 'Rxn1__MAR99999'
+
+    def test_forward_large_n(self):
+        assert _fmt_rxn('MAR99999', 42) == 'Rxn42__MAR99999'
+
+    def test_reverse(self):
+        assert _fmt_rxn('MAR99999', 1, reverse=True) == 'Rxn1__MAR99999_rev'
+
+    def test_forward_explicit_false(self):
+        assert _fmt_rxn('MAR99999', 5, reverse=False) == 'Rxn5__MAR99999'
+
+    def test_recon3d_reaction_id(self):
+        assert _fmt_rxn('R_TKT', 3) == 'Rxn3__R_TKT'
 
 
 class TestOtherComp:
@@ -576,19 +594,21 @@ class TestNCounterCategories:
 # ---------------------------------------------------------------------------
 
 class TestOrphanHandling:
-    def _orphan_df(self):
-        return _df(
-            _row(
-                source='CHEBI:15422',
-                target='MAR99999',
-                target_type='protein',
-                id_type_b='reaction_id',
-                interaction_type='transport',
-                resource='Recon3D',
-                locations=('c',),
-                attrs={'reaction_id': 'MAR99999', 'orphan': True, 'reverse': False},
-            )
+    def _orphan_row(self, reverse=False, resource='Recon3D'):
+        """One pre-expanded orphan transport row (met → reaction_id)."""
+        return _row(
+            source='CHEBI:15422',
+            target='MAR99999',
+            target_type='protein',
+            id_type_b='reaction_id',
+            interaction_type='transport',
+            resource=resource,
+            locations=('c',),
+            attrs={'reaction_id': 'MAR99999', 'orphan': True, 'reverse': reverse},
         )
+
+    def _orphan_df(self, **kw):
+        return _df(self._orphan_row(**kw))
 
     def test_orphan_kept_by_default(self):
         result = _call_format(self._orphan_df())
@@ -599,6 +619,71 @@ class TestOrphanHandling:
         result = _call_format(self._orphan_df(), include_orphans=False)
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 0
+
+    def test_orphan_uses_rxn_prefix_not_gene(self):
+        """Orphan node must use Rxn{N}__ prefix, not Gene{N}__."""
+        result = _call_format(self._orphan_df())
+        main = result[result['interaction_type'] != 'connector']
+        target = main.iloc[0]['target']
+        assert target.startswith('Rxn'), f'Expected Rxn prefix, got: {target!r}'
+        assert not target.startswith('Gene'), f'Must not use Gene prefix: {target!r}'
+
+    def test_orphan_forward_node_id(self):
+        result = _call_format(self._orphan_df())
+        main = result[result['interaction_type'] != 'connector']
+        assert main.iloc[0]['target'] == 'Rxn1__MAR99999'
+
+    def test_orphan_reverse_node_has_rev_suffix(self):
+        result = _call_format(self._orphan_df(reverse=True))
+        main = result[result['interaction_type'] != 'connector']
+        target = main.iloc[0]['target']
+        assert target == 'Rxn1__MAR99999_rev'
+
+    def test_orphan_connector_is_rxn_id_to_rxn_node(self):
+        """Connector: bare reaction_id → Rxn{N}__reaction_id (plain string, no frozenset)."""
+        result = _call_format(self._orphan_df())
+        conn = result[result['interaction_type'] == 'connector']
+        rxn_conn = conn[conn['source'] == 'MAR99999']
+        assert len(rxn_conn) == 1
+        assert rxn_conn.iloc[0]['target'] == 'Rxn1__MAR99999'
+
+    def test_orphan_no_extra_gene_connector(self):
+        """No Gene__ connector should appear for an orphan row."""
+        result = _call_format(self._orphan_df())
+        conn = result[result['interaction_type'] == 'connector']
+        gene_conn = conn[conn['target'].str.startswith('Gene', na=False)]
+        assert len(gene_conn) == 0
+
+    def test_orphan_metabolite_connector_still_added(self):
+        """Metabolite connector is emitted regardless of orphan status."""
+        result = _call_format(self._orphan_df())
+        conn = result[result['interaction_type'] == 'connector']
+        met_conn = conn[conn['target'] == 'Metab__CHEBI:15422_c']
+        assert len(met_conn) == 1
+
+    def test_orphan_gem_transporter_uses_rxn_prefix(self):
+        """GEM_transporter orphan rows also use Rxn prefix."""
+        result = _call_format(self._orphan_df(resource='GEM_transporter:Human-GEM'))
+        main = result[result['interaction_type'] != 'connector']
+        target = main.iloc[0]['target']
+        assert target.startswith('Rxn')
+
+    def test_non_orphan_gem_still_uses_gene_prefix(self):
+        """Regression: non-orphan GEM rows must still produce Gene{N}__ nodes."""
+        df = _df(_row(
+            source='CHEBI:15422',
+            target='ENSG00000141510',
+            source_type='small_molecule',
+            target_type='protein',
+            interaction_type='transport',
+            resource='GEM_transporter:Human-GEM',
+            locations=('c',),
+            attrs={'reaction_id': 'MAR001', 'reverse': False},
+        ))
+        result = _call_format(df)
+        main = result[result['interaction_type'] != 'connector']
+        target = main.iloc[0]['target']
+        assert target.startswith('Gene'), f'Non-orphan must use Gene prefix: {target!r}'
 
 
 # ---------------------------------------------------------------------------

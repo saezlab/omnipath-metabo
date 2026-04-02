@@ -125,6 +125,17 @@ def _fmt_gene(gene_id, n: int, reverse: bool = False) -> str:
     return node + '_rev' if reverse else node
 
 
+def _fmt_rxn(rxn_id: str, n: int, reverse: bool = False) -> str:
+    """Format an orphan reaction COSMOS node ID.
+
+    Used for transport reactions with no gene rule (``attrs['orphan'] = True``).
+    The reaction ID is used as the node identifier with an ``Rxn{N}__`` prefix
+    to distinguish these pseudo-nodes from real gene products.
+    """
+    node = f'Rxn{n}__{rxn_id}'
+    return node + '_rev' if reverse else node
+
+
 def _add_gene_connectors(
     bare_gene,
     fmt_gene: str,
@@ -218,9 +229,16 @@ def _format_pre_expanded_row(
 
     The row already exists in the correct direction; this function only
     applies the COSMOS prefix/suffix to the node IDs.
+
+    For orphan reactions (``attrs['orphan'] == True``, ``id_type ==
+    'reaction_id'``), the protein-side node receives an ``Rxn{N}__``
+    prefix instead of ``Gene{N}__``, and a single connector is emitted
+    from the bare reaction ID to the formatted node.  No UniProt ID
+    translation is attempted for orphan nodes.
     """
     attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
     is_rev = attrs.get('reverse', False)
+    is_orphan = attrs.get('orphan', False)
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
     comp = locs[0] if locs else ''
 
@@ -229,7 +247,13 @@ def _format_pre_expanded_row(
     bare_gene = row['target'] if is_met_source else row['source']
 
     fmt_met = _fmt_met(bare_met, comp)
-    fmt_gene = _fmt_gene(bare_gene, n, is_rev)
+
+    if is_orphan:
+        fmt_gene = _fmt_rxn(bare_gene, n, is_rev)
+        connectors.add((bare_gene, fmt_gene))
+    else:
+        fmt_gene = _fmt_gene(bare_gene, n, is_rev)
+        _add_gene_connectors(bare_gene, fmt_gene, connectors)
 
     out = dict(row)
     if is_met_source:
@@ -240,7 +264,6 @@ def _format_pre_expanded_row(
         out['target'] = fmt_met
 
     connectors.add((bare_met, fmt_met))
-    _add_gene_connectors(bare_gene, fmt_gene, connectors)
 
     attrs['cosmos_formatted'] = True
     out['attrs'] = attrs
