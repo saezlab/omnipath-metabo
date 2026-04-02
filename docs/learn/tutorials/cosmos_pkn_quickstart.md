@@ -27,236 +27,212 @@ uv run python
 
 ---
 
-## 1. Build the full PKN
-
-The default build collects all seven resources for human (NCBI taxonomy ID
-9606), translates metabolite IDs to ChEBI and protein IDs to UniProt, and
-applies the expert-curation blacklist.
+## 1. Setup
 
 ```python
 import logging
-logging.basicConfig(level=logging.INFO)
 import warnings
+
 import pandas as pd
+
 from omnipath_metabo.datasets import cosmos
 from omnipath_metabo.datasets.cosmos._record import Interaction
 
 warnings.filterwarnings('ignore', module='paramiko')
 warnings.filterwarnings('ignore', module='rdata')
+logging.basicConfig(level=logging.INFO, format='%(message)s')
 
-logging.basicConfig(level=logging.WARNING, format='%(message)s')
-  
 pd.set_option('display.max_rows', None)
 pd.set_option('display.max_columns', None)
 pd.set_option('display.width', None)
+```
 
-# transporter
+---
+
+## 2. Build and inspect each category
+
+Build each PKN category separately and inspect before formatting.
+Each `build_*()` call returns a `CosmosBundle` with translated ChEBI / UniProt IDs.
+
+### Transporters
+
+```python
+# Human — no orphans, cell-surface only
 transporters = cosmos.build_transporters(
-    recon3d={'include_orphans':False},
+    recon3d={'include_orphans': False},
     gem={'include_orphans': False},
-    cell_surface_only=True)
-df = pd.DataFrame(transporters.network, columns=Interaction._fields)
-df.groupby(['resource']).size()
-df[df['resource']=='TCDB']
-df[df['resource']=='SLC']
-df[df['resource']=='Recon3D']
-df[df['resource']=='GEM_transporter:Human-GEM']
-df[df['resource']=='MRCLinksDB']
-
-df_r = df[df['resource'] == 'GEM_transporter:Human-GEM']    
-for col in ['source_type', 'target_type', 'id_type_a',            
-    'id_type_b','interaction_type']:  
-    print(df_r[col].value_counts())
-
-
-transporters = cosmos.build_transporters(
-    recon3d={'include_orphans':False},
-    gem={'include_orphans': False,'gem':'Mouse-GEM'}, 
-    organism = 10090,
-    cell_surface_only=True)
-
-# Receptors — MRCLinksDB + STITCH-receptor
-receptors = cosmos.build_receptors(cell_surface_only=True)
-df = pd.DataFrame(receptors.network, columns=Interaction._fields)
-df.groupby(['resource']).size()
-df[df['resource']=='STITCH']
-
-receptors = cosmos.build_receptors(organism = 10090,cell_surface_only=True)
-
-
-# allosteric
-allosteric = cosmos.build_allosteric()
-df = pd.DataFrame(transporters.network, columns=Interaction._fields)
-
-
-allosteric = cosmos.build_allosteric(stitch={'score_threshold':
-  900})
-allosteric = cosmos.build_allosteric(stitch=False)  
-  
-  
-  
-  
-  
-bundle = cosmos.build()
-
-print(f'Network edges : {len(bundle.network):,}')
-print(f'Metabolites   : {len(bundle.metabolites):,}')
-print(f'Proteins      : {len(bundle.proteins):,}')
-print(f'GEM reactions : {len(bundle.reactions):,}')
-```
-
-The returned `CosmosBundle` has four components:
-
-| Attribute | Content |
-|---|---|
-| `bundle.network` | List of `Interaction` namedtuples — the edges |
-| `bundle.metabolites` | ChEBI to original-ID provenance per metabolite |
-| `bundle.proteins` | UniProt to original-ID provenance per protein |
-| `bundle.reactions` | GEM reaction metadata (genes, metabolites, subsystem) |
-
-**Note:** The first run downloads and caches data. STITCH and the GEMs are
-large and may take a few minutes. Subsequent runs use the local cache and are
-much faster.
-
----
-
-## 2. Inspect the network as a DataFrame
-
-```python
-import pandas as pd
-from omnipath_metabo.datasets.cosmos._record import Interaction
-
-df = pd.DataFrame(bundle.network, columns=Interaction._fields)
-print(df.head())
-```
-
-Column reference:
-
-| Column | Description |
-|---|---|
-| `source` | Source entity ID (ChEBI or UniProt after translation) |
-| `target` | Target entity ID |
-| `source_type` | `'small_molecule'` or `'protein'` |
-| `target_type` | `'small_molecule'` or `'protein'` |
-| `id_type_a` | ID namespace of source after translation |
-| `id_type_b` | ID namespace of target after translation |
-| `interaction_type` | `'transport'`, `'ligand_receptor'`, `'allosteric_regulation'`, ... |
-| `resource` | Source database, e.g. `'TCDB'`, `'STITCH'`, `'GEM:Human-GEM'`, `'Recon3D'` |
-| `mor` | Mode of regulation: `1` (activation), `-1` (inhibition), `0` (unknown) |
-| `locations` | Tuple of compartment codes, e.g. `('e', 'c')` |
-| `attrs` | Dict with extra metadata: `reaction_id`, `reverse`, `transport_from`, ... |
-
-Summarise by resource and interaction type:
-
-```python
-print(df.groupby(['resource', 'interaction_type']).size().to_string())
-```
-
----
-
-## 3. Category-specific subsets
-
-Four convenience functions build subsets without loading irrelevant resources:
-
-```python
-# Transporters — TCDB, SLC, GEM_transporter, Recon3D, STITCH-transporter
-transporters = cosmos.build_transporters()
+    cell_surface_only=True,
+)
 df_t = pd.DataFrame(transporters.network, columns=Interaction._fields)
-print(f'Transporter edges : {len(df_t):,}')
 
-# Receptors — MRCLinksDB + STITCH-receptor
-receptors = cosmos.build_receptors()
+print(df_t.groupby('resource').size())
+print(df_t[df_t['resource'] == 'TCDB'])
+print(df_t[df_t['resource'] == 'SLC'])
+print(df_t[df_t['resource'] == 'Recon3D'])
+print(df_t[df_t['resource'] == 'GEM_transporter:Human-GEM'])
+print(df_t[df_t['resource'] == 'MRCLinksDB'])
+
+# Inspect GEM transporter column types
+df_gem = df_t[df_t['resource'] == 'GEM_transporter:Human-GEM']
+for col in ['source_type', 'target_type', 'id_type_a', 'id_type_b', 'interaction_type']:
+    print(df_gem[col].value_counts())
+```
+
+```python
+# Mouse — include orphans, cell-surface only
+transporters_mouse = cosmos.build_transporters(
+    recon3d={'include_orphans': True},
+    gem={'include_orphans': True, 'gem': 'Mouse-GEM'},
+    organism=10090,
+    cell_surface_only=True,
+)
+df_tm = pd.DataFrame(transporters_mouse.network, columns=Interaction._fields)
+
+# Inspect orphan transport reactions (no gene rule)
+df_gem_mouse = df_tm[df_tm['resource'] == 'GEM_transporter:Mouse-GEM']
+orphans = df_gem_mouse[
+    df_gem_mouse['attrs'].apply(lambda a: isinstance(a, dict) and a.get('orphan', False)) &
+    (df_gem_mouse['source_type'] == 'small_molecule')
+]
+print(f'Orphan transport reactions (Mouse-GEM): {orphans["attrs"].apply(lambda a: a["reaction_id"]).nunique()}')
+print(orphans[['source', 'target', 'locations', 'attrs']].head())
+```
+
+### Receptors
+
+```python
+# Human
+receptors = cosmos.build_receptors(cell_surface_only=True)
 df_r = pd.DataFrame(receptors.network, columns=Interaction._fields)
-print(f'Receptor edges    : {len(df_r):,}')
+print(df_r.groupby('resource').size())
+print(df_r[df_r['resource'] == 'STITCH'])
+```
 
-# Allosteric regulation — BRENDA + STITCH-other
+```python
+# Mouse
+receptors_mouse = cosmos.build_receptors(organism=10090, cell_surface_only=True)
+df_rm = pd.DataFrame(receptors_mouse.network, columns=Interaction._fields)
+print(df_rm.groupby('resource').size())
+```
+
+### Allosteric regulation
+
+```python
+# Default: BRENDA + STITCH-other
 allosteric = cosmos.build_allosteric()
 df_a = pd.DataFrame(allosteric.network, columns=Interaction._fields)
-print(f'Allosteric edges  : {len(df_a):,}')
+print(df_a.groupby(['resource', 'interaction_type']).size())
 
-# Enzyme-metabolite — Human-GEM stoichiometric reactions only
-enzyme_met = cosmos.build_enzyme_metabolite()
+# Higher STITCH confidence threshold
+allosteric_strict = cosmos.build_allosteric(stitch={'score_threshold': 900})
+
+# BRENDA only
+allosteric_brenda = cosmos.build_allosteric(stitch=False)
+```
+
+### Enzyme–metabolite (GEM stoichiometric reactions)
+
+```python
+enzyme_met = cosmos.build_enzyme_metabolite(gem={'include_orphans': False})
 df_e = pd.DataFrame(enzyme_met.network, columns=Interaction._fields)
-print(f'Enzyme-metab edges: {len(df_e):,}')
+print(df_e.groupby('resource').size())
+print(f'Unique reactions: {df_e["attrs"].apply(lambda a: a.get("reaction_id", "")).nunique()}')
 ```
 
 ---
 
-## 4. Format for cosmosR
+## 3. Format for cosmosR
 
-`format_pkn()` applies the node-ID prefixes and suffixes expected by the
-COSMOS R package:
+After inspecting, format each bundle separately using the category-specific
+format functions.  Node IDs are converted to COSMOS R package conventions:
 
 - Metabolites: `Metab__CHEBI:XXXX_<compartment>`
 - Proteins (forward): `Gene<N>__<UniProtAC>`
 - Proteins (reverse): `Gene<N>__<UniProtAC>_rev`
+- Orphan reactions (no gene): `Rxn<N>__<reaction_id>`
 
 ```python
-from omnipath_metabo.datasets.cosmos import format_pkn
+from omnipath_metabo.datasets.cosmos import (
+    format_transporters,
+    format_receptors,
+    format_allosteric,
+    format_enzyme_metabolite,
+)
 
-formatted = format_pkn(bundle)
-df_fmt = pd.DataFrame(formatted.network)
-print(df_fmt[['source', 'target', 'mor', 'interaction_type', 'resource']].head(10))
+fmt_t  = format_transporters(transporters)
+fmt_r  = format_receptors(receptors)
+fmt_a  = format_allosteric(allosteric)
+fmt_e  = format_enzyme_metabolite(enzyme_met)
 
-# Save — ready to load in cosmosR::preprocess_COSMOS_*
-df_fmt[['source', 'target', 'mor']].to_csv('cosmos_pkn.csv', index=False)
+for name, bundle in [('transporters', fmt_t), ('receptors', fmt_r),
+                     ('allosteric', fmt_a), ('enzyme_met', fmt_e)]:
+    df = pd.DataFrame(bundle.network)
+    main = df[df['interaction_type'] != 'connector']
+    print(f'{name}: {len(main):,} edges, {len(df):,} with connectors')
+```
+
+Export each category — ready to load in `cosmosR::preprocess_COSMOS_*`:
+
+```python
+for name, bundle in [('transporters', fmt_t), ('receptors', fmt_r),
+                     ('allosteric', fmt_a), ('enzyme_met', fmt_e)]:
+    df = pd.DataFrame(bundle.network)
+    df[['source', 'target', 'mor']].to_csv(f'cosmos_pkn_{name}.csv', index=False)
 ```
 
 ---
 
-## 5. Customise the build
+## 4. Customise the build
 
 **Change organism (mouse):**
 
 ```python
-bundle_mouse = cosmos.build(organism=10090)
+receptors_mouse = cosmos.build_receptors(organism=10090, cell_surface_only=True)
 ```
 
 **Lower the STITCH confidence threshold:**
 
 ```python
-bundle_loose = cosmos.build(stitch={'score_threshold': 500})
+allosteric_loose = cosmos.build_allosteric(stitch={'score_threshold': 500})
 ```
 
-**Disable the GEMs for a faster build:**
+**Disable GEMs for a faster transporter build:**
 
 ```python
-bundle_fast = cosmos.build(gem=False, recon3d=False)
+transporters_fast = cosmos.build_transporters(gem=False, recon3d=False)
 ```
 
 **TCDB and SLC only, without ID translation:**
 
 ```python
-bundle_minimal = cosmos.build(
-    brenda=False,
-    mrclinksdb=False,
-    stitch=False,
+transporters_minimal = cosmos.build_transporters(
     gem=False,
     recon3d=False,
+    mrclinksdb=False,
     translate_ids=False,
 )
 ```
 
 ---
 
-## 6. Provenance lookup
+## 5. Provenance lookup
 
 The bundle tracks the mapping between translated canonical IDs and the original
 identifiers from each source database.
 
 ```python
-# Metabolites: ChEBI <- original source ID
-df_met = pd.DataFrame(bundle.metabolites)
+# Metabolites: ChEBI ← original source ID
+df_met = pd.DataFrame(transporters.metabolites)
 # columns: chebi | original_id | id_type | resource | name
 print(df_met.head())
 
-# Proteins: UniProt <- original ID (ENSP, gene symbol, ...)
-df_prot = pd.DataFrame(bundle.proteins)
+# Proteins: UniProt ← original ID (ENSP, Ensembl, Entrez, ...)
+df_prot = pd.DataFrame(transporters.proteins)
 # columns: uniprot | original_id | id_type | resource | gene_symbol
 print(df_prot.head())
 
 # GEM reactions
-df_rxn = pd.DataFrame(bundle.reactions)
+df_rxn = pd.DataFrame(transporters.reactions)
 # columns: reaction_id | gem | subsystem | genes | metabolites
 print(df_rxn.head())
 ```
@@ -269,8 +245,8 @@ print(df_rxn.head())
 |---|---|---|
 | TCDB | Transporters | Multi-species |
 | SLC | Transporters | Human only |
-| STITCH | Transporters, receptors, allosteric | Multi-species |
-| MRCLinksDB | Receptors | Human, mouse |
+| MRCLinksDB | Transporters, receptors | Human, mouse |
+| STITCH | Receptors, allosteric | Multi-species |
 | BRENDA | Allosteric regulation | Multi-species |
-| Human-GEM | Enzyme-metabolite, GEM transporters | Human |
-| Recon3D | GEM transporters | Human |
+| Human-GEM | Transporters, enzyme-metabolite | Human |
+| Recon3D | Transporters | Human |
