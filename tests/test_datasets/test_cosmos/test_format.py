@@ -14,6 +14,10 @@ from omnipath_metabo.datasets.cosmos._format import (
     _other_comp,
     _row_category,
     format_pkn,
+    format_allosteric,
+    format_enzyme_metabolite,
+    format_receptors,
+    format_transporters,
 )
 
 
@@ -704,3 +708,146 @@ class TestCosmosFormattedFlag:
         df = pd.DataFrame(columns=_INTERACTION_COLS)
         result = _call_format(df)
         assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# Category-specific format wrappers
+# ---------------------------------------------------------------------------
+
+def _make_bundle(*rows):
+    """Build a CosmosBundle from row dicts (post-translation Interaction records)."""
+    from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+    from omnipath_metabo.datasets.cosmos._record import Interaction
+    return CosmosBundle(
+        network=[Interaction(**r) for r in rows],
+    )
+
+
+def _bundle_main_nodes(bundle) -> pd.DataFrame:
+    """Return non-connector edges from a formatted bundle as a DataFrame."""
+    from omnipath_metabo.datasets.cosmos._record import CosmosEdge
+    df = pd.DataFrame(bundle.network)
+    return df[df['interaction_type'] != 'connector']
+
+
+class TestFormatTransporters:
+    def _bundle(self):
+        return _make_bundle(
+            _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
+            _row(interaction_type='ligand_receptor', resource='MRCLinksDB', locations=()),
+            _row(interaction_type='allosteric_regulation', resource='BRENDA', locations=('c',)),
+        )
+
+    def test_only_transporter_rows_in_output(self):
+        main = _bundle_main_nodes(format_transporters(self._bundle()))
+        resources = set(main['resource'])
+        assert 'TCDB' in resources
+        assert 'MRCLinksDB' not in resources
+        assert 'BRENDA' not in resources
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_transporters(self._bundle()), CosmosBundle)
+
+    def test_plain_df_passed_through(self):
+        """Plain DataFrame (not a bundle) bypasses filtering."""
+        df = _df(_row(interaction_type='transport', resource='TCDB', locations=('e', 'c')))
+        result = format_transporters(df)
+        main = _bundle_main_nodes(result)
+        assert len(main) == 4  # TCDB row expanded to 4
+
+    def test_category_pure_bundle_is_noop(self):
+        """Bundle already containing only transporters: same output as format_pkn."""
+        bundle = _make_bundle(
+            _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
+        )
+        assert len(_bundle_main_nodes(format_transporters(bundle))) == 4
+
+
+class TestFormatReceptors:
+    def _bundle(self):
+        return _make_bundle(
+            _row(interaction_type='ligand_receptor', resource='MRCLinksDB', locations=()),
+            _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
+            _row(interaction_type='allosteric_regulation', resource='BRENDA', locations=('c',)),
+        )
+
+    def test_only_receptor_rows_in_output(self):
+        main = _bundle_main_nodes(format_receptors(self._bundle()))
+        resources = set(main['resource'])
+        assert 'MRCLinksDB' in resources
+        assert 'TCDB' not in resources
+        assert 'BRENDA' not in resources
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_receptors(self._bundle()), CosmosBundle)
+
+
+class TestFormatAllosteric:
+    def _bundle(self):
+        return _make_bundle(
+            _row(interaction_type='allosteric_regulation', resource='BRENDA', locations=('c',)),
+            _row(interaction_type='other', resource='STITCH', locations=()),
+            _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
+            _row(interaction_type='ligand_receptor', resource='MRCLinksDB', locations=()),
+        )
+
+    def test_brenda_allosteric_included(self):
+        main = _bundle_main_nodes(format_allosteric(self._bundle()))
+        assert 'BRENDA' in set(main['resource'])
+
+    def test_stitch_other_included(self):
+        main = _bundle_main_nodes(format_allosteric(self._bundle()))
+        assert 'STITCH' in set(main['resource'])
+
+    def test_transporter_excluded(self):
+        main = _bundle_main_nodes(format_allosteric(self._bundle()))
+        assert 'TCDB' not in set(main['resource'])
+
+    def test_receptor_excluded(self):
+        main = _bundle_main_nodes(format_allosteric(self._bundle()))
+        assert 'MRCLinksDB' not in set(main['resource'])
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_allosteric(self._bundle()), CosmosBundle)
+
+
+class TestFormatEnzymeMetabolite:
+    def _bundle(self):
+        return _make_bundle(
+            _row(
+                source='CHEBI:15422', target='ENSG00000141510',
+                source_type='small_molecule', target_type='protein',
+                id_type_a='chebi', id_type_b='ensg',
+                interaction_type='catalysis', resource='GEM:Human-GEM',
+                locations=('c',),
+                attrs={'reaction_id': 'MAR001', 'reverse': False},
+            ),
+            _row(
+                source='CHEBI:15422', target='ENSG00000141510',
+                source_type='small_molecule', target_type='protein',
+                id_type_a='chebi', id_type_b='ensg',
+                interaction_type='catalysis', resource='GEM_transporter:Human-GEM',
+                locations=('e',),
+                attrs={'reaction_id': 'MAR002', 'reverse': False},
+            ),
+            _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
+        )
+
+    def test_gem_metabolic_included(self):
+        main = _bundle_main_nodes(format_enzyme_metabolite(self._bundle()))
+        assert 'GEM:Human-GEM' in set(main['resource'])
+
+    def test_gem_transporter_excluded(self):
+        main = _bundle_main_nodes(format_enzyme_metabolite(self._bundle()))
+        assert 'GEM_transporter:Human-GEM' not in set(main['resource'])
+
+    def test_tcdb_excluded(self):
+        main = _bundle_main_nodes(format_enzyme_metabolite(self._bundle()))
+        assert 'TCDB' not in set(main['resource'])
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_enzyme_metabolite(self._bundle()), CosmosBundle)

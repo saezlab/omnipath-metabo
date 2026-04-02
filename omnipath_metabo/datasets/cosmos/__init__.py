@@ -72,6 +72,10 @@ __all__ = [
     'config',
     'default_config',
     'format_pkn',
+    'format_transporters',
+    'format_receptors',
+    'format_allosteric',
+    'format_enzyme_metabolite',
     'resources',
     'CosmosBundle',
     'CosmosEdge',
@@ -84,5 +88,11 @@ from . import resources
 from ._build import build, build_allosteric, build_enzyme_metabolite, build_receptors, build_transporters
 from ._bundle import CosmosBundle
 from ._config import config, default_config
-from ._format import format_pkn
+from ._format import (
+    format_pkn,
+    format_transporters,
+    format_receptors,
+    format_allosteric,
+    format_enzyme_metabolite,
+)
 from ._record import CosmosEdge, CosmosMetabolite, CosmosProtein, CosmosReaction

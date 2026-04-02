@@ -69,7 +69,13 @@ formatted network nodes.
 
 from __future__ import annotations
 
-__all__ = ['format_pkn']
+__all__ = [
+    'format_pkn',
+    'format_transporters',
+    'format_receptors',
+    'format_allosteric',
+    'format_enzyme_metabolite',
+]
 
 import logging
 
@@ -556,3 +562,152 @@ def format_pkn(
         proteins=in_bundle.proteins if in_bundle else [],
         reactions=in_bundle.reactions if in_bundle else [],
     )
+
+
+# ---------------------------------------------------------------------------
+# Category-specific format wrappers
+# ---------------------------------------------------------------------------
+
+def _filter_bundle_network(bundle, predicate) -> 'CosmosBundle':
+    """
+    Return a copy of *bundle* with ``network`` filtered by *predicate*.
+
+    Provenance lists (``metabolites``, ``proteins``, ``reactions``) are
+    carried through unchanged — they reflect the build-step scope, which
+    is already category-specific when the bundle comes from a
+    ``build_*()`` call.
+
+    Args:
+        bundle: :class:`~._bundle.CosmosBundle` to filter.
+        predicate: Callable ``(Interaction) → bool``.
+
+    Returns:
+        New :class:`~._bundle.CosmosBundle` with filtered ``network``.
+    """
+    from ._bundle import CosmosBundle
+
+    return CosmosBundle(
+        network=[row for row in bundle.network if predicate(row)],
+        metabolites=bundle.metabolites,
+        proteins=bundle.proteins,
+        reactions=bundle.reactions,
+    )
+
+
+def format_transporters(source) -> 'CosmosBundle':
+    """
+    Format the transporter category of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters
+    *source* to transporter rows before formatting.  When *source* already
+    comes from :func:`~._build.build_transporters`, the filter is a no-op.
+
+    Orphan transport reactions included in *source* (from a build step
+    with ``include_orphans=True``) are formatted as ``Rxn{N}__<reaction_id>``
+    nodes.  To exclude them, pass ``include_orphans=False`` to the
+    upstream build call before formatting.
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted transporter edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: _row_category(row.interaction_type, row.resource) == 'transporter',
+        )
+    return format_pkn(source)
+
+
+def format_receptors(source) -> 'CosmosBundle':
+    """
+    Format the receptor category of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters
+    *source* to receptor rows before formatting.  When *source* already
+    comes from :func:`~._build.build_receptors`, the filter is a no-op.
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted receptor edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: _row_category(row.interaction_type, row.resource) == 'receptor',
+        )
+    return format_pkn(source)
+
+
+def format_allosteric(source) -> 'CosmosBundle':
+    """
+    Format the allosteric-regulation category of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters
+    *source* to allosteric rows before formatting.  When *source* already
+    comes from :func:`~._build.build_allosteric`, the filter is a no-op.
+
+    Filter predicate matches :func:`~._build.build_allosteric`:
+
+    - ``interaction_type == 'allosteric_regulation'`` (BRENDA)
+    - ``resource == 'STITCH'`` and ``interaction_type == 'other'`` (STITCH other)
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted allosteric edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: (
+                row.interaction_type == 'allosteric_regulation' or
+                (row.resource == 'STITCH' and row.interaction_type == 'other')
+            ),
+        )
+    return format_pkn(source)
+
+
+def format_enzyme_metabolite(source) -> 'CosmosBundle':
+    """
+    Format the enzyme-metabolite (metabolic GEM) category of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters
+    *source* to metabolic GEM rows before formatting.  When *source* already
+    comes from :func:`~._build.build_enzyme_metabolite`, the filter is a no-op.
+
+    Filter predicate matches :func:`~._build.build_enzyme_metabolite`:
+
+    - ``resource.startswith('GEM:')`` — metabolic GEM edges only.
+      ``'GEM_transporter:...'`` resources are excluded because
+      ``'GEM_transporter:...'.startswith('GEM:')`` is ``False``.
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted enzyme-metabolite edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: row.resource.startswith('GEM:'),
+        )
+    return format_pkn(source)
