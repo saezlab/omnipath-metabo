@@ -11,7 +11,6 @@ from omnipath_metabo.datasets.cosmos._format import (
     _fmt_met,
     _fmt_rxn,
     _is_pre_expanded,
-    _other_comp,
     _row_category,
     format_pkn,
     format_allosteric,
@@ -103,48 +102,32 @@ class TestFmtGene:
     def test_forward_explicit_false(self):
         assert _fmt_gene('ENSG00000141510', 5, reverse=False) == 'Gene5__ENSG00000141510'
 
-    def test_frozenset_uses_min_ac(self):
-        """frozenset input: alphabetically first AC used for the node label."""
+    def test_frozenset_joins_all_acs(self):
+        """frozenset input: all ACs joined with ';' in sorted order."""
         fs = frozenset({'Q99999', 'P12345'})
-        assert _fmt_gene(fs, 1) == 'Gene1__P12345'
+        assert _fmt_gene(fs, 1) == 'Gene1__P12345;Q99999'
 
     def test_frozenset_reverse(self):
         fs = frozenset({'Q99999', 'P12345'})
-        assert _fmt_gene(fs, 2, reverse=True) == 'Gene2__P12345_rev'
+        assert _fmt_gene(fs, 2, reverse=True) == 'Gene2__P12345;Q99999_rev'
 
 
 class TestFmtRxn:
     def test_forward(self):
-        assert _fmt_rxn('MAR99999', 1) == 'Rxn1__MAR99999'
+        assert _fmt_rxn('MAR99999', 1) == 'Gene1__orphanReacMAR99999'
 
     def test_forward_large_n(self):
-        assert _fmt_rxn('MAR99999', 42) == 'Rxn42__MAR99999'
+        assert _fmt_rxn('MAR99999', 42) == 'Gene42__orphanReacMAR99999'
 
     def test_reverse(self):
-        assert _fmt_rxn('MAR99999', 1, reverse=True) == 'Rxn1__MAR99999_rev'
+        assert _fmt_rxn('MAR99999', 1, reverse=True) == 'Gene1__orphanReacMAR99999_rev'
 
     def test_forward_explicit_false(self):
-        assert _fmt_rxn('MAR99999', 5, reverse=False) == 'Rxn5__MAR99999'
+        assert _fmt_rxn('MAR99999', 5, reverse=False) == 'Gene5__orphanReacMAR99999'
 
     def test_recon3d_reaction_id(self):
-        assert _fmt_rxn('R_TKT', 3) == 'Rxn3__R_TKT'
+        assert _fmt_rxn('R_TKT', 3) == 'Gene3__orphanReacR_TKT'
 
-
-class TestOtherComp:
-    def test_plasma_membrane(self):
-        assert _other_comp(('e', 'c')) == 'e'
-
-    def test_mitochondrial(self):
-        assert _other_comp(('m', 'c')) == 'm'
-
-    def test_first_non_c(self):
-        assert _other_comp(('e', 'm', 'c')) == 'e'
-
-    def test_only_c(self):
-        assert _other_comp(('c',)) == ''
-
-    def test_empty(self):
-        assert _other_comp(()) == ''
 
 
 # ---------------------------------------------------------------------------
@@ -282,7 +265,7 @@ class TestFormatTransporter:
         result = self._run()
         main = result[result['interaction_type'] != 'connector']
         r = main.iloc[0]
-        assert r['source'] == 'Metab__CHEBI:15422_e'
+        assert r['source'] == 'Metab__CHEBI:15422_e;c'
         assert r['target'] == 'Gene1__ENSG00000141510'
         assert r['attrs']['reverse'] is False
 
@@ -307,21 +290,8 @@ class TestFormatTransporter:
         main = result[result['interaction_type'] != 'connector']
         r = main.iloc[3]
         assert r['source'] == 'Gene1__ENSG00000141510_rev'
-        assert r['target'] == 'Metab__CHEBI:15422_e'
+        assert r['target'] == 'Metab__CHEBI:15422_e;c'
         assert r['attrs']['reverse'] is True
-
-    def test_stitch_no_compartment(self):
-        """STITCH has no compartment; both metabolite nodes are the same bare ID."""
-        result = self._run(locations=())
-        main = result[result['interaction_type'] != 'connector']
-        assert len(main) == 4
-        sources = set(main['source'])
-        targets = set(main['target'])
-        # Both metabolite nodes should be the same bare Metab__ (no suffix)
-        assert 'Metab__CHEBI:15422' in sources | targets
-        # Gene nodes should differ only by _rev
-        assert 'Gene1__ENSG00000141510' in sources | targets
-        assert 'Gene1__ENSG00000141510_rev' in sources | targets
 
     def test_cosmos_formatted_flag_set(self):
         result = self._run()
@@ -331,10 +301,8 @@ class TestFormatTransporter:
     def test_source_target_type_correct(self):
         result = self._run()
         main = result[result['interaction_type'] != 'connector']
-        # Rows 0 and 2 are met→gene
         assert main.iloc[0]['source_type'] == 'small_molecule'
         assert main.iloc[0]['target_type'] == 'protein'
-        # Rows 1 and 3 are gene→met
         assert main.iloc[1]['source_type'] == 'protein'
         assert main.iloc[1]['target_type'] == 'small_molecule'
 
@@ -368,25 +336,9 @@ class TestConnectorEdges:
         conn = result[result['interaction_type'] == 'connector']
         sources = set(conn['source'])
         targets = set(conn['target'])
-        # Bare ENSG → Gene1__ENSG (forward connector)
         assert 'ENSG00000141510' in sources
         assert 'Gene1__ENSG00000141510' in targets
-        # Reverse connector
         assert 'Gene1__ENSG00000141510_rev' in targets
-
-    def test_metabolite_connector_present(self):
-        df = _df(_row(
-            source='CHEBI:15422',
-            target='ENSG00000141510',
-            interaction_type='transport',
-            resource='TCDB',
-            locations=('e', 'c'),
-        ))
-        result = _call_format(df)
-        conn = result[result['interaction_type'] == 'connector']
-        targets = set(conn['target'])
-        assert 'Metab__CHEBI:15422_e' in targets
-        assert 'Metab__CHEBI:15422_c' in targets
 
     def test_connectors_deduplicated(self):
         """Two rows with the same gene/metabolite → connectors not duplicated."""
@@ -411,8 +363,8 @@ class TestConnectorEdges:
         conn = result[result['interaction_type'] == 'connector']
         assert (conn['resource'] == 'COSMOS_formatter').all()
 
-    def test_frozenset_gene_node_uses_min_ac(self):
-        """A frozenset target → formatted node uses min() AC; one main row."""
+    def test_frozenset_gene_node_joins_all_acs(self):
+        """A frozenset target → formatted node contains all ACs joined with ';'."""
         df = _df(_row(
             target=frozenset({'Q99999', 'P12345'}),
             interaction_type='transport',
@@ -421,13 +373,13 @@ class TestConnectorEdges:
         ))
         result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
-        # 4 rows (transporter expansion), all use 'P12345' (min) in node ID
+        # 4 rows (transporter expansion), all use 'P12345;Q99999' in node ID
         assert len(main) == 4
         gene_targets = main[main['target_type'] == 'protein']['target'].tolist()
-        assert all('P12345' in t for t in gene_targets)
+        assert all('P12345;Q99999' in t for t in gene_targets)
 
-    def test_frozenset_gene_connectors_per_ac(self):
-        """Each AC in a frozenset target gets its own connector edge."""
+    def test_frozenset_gene_single_connector(self):
+        """A frozenset target emits one connector from the joined bare ID."""
         df = _df(_row(
             target=frozenset({'Q99999', 'P12345'}),
             interaction_type='transport',
@@ -436,10 +388,8 @@ class TestConnectorEdges:
         ))
         result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
-        conn_sources = set(conn['source'])
-        # Both ACs must appear as connector sources
-        assert 'P12345' in conn_sources
-        assert 'Q99999' in conn_sources
+        gene_conn = conn[conn['source'] == 'P12345;Q99999']
+        assert len(gene_conn) >= 1  # forward and reverse connectors, same source
 
 
 # ---------------------------------------------------------------------------
@@ -521,7 +471,7 @@ class TestFormatPreExpanded:
 # ---------------------------------------------------------------------------
 
 class TestFormatSimple:
-    def test_receptor_no_reverse_gene(self):
+    def test_receptor_bare_uniprot_target(self):
         df = _df(_row(
             source='CHEBI:9251',
             target='ENSG00000123456',
@@ -533,9 +483,9 @@ class TestFormatSimple:
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
         assert main.iloc[0]['source'] == 'Metab__CHEBI:9251'
-        assert main.iloc[0]['target'] == 'Gene1__ENSG00000123456'
+        assert main.iloc[0]['target'] == 'ENSG00000123456'
 
-    def test_other_brenda_no_reverse(self):
+    def test_other_brenda_bare_uniprot(self):
         df = _df(_row(
             source='CHEBI:30031',
             target='ENSG00000099876',
@@ -547,7 +497,7 @@ class TestFormatSimple:
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
         assert main.iloc[0]['source'] == 'Metab__CHEBI:30031_c'
-        assert main.iloc[0]['target'] == 'Gene1__ENSG00000099876'
+        assert main.iloc[0]['target'] == 'ENSG00000099876'
 
     def test_receptor_no_rev_connector(self):
         """Receptors should not produce a *_rev gene connector."""
@@ -624,53 +574,49 @@ class TestOrphanHandling:
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 0
 
-    def test_orphan_uses_rxn_prefix_not_gene(self):
-        """Orphan node must use Rxn{N}__ prefix, not Gene{N}__."""
+    def test_orphan_uses_gene_orphanreac_prefix(self):
+        """Orphan node must use Gene{N}__orphanReac prefix."""
         result = _call_format(self._orphan_df())
         main = result[result['interaction_type'] != 'connector']
         target = main.iloc[0]['target']
-        assert target.startswith('Rxn'), f'Expected Rxn prefix, got: {target!r}'
-        assert not target.startswith('Gene'), f'Must not use Gene prefix: {target!r}'
+        assert 'orphanReac' in target, f'Expected orphanReac in node ID, got: {target!r}'
+        assert target.startswith('Gene'), f'Expected Gene prefix, got: {target!r}'
 
     def test_orphan_forward_node_id(self):
         result = _call_format(self._orphan_df())
         main = result[result['interaction_type'] != 'connector']
-        assert main.iloc[0]['target'] == 'Rxn1__MAR99999'
+        assert main.iloc[0]['target'] == 'Gene1__orphanReacMAR99999'
 
     def test_orphan_reverse_node_has_rev_suffix(self):
         result = _call_format(self._orphan_df(reverse=True))
         main = result[result['interaction_type'] != 'connector']
         target = main.iloc[0]['target']
-        assert target == 'Rxn1__MAR99999_rev'
+        assert target == 'Gene1__orphanReacMAR99999_rev'
 
-    def test_orphan_connector_is_rxn_id_to_rxn_node(self):
-        """Connector: bare reaction_id → Rxn{N}__reaction_id (plain string, no frozenset)."""
+    def test_orphan_connector_is_rxn_id_to_orphan_node(self):
+        """Connector: bare reaction_id → Gene{N}__orphanReac<id> (plain string, no frozenset)."""
         result = _call_format(self._orphan_df())
         conn = result[result['interaction_type'] == 'connector']
         rxn_conn = conn[conn['source'] == 'MAR99999']
         assert len(rxn_conn) == 1
-        assert rxn_conn.iloc[0]['target'] == 'Rxn1__MAR99999'
+        assert rxn_conn.iloc[0]['target'] == 'Gene1__orphanReacMAR99999'
 
-    def test_orphan_no_extra_gene_connector(self):
-        """No Gene__ connector should appear for an orphan row."""
+    def test_orphan_no_extra_plain_gene_connector(self):
+        """No Gene__ connector without orphanReac should appear for an orphan row."""
         result = _call_format(self._orphan_df())
         conn = result[result['interaction_type'] == 'connector']
-        gene_conn = conn[conn['target'].str.startswith('Gene', na=False)]
-        assert len(gene_conn) == 0
+        plain_gene_conn = conn[
+            conn['target'].str.startswith('Gene', na=False) &
+            ~conn['target'].str.contains('orphanReac', na=False)
+        ]
+        assert len(plain_gene_conn) == 0
 
-    def test_orphan_metabolite_connector_still_added(self):
-        """Metabolite connector is emitted regardless of orphan status."""
-        result = _call_format(self._orphan_df())
-        conn = result[result['interaction_type'] == 'connector']
-        met_conn = conn[conn['target'] == 'Metab__CHEBI:15422_c']
-        assert len(met_conn) == 1
-
-    def test_orphan_gem_transporter_uses_rxn_prefix(self):
-        """GEM_transporter orphan rows also use Rxn prefix."""
+    def test_orphan_gem_transporter_uses_gene_orphanreac_prefix(self):
+        """GEM_transporter orphan rows also use Gene{N}__orphanReac prefix."""
         result = _call_format(self._orphan_df(resource='GEM_transporter:Human-GEM'))
         main = result[result['interaction_type'] != 'connector']
         target = main.iloc[0]['target']
-        assert target.startswith('Rxn')
+        assert target.startswith('Gene') and 'orphanReac' in target
 
     def test_non_orphan_gem_still_uses_gene_prefix(self):
         """Regression: non-orphan GEM rows must still produce Gene{N}__ nodes."""
@@ -762,6 +708,65 @@ class TestFormatTransporters:
             _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
         )
         assert len(_bundle_main_nodes(format_transporters(bundle))) == 4
+
+
+class TestFormatReceptorRow:
+    """Receptor rows: bare UniProt target, one row per compartment."""
+
+    def _run(self, locations=('e', 'c')):
+        df = _df(_row(
+            source='CHEBI:15422',
+            target='P00533',
+            source_type='small_molecule',
+            target_type='protein',
+            interaction_type='ligand_receptor',
+            resource='MRCLinksDB',
+            locations=locations,
+        ))
+        return _call_format(df)
+
+    def test_always_one_row(self):
+        result = self._run(locations=('e', 'c'))
+        main = result[result['interaction_type'] != 'connector']
+        assert len(main) == 1
+
+    def test_no_location_gives_one_row(self):
+        result = self._run(locations=())
+        main = result[result['interaction_type'] != 'connector']
+        assert len(main) == 1
+
+    def test_protein_node_is_bare_uniprot(self):
+        result = self._run(locations=('e', 'c'))
+        main = result[result['interaction_type'] != 'connector']
+        assert main.iloc[0]['target'] == 'P00533'
+        assert not main.iloc[0]['target'].startswith('Gene')
+
+    def test_metabolite_node_joins_compartments(self):
+        result = self._run(locations=('e', 'c'))
+        main = result[result['interaction_type'] != 'connector']
+        assert main.iloc[0]['source'] == 'Metab__CHEBI:15422_e;c'
+
+    def test_single_location(self):
+        result = self._run(locations=('e',))
+        main = result[result['interaction_type'] != 'connector']
+        assert main.iloc[0]['source'] == 'Metab__CHEBI:15422_e'
+
+    def test_no_location_metabolite_has_no_suffix(self):
+        result = self._run(locations=())
+        main = result[result['interaction_type'] != 'connector']
+        assert main.iloc[0]['source'] == 'Metab__CHEBI:15422'
+
+    def test_cosmos_formatted_flag(self):
+        result = self._run()
+        main = result[result['interaction_type'] != 'connector']
+        assert all(r['cosmos_formatted'] is True for r in main['attrs'])
+
+    def test_no_gene_connector(self):
+        """No Gene__ connector — protein node is already the bare UniProt AC."""
+        result = self._run(locations=('e', 'c'))
+        conn = result[result['interaction_type'] == 'connector']
+        gene_conn = conn[conn['target'].str.startswith('Gene', na=False)]
+        assert len(gene_conn) == 0
 
 
 class TestFormatReceptors:

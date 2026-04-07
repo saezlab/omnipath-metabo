@@ -86,13 +86,13 @@ transporters_mouse = cosmos.build_transporters(
     organism=10090,
     cell_surface_only=True,
 )
-df_tm = pd.DataFrame(transporters_mouse.network, columns=Interaction._fields)
+df = pd.DataFrame(transporters_mouse.network, columns=Interaction._fields)
+df_tm = df[df['resource'] == 'GEM_transporter:Mouse-GEM']
 
 # Inspect orphan transport reactions (no gene rule)
-df_gem_mouse = df_tm[df_tm['resource'] == 'GEM_transporter:Mouse-GEM']
-orphans = df_gem_mouse[
-    df_gem_mouse['attrs'].apply(lambda a: isinstance(a, dict) and a.get('orphan', False)) &
-    (df_gem_mouse['source_type'] == 'small_molecule')
+orphans = df_tm[
+    df_tm['attrs'].apply(lambda a: isinstance(a, dict) and a.get('orphan', False)) &
+    (df_tm['source_type'] == 'small_molecule')
 ]
 print(f'Orphan transport reactions (Mouse-GEM): {orphans["attrs"].apply(lambda a: a["reaction_id"]).nunique()}')
 print(orphans[['source', 'target', 'locations', 'attrs']].head())
@@ -146,10 +146,17 @@ print(f'Unique reactions: {df_e["attrs"].apply(lambda a: a.get("reaction_id", ""
 After inspecting, format each bundle separately using the category-specific
 format functions.  Node IDs are converted to COSMOS R package conventions:
 
-- Metabolites: `Metab__CHEBI:XXXX_<compartment>`
-- Proteins (forward): `Gene<N>__<UniProtAC>`
+- Metabolites: `Metab__CHEBI:XXXX_<comp1;comp2>` (all locations joined with `;`)
+- Proteins (forward): `Gene<N>__<UniProtAC>` or `Gene<N>__<AC1;AC2>` for ambiguous mappings
 - Proteins (reverse): `Gene<N>__<UniProtAC>_rev`
-- Orphan reactions (no gene): `Rxn<N>__<reaction_id>`
+- Orphan reactions (no gene rule): `Gene<N>__orphanReac<reaction_id>`
+- Receptor / allosteric proteins: bare `<UniProtAC>` (no `Gene<N>__` prefix)
+
+`N` is a sequential reaction index that resets per category (transporters, receptors, etc.).
+
+Connector edges (`interaction_type='connector'`) are added for transporter and GEM gene
+nodes only — linking the bare UniProt accession to the formatted `Gene<N>__` node.
+No metabolite connector edges are emitted in any category.
 
 ```python
 from omnipath_metabo.datasets.cosmos import (

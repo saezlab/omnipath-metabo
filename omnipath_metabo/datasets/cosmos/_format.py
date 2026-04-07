@@ -27,6 +27,7 @@ Node-ID format
   underscore + compartment letter; no compartment suffix when unknown)
 - Gene forward: ``Gene{N}__UniProtAC...``
 - Gene reverse: ``Gene{N}__UniProtAC..._rev``
+- Orphan reaction: ``Gene{N}__orphanReac<reaction_id>``
 
 N is a sequential integer assigned per unique reaction within each
 category (transporter / receptor / other).  The counter resets to 1
@@ -34,33 +35,14 @@ when moving to the next category.  For pre-expanded resources (GEM,
 Recon3D) all rows sharing the same ``reaction_id`` receive the same N.
 For every other resource each input row counts as one reaction.
 
-Four-row transporter pattern
-----------------------------
-Resources that do not pre-generate reverse edges (TCDB, SLC, STITCH)
-contribute one input row per metabolite-transporter pair.  The
-formatter expands each such row into four directed edges following the
-COSMOS transporter convention::
-
-    Metab__X_other  →  Gene{N}__ENSG         (met enters transporter)
-    Gene{N}__AC   →  Metab__X_c            (met exits on cytoplasm side)
-    Metab__X_c      →  Gene{N}__AC_rev     (reverse: met enters)
-    Gene{N}__AC_rev → Metab__X_other       (reverse: met exits)
-
-The non-cytoplasm compartment (``other``) is the first non-``'c'``
-entry in the ``locations`` tuple.  When ``locations`` is empty (STITCH)
-both sides use the bare ``Metab__CHEBI:xxxx`` node without a compartment
-suffix.
-
-For GEM / Recon3D resources all rows are already present in the
-DataFrame; the formatter only renames the node IDs.
-
 Connector edges
 ---------------
 After formatting, unique connector edges are appended::
 
-    UniProtAC  →  Gene{N}__AC...       (one per unique formatted gene)
-    UniProtAC  →  Gene{N}__AC..._rev   (transporter reverse genes)
-    CHEBI:xxxx →  Metab__CHEBI:xxxx_c   (one per unique formatted metabolite)
+    UniProtAC      →  Gene{N}__AC...              (one per unique formatted gene)
+    UniProtAC      →  Gene{N}__AC..._rev          (transporter reverse genes)
+    <reaction_id>  →  Gene{N}__orphanReac<id>     (orphan pseudo-enzyme)
+    CHEBI:xxxx     →  Metab__CHEBI:xxxx_c         (one per unique formatted metabolite)
 
 These edges allow downstream tools that key measurements by bare IDs
 (e.g. transcriptomics → ENSG, metabolomics → CHEBI) to attach to the
@@ -121,12 +103,13 @@ def _fmt_met(chebi_id: str, comp: str) -> str:
 def _fmt_gene(gene_id, n: int, reverse: bool = False) -> str:
     """Format a gene COSMOS node ID.
 
-    When *gene_id* is a ``frozenset`` (ambiguous 1-to-many mapping), the
-    alphabetically first accession is used for the node label so that the
-    formatted ID is deterministic and unique per reaction.
+    When *gene_id* is a ``frozenset`` (ambiguous 1-to-many mapping), all
+    accessions are joined with ``';'`` in sorted order so the node label
+    is deterministic and carries the full mapping, e.g.
+    ``'Gene1__P12345;Q99999'``.
     """
     if isinstance(gene_id, frozenset):
-        gene_id = min(gene_id)
+        gene_id = ';'.join(sorted(gene_id))
     node = f'Gene{n}__{gene_id}'
     return node + '_rev' if reverse else node
 
@@ -135,10 +118,10 @@ def _fmt_rxn(rxn_id: str, n: int, reverse: bool = False) -> str:
     """Format an orphan reaction COSMOS node ID.
 
     Used for transport reactions with no gene rule (``attrs['orphan'] = True``).
-    The reaction ID is used as the node identifier with an ``Rxn{N}__`` prefix
-    to distinguish these pseudo-nodes from real gene products.
+    The ``Gene{N}__orphanReac`` prefix keeps these nodes in the same namespace
+    as real gene product nodes while making their pseudo-enzyme origin clear.
     """
-    node = f'Rxn{n}__{rxn_id}'
+    node = f'Gene{n}__orphanReac{rxn_id}'
     return node + '_rev' if reverse else node
 
 
@@ -147,24 +130,16 @@ def _add_gene_connectors(
     fmt_gene: str,
     connectors: set[tuple[str, str]],
 ) -> None:
-    """Add connector(s) from bare gene ID(s) to the formatted gene node.
+    """Add one connector from the bare gene ID to the formatted gene node.
 
-    When *bare_gene* is a ``frozenset``, one connector is added per AC so
-    that every UniProt accession in the set maps to the formatted node.
+    When *bare_gene* is a ``frozenset``, the ACs are joined with ``';'``
+    (same as in :func:`_fmt_gene`) so that a single connector row is
+    emitted from the combined bare ID to the formatted node.
     """
     if isinstance(bare_gene, frozenset):
-        for ac in bare_gene:
-            connectors.add((ac, fmt_gene))
-    else:
-        connectors.add((bare_gene, fmt_gene))
+        bare_gene = ';'.join(sorted(bare_gene))
+    connectors.add((bare_gene, fmt_gene))
 
-
-def _other_comp(locations: tuple) -> str:
-    """Return the first non-cytoplasm compartment, or '' if none."""
-    for comp in locations:
-        if comp != 'c':
-            return comp
-    return ''
 
 
 def _assign_n(df: pd.DataFrame) -> pd.Series:
@@ -237,8 +212,8 @@ def _format_pre_expanded_row(
     applies the COSMOS prefix/suffix to the node IDs.
 
     For orphan reactions (``attrs['orphan'] == True``, ``id_type ==
-    'reaction_id'``), the protein-side node receives an ``Rxn{N}__``
-    prefix instead of ``Gene{N}__``, and a single connector is emitted
+    'reaction_id'``), the protein-side node receives a
+    ``Gene{N}__orphanReac`` prefix, and a single connector is emitted
     from the bare reaction ID to the formatted node.  No UniProt ID
     translation is attempted for orphan nodes.
     """
@@ -246,7 +221,7 @@ def _format_pre_expanded_row(
     is_rev = attrs.get('reverse', False)
     is_orphan = attrs.get('orphan', False)
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
-    comp = locs[0] if locs else ''
+    comp = ';'.join(locs) if locs else ''
 
     is_met_source = row['source_type'] == 'small_molecule'
     bare_met = row['source'] if is_met_source else row['target']
@@ -269,8 +244,6 @@ def _format_pre_expanded_row(
         out['source'] = fmt_gene
         out['target'] = fmt_met
 
-    connectors.add((bare_met, fmt_met))
-
     attrs['cosmos_formatted'] = True
     out['attrs'] = attrs
     return out
@@ -289,33 +262,28 @@ def _format_transporter_row(
 
     The four output rows follow the COSMOS convention::
 
-        met[other] → Gene{N}__ENSG         (forward: met enters)
-        Gene{N}__ENSG → met[c]             (forward: met exits)
-        met[c] → Gene{N}__ENSG_rev         (reverse: met enters)
-        Gene{N}__ENSG_rev → met[other]     (reverse: met exits)
+        met[source] → Gene{N}__AC          (forward: met enters from source side)
+        Gene{N}__AC → met[dest/c]         (forward: met exits to cytoplasm)
+        met[dest/c] → Gene{N}__AC_rev     (reverse: met enters from cytoplasm)
+        Gene{N}__AC_rev → met[source]     (reverse: met exits to source side)
 
-    When ``locations`` is empty (STITCH), both metabolite nodes use the
-    same bare ``Metab__CHEBI:xxxx`` ID without a compartment suffix.
     """
     attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
 
-    bare_met = row['source']   # CHEBI:xxxx
-    bare_gene = row['target']  # ENSG...
+    bare_met = row['source']
+    bare_gene = row['target']
     id_type_met = row['id_type_a']
     id_type_gene = row['id_type_b']
 
-    other_comp = _other_comp(locs)
-    c_comp = 'c' if 'c' in locs else ''
+    src_comp = ';'.join(locs) if locs else ''
+    dest_comp = 'c'  # cytoplasm is always the intracellular destination
 
-    met_other = _fmt_met(bare_met, other_comp)
-    met_c = _fmt_met(bare_met, c_comp) if locs else met_other  # STITCH: same node
+    met_source = _fmt_met(bare_met, src_comp)
+    met_dest = _fmt_met(bare_met, dest_comp)
     gene_fwd = _fmt_gene(bare_gene, n, reverse=False)
     gene_rev = _fmt_gene(bare_gene, n, reverse=True)
 
-    connectors.add((bare_met, met_other))
-    if met_c != met_other:
-        connectors.add((bare_met, met_c))
     _add_gene_connectors(bare_gene, gene_fwd, connectors)
     _add_gene_connectors(bare_gene, gene_rev, connectors)
 
@@ -347,49 +315,50 @@ def _format_transporter_row(
         return r
 
     return [
-        _met_gene(met_other, gene_fwd, other_comp, fwd_attrs),
-        _gene_met(gene_fwd, met_c, c_comp, fwd_attrs),
-        _met_gene(met_c, gene_rev, c_comp, rev_attrs),
-        _gene_met(gene_rev, met_other, other_comp, rev_attrs),
+        _met_gene(met_source, gene_fwd, src_comp, fwd_attrs),
+        _gene_met(gene_fwd, met_dest, dest_comp, fwd_attrs),
+        _met_gene(met_dest, gene_rev, dest_comp, rev_attrs),
+        _gene_met(gene_rev, met_source, src_comp, rev_attrs),
     ]
 
 
-def _format_simple_row(
+def _format_receptor_row(
     row: dict,
     n: int,
     connectors: set[tuple[str, str]],
 ) -> dict:
     """
-    Format one receptor or other (enzyme-metabolite) row.
+    Format one receptor or allosteric row.
 
-    Applies prefix to the gene node (no ``_rev`` suffix — these categories
-    do not have a reverse representation in the COSMOS PKN).
+    The protein node uses the bare UniProt AC — no ``Gene{N}__`` prefix.
+    All compartments in ``locations`` are joined with ``';'`` into a single
+    metabolite node ID.  One output row is produced.
+
+    Example: ``locations=('e', 'c')``::
+
+        Metab__CHEBI:xxxx_e;c  →  P00533
     """
     attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
-    comp = locs[0] if locs else ''
 
     is_met_source = row['source_type'] == 'small_molecule'
     bare_met = row['source'] if is_met_source else row['target']
     bare_gene = row['target'] if is_met_source else row['source']
 
+    comp = ';'.join(locs) if locs else ''
     fmt_met = _fmt_met(bare_met, comp)
-    fmt_gene = _fmt_gene(bare_gene, n, reverse=False)
 
     out = dict(row)
     if is_met_source:
         out['source'] = fmt_met
-        out['target'] = fmt_gene
+        out['target'] = bare_gene
     else:
-        out['source'] = fmt_gene
+        out['source'] = bare_gene
         out['target'] = fmt_met
-
-    connectors.add((bare_met, fmt_met))
-    _add_gene_connectors(bare_gene, fmt_gene, connectors)
-
-    attrs['cosmos_formatted'] = True
-    out['attrs'] = attrs
+    out['attrs'] = {**attrs, 'cosmos_formatted': True}
     return out
+
+
 
 
 def _make_connector_rows(
@@ -504,6 +473,7 @@ def format_pkn(
 
     n_pre_expanded = 0
     n_transporter = 0
+    n_receptor = 0
     n_simple = 0
 
     for _, row in df.iterrows():
@@ -521,20 +491,27 @@ def format_pkn(
                 _format_transporter_row(row_dict, n, connectors)
             )
             n_transporter += 1
+        elif cat == 'receptor':
+            output_rows.append(
+                _format_receptor_row(row_dict, n, connectors)
+            )
+            n_receptor += 1
         else:
             output_rows.append(
-                _format_simple_row(row_dict, n, connectors)
+                _format_receptor_row(row_dict, n, connectors)
             )
             n_simple += 1
 
     _log.info(
         '[COSMOS format] %d pre-expanded rows renamed, '
         '%d transporter rows expanded (→ %d rows), '
+        '%d receptor rows formatted (compartments joined with ;), '
         '%d simple rows formatted, '
         '%d connector edges added.',
         n_pre_expanded,
         n_transporter,
         n_transporter * 4,
+        n_receptor,
         n_simple,
         len(connectors),
     )
