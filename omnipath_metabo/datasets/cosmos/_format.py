@@ -471,15 +471,54 @@ def format_pkn(
     )
     df['_n'] = _assign_n(df)
 
+    # ------------------------------------------------------------------
+    # Expansion statistics (vectorised, logged before the main loop)
+    # ------------------------------------------------------------------
+    # For each input row compute how many rows it will generate at each
+    # expansion stage so we can report a clear pipeline audit trail:
+    #   1. original edges (input rows)
+    #   2. after location expansion (one row per compartment)
+    #   3. after protein-ID expansion (one row per UniProt AC)
+    #   4. after reverse expansion (×4 for non-pre-expanded transporters)
+    # Pre-expanded resources (GEM/Recon3D) already carry both directions,
+    # so they contribute ×1 at step 4.
+    is_met_src = df['source_type'] == 'small_molecule'
+    bare_gene_col = df['target'].where(is_met_src, df['source'])
+
+    n_comps = df['locations'].apply(
+        lambda locs: max(len(locs), 1) if isinstance(locs, tuple) else 1
+    )
+    n_genes = bare_gene_col.apply(
+        lambda g: len(g) if isinstance(g, frozenset) else 1
+    )
+    is_non_pre_exp_transporter = (
+        df['_category'].eq('transporter') &
+        ~df['resource'].apply(_is_pre_expanded)
+    )
+    reverse_mult = is_non_pre_exp_transporter.map({True: 4, False: 1})
+
+    stat_original      = len(df)
+    stat_after_loc     = int(n_comps.sum())
+    stat_after_prot    = int((n_comps * n_genes).sum())
+    stat_after_reverse = int((n_comps * n_genes * reverse_mult).sum())
+
+    _log.info(
+        '[COSMOS format] expansion pipeline:\n'
+        '  original edges          : %d\n'
+        '  after location expand   : %d\n'
+        '  after protein ID expand : %d\n'
+        '  after reverse expand    : %d',
+        stat_original,
+        stat_after_loc,
+        stat_after_prot,
+        stat_after_reverse,
+    )
+    # ------------------------------------------------------------------
+
     output_rows: list[dict] = []
     connectors: set[tuple[str, str]] = set()
     # Columns to keep in output (drop internal helpers)
     cols = [c for c in df.columns if not c.startswith('_')]
-
-    n_pre_expanded_in = 0
-    n_transporter_in = 0
-    n_receptor_in = 0
-    n_simple_in = 0
 
     for _, row in df.iterrows():
         row_dict = row.to_dict()
@@ -490,35 +529,24 @@ def format_pkn(
             output_rows.extend(
                 _format_pre_expanded_row(row_dict, n, connectors)
             )
-            n_pre_expanded_in += 1
         elif cat == 'transporter':
             output_rows.extend(
                 _format_transporter_row(row_dict, n, connectors)
             )
-            n_transporter_in += 1
         elif cat == 'receptor':
             output_rows.extend(
                 _format_receptor_row(row_dict, n, connectors)
             )
-            n_receptor_in += 1
         else:
             output_rows.extend(
                 _format_receptor_row(row_dict, n, connectors)
             )
-            n_simple_in += 1
 
     _log.info(
-        '[COSMOS format] %d pre-expanded input rows → %d output rows; '
-        '%d transporter input rows expanded; '
-        '%d receptor + %d other input rows expanded; '
-        '%d total main rows, %d connector edges added.',
-        n_pre_expanded_in,
-        n_pre_expanded_in,  # pre-expanded rows expand per comp/gene
-        n_transporter_in,
-        n_receptor_in,
-        n_simple_in,
+        '[COSMOS format] output: %d main rows + %d connector edges = %d total edges',
         len(output_rows),
         len(connectors),
+        len(output_rows) + len(connectors),
     )
 
     if not output_rows:
