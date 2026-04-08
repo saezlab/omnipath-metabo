@@ -474,16 +474,15 @@ def format_pkn(
     # ------------------------------------------------------------------
     # Expansion statistics (vectorised, logged before the main loop)
     # ------------------------------------------------------------------
-    # For each input row compute how many rows it will generate at each
-    # expansion stage so we can report a clear pipeline audit trail:
-    #   1. original edges (input rows)
-    #   2. after location expansion (one row per compartment)
-    #   3. after protein-ID expansion (one row per UniProt AC)
-    #   4. after reverse expansion (×4 for non-pre-expanded transporters)
-    # Pre-expanded resources (GEM/Recon3D) already carry both directions,
-    # so they contribute ×1 at step 4.
+    # Rows are split into two groups:
+    #   pre-expanded  (GEM / Recon3D): already carry both directions; no
+    #                  4-row expansion applied; ×1 at the reverse step.
+    #   other         (TCDB, SLC, MRCLinksDB, STITCH, BRENDA, ...):
+    #                  non-pre-expanded transporters get ×4 at reverse step.
     is_met_src = df['source_type'] == 'small_molecule'
     bare_gene_col = df['target'].where(is_met_src, df['source'])
+
+    is_pre_exp_mask = df['resource'].apply(_is_pre_expanded)
 
     n_comps = df['locations'].apply(
         lambda locs: max(len(locs), 1) if isinstance(locs, tuple) else 1
@@ -492,26 +491,44 @@ def format_pkn(
         lambda g: len(g) if isinstance(g, frozenset) else 1
     )
     is_non_pre_exp_transporter = (
-        df['_category'].eq('transporter') &
-        ~df['resource'].apply(_is_pre_expanded)
+        df['_category'].eq('transporter') & ~is_pre_exp_mask
     )
     reverse_mult = is_non_pre_exp_transporter.map({True: 4, False: 1})
 
-    stat_original      = len(df)
-    stat_after_loc     = int(n_comps.sum())
-    stat_after_prot    = int((n_comps * n_genes).sum())
-    stat_after_reverse = int((n_comps * n_genes * reverse_mult).sum())
+    # per-group row counts at each stage
+    n_prot_combos = n_comps * n_genes
+
+    def _grp(mask):
+        return n_prot_combos[mask].sum()
+
+    stat_original       = len(df)
+    stat_orig_pre       = int(is_pre_exp_mask.sum())
+    stat_orig_other     = stat_original - stat_orig_pre
+
+    stat_after_loc      = int(n_comps.sum())
+    stat_loc_pre        = int(n_comps[is_pre_exp_mask].sum())
+    stat_loc_other      = stat_after_loc - stat_loc_pre
+
+    stat_after_prot     = int(n_prot_combos.sum())
+    stat_prot_pre       = int(_grp(is_pre_exp_mask))
+    stat_prot_other     = stat_after_prot - stat_prot_pre
+
+    stat_after_reverse  = int((n_prot_combos * reverse_mult).sum())
+    stat_rev_pre        = int(_grp(is_pre_exp_mask))        # ×1
+    stat_rev_other      = stat_after_reverse - stat_rev_pre # ×4
 
     _log.info(
         '[COSMOS format] expansion pipeline:\n'
-        '  original edges          : %d\n'
-        '  after location expand   : %d\n'
-        '  after protein ID expand : %d\n'
-        '  after reverse expand    : %d',
-        stat_original,
-        stat_after_loc,
-        stat_after_prot,
-        stat_after_reverse,
+        '  %-26s %6s  %6s  %6s\n'
+        '  %-26s %6d  %6d  %6d\n'
+        '  %-26s %6d  %6d  %6d\n'
+        '  %-26s %6d  %6d  %6d\n'
+        '  %-26s %6d  %6d  %6d',
+        '',                       'total',  'pre-exp', 'other',
+        'original edges',          stat_original, stat_orig_pre,  stat_orig_other,
+        'after location expand',   stat_after_loc, stat_loc_pre,  stat_loc_other,
+        'after protein ID expand', stat_after_prot, stat_prot_pre, stat_prot_other,
+        'after reverse expand',    stat_after_reverse, stat_rev_pre, stat_rev_other,
     )
     # ------------------------------------------------------------------
 
