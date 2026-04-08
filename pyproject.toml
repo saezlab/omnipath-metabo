@@ -19,7 +19,8 @@ dependencies = [
     "pandas>=2.0",
     "pypath-omnipath @ git+https://github.com/saezlab/pypath.git@master",
     "pyyaml>=6.0",
-    "pypath-common>=0.2",
+    "pkg-infra>=0.1.0",
+    "omnipath-client>=0.2.2",
 ]
 description = "Metabolite, compound, reaction and interaction prior-knowledge for systems biology"
 license = "BSD-3-Clause"
