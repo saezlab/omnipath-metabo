@@ -100,16 +100,8 @@ def _fmt_met(chebi_id: str, comp: str) -> str:
     return f'Metab__{chebi_id}_{comp}' if comp else f'Metab__{chebi_id}'
 
 
-def _fmt_gene(gene_id, n: int, reverse: bool = False) -> str:
-    """Format a gene COSMOS node ID.
-
-    When *gene_id* is a ``frozenset`` (ambiguous 1-to-many mapping), all
-    accessions are joined with ``';'`` in sorted order so the node label
-    is deterministic and carries the full mapping, e.g.
-    ``'Gene1__P12345;Q99999'``.
-    """
-    if isinstance(gene_id, frozenset):
-        gene_id = ';'.join(sorted(gene_id))
+def _fmt_gene(gene_id: str, n: int, reverse: bool = False) -> str:
+    """Format a gene COSMOS node ID."""
     node = f'Gene{n}__{gene_id}'
     return node + '_rev' if reverse else node
 
@@ -126,18 +118,11 @@ def _fmt_rxn(rxn_id: str, n: int, reverse: bool = False) -> str:
 
 
 def _add_gene_connectors(
-    bare_gene,
+    bare_gene: str,
     fmt_gene: str,
     connectors: set[tuple[str, str]],
 ) -> None:
-    """Add one connector from the bare gene ID to the formatted gene node.
-
-    When *bare_gene* is a ``frozenset``, the ACs are joined with ``';'``
-    (same as in :func:`_fmt_gene`) so that a single connector row is
-    emitted from the combined bare ID to the formatted node.
-    """
-    if isinstance(bare_gene, frozenset):
-        bare_gene = ';'.join(sorted(bare_gene))
+    """Add one connector from the bare gene ID to the formatted gene node."""
     connectors.add((bare_gene, fmt_gene))
 
 
@@ -204,16 +189,19 @@ def _format_pre_expanded_row(
     row: dict,
     n: int,
     connectors: set[tuple[str, str]],
-) -> dict:
+) -> list[dict]:
     """
     Format one row from a pre-expanded resource (GEM / Recon3D).
 
     The row already exists in the correct direction; this function only
     applies the COSMOS prefix/suffix to the node IDs.
 
+    Each compartment in ``locations`` and each UniProt AC in a
+    frozenset gene ID is expanded into a separate output row.
+
     For orphan reactions (``attrs['orphan'] == True``, ``id_type ==
     'reaction_id'``), the protein-side node receives a
-    ``Gene{N}__orphanReac`` prefix, and a single connector is emitted
+    ``Gene{N}__orphanReac`` prefix, and a connector is emitted
     from the bare reaction ID to the formatted node.  No UniProt ID
     translation is attempted for orphan nodes.
     """
@@ -221,32 +209,35 @@ def _format_pre_expanded_row(
     is_rev = attrs.get('reverse', False)
     is_orphan = attrs.get('orphan', False)
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
-    comp = ';'.join(locs) if locs else ''
+    comps = locs if locs else ('',)
 
     is_met_source = row['source_type'] == 'small_molecule'
     bare_met = row['source'] if is_met_source else row['target']
-    bare_gene = row['target'] if is_met_source else row['source']
+    bare_gene_raw = row['target'] if is_met_source else row['source']
+    gene_ids = sorted(bare_gene_raw) if isinstance(bare_gene_raw, frozenset) else [bare_gene_raw]
 
-    fmt_met = _fmt_met(bare_met, comp)
+    output = []
+    for comp in comps:
+        fmt_met = _fmt_met(bare_met, comp)
+        for gid in gene_ids:
+            if is_orphan:
+                fmt_gene = _fmt_rxn(gid, n, is_rev)
+                connectors.add((gid, fmt_gene))
+            else:
+                fmt_gene = _fmt_gene(gid, n, is_rev)
+                _add_gene_connectors(gid, fmt_gene, connectors)
 
-    if is_orphan:
-        fmt_gene = _fmt_rxn(bare_gene, n, is_rev)
-        connectors.add((bare_gene, fmt_gene))
-    else:
-        fmt_gene = _fmt_gene(bare_gene, n, is_rev)
-        _add_gene_connectors(bare_gene, fmt_gene, connectors)
-
-    out = dict(row)
-    if is_met_source:
-        out['source'] = fmt_met
-        out['target'] = fmt_gene
-    else:
-        out['source'] = fmt_gene
-        out['target'] = fmt_met
-
-    attrs['cosmos_formatted'] = True
-    out['attrs'] = attrs
-    return out
+            out = dict(row)
+            out['locations'] = (comp,) if comp else ()
+            out['attrs'] = {**attrs, 'cosmos_formatted': True}
+            if is_met_source:
+                out['source'] = fmt_met
+                out['target'] = fmt_gene
+            else:
+                out['source'] = fmt_gene
+                out['target'] = fmt_met
+            output.append(out)
+    return output
 
 
 def _format_transporter_row(
@@ -255,40 +246,33 @@ def _format_transporter_row(
     connectors: set[tuple[str, str]],
 ) -> list[dict]:
     """
-    Expand one non-pre-expanded transporter row into four directed edges.
+    Expand one non-pre-expanded transporter row into directed edges.
 
     Input row is always ``small_molecule → protein`` (met → gene) for
     TCDB, SLC, and STITCH transporter rows.
 
-    The four output rows follow the COSMOS convention::
+    Each compartment in ``locations`` and each UniProt AC in a frozenset
+    gene ID is expanded separately.  For each ``(src_comp, gene_id)``
+    combination, four directed edges are emitted following the COSMOS
+    convention::
 
-        met[source] → Gene{N}__AC          (forward: met enters from source side)
-        Gene{N}__AC → met[dest/c]         (forward: met exits to cytoplasm)
-        met[dest/c] → Gene{N}__AC_rev     (reverse: met enters from cytoplasm)
-        Gene{N}__AC_rev → met[source]     (reverse: met exits to source side)
+        met[src_comp] → Gene{N}__AC          (forward: met enters)
+        Gene{N}__AC   → met[c]               (forward: met exits to cytoplasm)
+        met[c]        → Gene{N}__AC_rev      (reverse: met enters from cytoplasm)
+        Gene{N}__AC_rev → met[src_comp]      (reverse: met exits)
 
     """
     attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
+    comps = locs if locs else ('',)
 
     bare_met = row['source']
-    bare_gene = row['target']
+    bare_gene_raw = row['target']
     id_type_met = row['id_type_a']
     id_type_gene = row['id_type_b']
+    gene_ids = sorted(bare_gene_raw) if isinstance(bare_gene_raw, frozenset) else [bare_gene_raw]
 
-    src_comp = ';'.join(locs) if locs else ''
     dest_comp = 'c'  # cytoplasm is always the intracellular destination
-
-    met_source = _fmt_met(bare_met, src_comp)
-    met_dest = _fmt_met(bare_met, dest_comp)
-    gene_fwd = _fmt_gene(bare_gene, n, reverse=False)
-    gene_rev = _fmt_gene(bare_gene, n, reverse=True)
-
-    _add_gene_connectors(bare_gene, gene_fwd, connectors)
-    _add_gene_connectors(bare_gene, gene_rev, connectors)
-
-    fwd_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': False}
-    rev_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': True}
 
     def _met_gene(src_met: str, tgt_gene: str, met_comp: str, a: dict) -> dict:
         r = dict(row)
@@ -314,49 +298,70 @@ def _format_transporter_row(
         r['attrs'] = a
         return r
 
-    return [
-        _met_gene(met_source, gene_fwd, src_comp, fwd_attrs),
-        _gene_met(gene_fwd, met_dest, dest_comp, fwd_attrs),
-        _met_gene(met_dest, gene_rev, dest_comp, rev_attrs),
-        _gene_met(gene_rev, met_source, src_comp, rev_attrs),
-    ]
+    output = []
+    for src_comp in comps:
+        met_source = _fmt_met(bare_met, src_comp)
+        met_dest = _fmt_met(bare_met, dest_comp)
+        for gid in gene_ids:
+            gene_fwd = _fmt_gene(gid, n, reverse=False)
+            gene_rev = _fmt_gene(gid, n, reverse=True)
+            _add_gene_connectors(gid, gene_fwd, connectors)
+            _add_gene_connectors(gid, gene_rev, connectors)
+
+            fwd_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': False}
+            rev_attrs = {**attrs, 'cosmos_formatted': True, 'reverse': True}
+
+            output.extend([
+                _met_gene(met_source, gene_fwd, src_comp, fwd_attrs),
+                _gene_met(gene_fwd, met_dest, dest_comp, fwd_attrs),
+                _met_gene(met_dest, gene_rev, dest_comp, rev_attrs),
+                _gene_met(gene_rev, met_source, src_comp, rev_attrs),
+            ])
+    return output
 
 
 def _format_receptor_row(
     row: dict,
     n: int,
     connectors: set[tuple[str, str]],
-) -> dict:
+) -> list[dict]:
     """
     Format one receptor or allosteric row.
 
     The protein node uses the bare UniProt AC — no ``Gene{N}__`` prefix.
-    All compartments in ``locations`` are joined with ``';'`` into a single
-    metabolite node ID.  One output row is produced.
+    Each compartment in ``locations`` and each UniProt AC in a frozenset
+    gene ID is expanded into a separate output row.
 
-    Example: ``locations=('e', 'c')``::
+    Example: ``locations=('e', 'c'), target='P00533'`` →
+    two rows::
 
-        Metab__CHEBI:xxxx_e;c  →  P00533
+        Metab__CHEBI:xxxx_e  →  P00533
+        Metab__CHEBI:xxxx_c  →  P00533
     """
     attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
+    comps = locs if locs else ('',)
 
     is_met_source = row['source_type'] == 'small_molecule'
     bare_met = row['source'] if is_met_source else row['target']
-    bare_gene = row['target'] if is_met_source else row['source']
+    bare_gene_raw = row['target'] if is_met_source else row['source']
+    gene_ids = sorted(bare_gene_raw) if isinstance(bare_gene_raw, frozenset) else [bare_gene_raw]
 
-    comp = ';'.join(locs) if locs else ''
-    fmt_met = _fmt_met(bare_met, comp)
-
-    out = dict(row)
-    if is_met_source:
-        out['source'] = fmt_met
-        out['target'] = bare_gene
-    else:
-        out['source'] = bare_gene
-        out['target'] = fmt_met
-    out['attrs'] = {**attrs, 'cosmos_formatted': True}
-    return out
+    output = []
+    for comp in comps:
+        fmt_met = _fmt_met(bare_met, comp)
+        for gid in gene_ids:
+            out = dict(row)
+            out['locations'] = (comp,) if comp else ()
+            out['attrs'] = {**attrs, 'cosmos_formatted': True}
+            if is_met_source:
+                out['source'] = fmt_met
+                out['target'] = gid
+            else:
+                out['source'] = gid
+                out['target'] = fmt_met
+            output.append(out)
+    return output
 
 
 
@@ -471,10 +476,10 @@ def format_pkn(
     # Columns to keep in output (drop internal helpers)
     cols = [c for c in df.columns if not c.startswith('_')]
 
-    n_pre_expanded = 0
-    n_transporter = 0
-    n_receptor = 0
-    n_simple = 0
+    n_pre_expanded_in = 0
+    n_transporter_in = 0
+    n_receptor_in = 0
+    n_simple_in = 0
 
     for _, row in df.iterrows():
         row_dict = row.to_dict()
@@ -482,37 +487,37 @@ def format_pkn(
         n = int(row['_n'])
 
         if _is_pre_expanded(row['resource']):
-            output_rows.append(
+            output_rows.extend(
                 _format_pre_expanded_row(row_dict, n, connectors)
             )
-            n_pre_expanded += 1
+            n_pre_expanded_in += 1
         elif cat == 'transporter':
             output_rows.extend(
                 _format_transporter_row(row_dict, n, connectors)
             )
-            n_transporter += 1
+            n_transporter_in += 1
         elif cat == 'receptor':
-            output_rows.append(
+            output_rows.extend(
                 _format_receptor_row(row_dict, n, connectors)
             )
-            n_receptor += 1
+            n_receptor_in += 1
         else:
-            output_rows.append(
+            output_rows.extend(
                 _format_receptor_row(row_dict, n, connectors)
             )
-            n_simple += 1
+            n_simple_in += 1
 
     _log.info(
-        '[COSMOS format] %d pre-expanded rows renamed, '
-        '%d transporter rows expanded (→ %d rows), '
-        '%d receptor rows formatted (compartments joined with ;), '
-        '%d simple rows formatted, '
-        '%d connector edges added.',
-        n_pre_expanded,
-        n_transporter,
-        n_transporter * 4,
-        n_receptor,
-        n_simple,
+        '[COSMOS format] %d pre-expanded input rows → %d output rows; '
+        '%d transporter input rows expanded; '
+        '%d receptor + %d other input rows expanded; '
+        '%d total main rows, %d connector edges added.',
+        n_pre_expanded_in,
+        n_pre_expanded_in,  # pre-expanded rows expand per comp/gene
+        n_transporter_in,
+        n_receptor_in,
+        n_simple_in,
+        len(output_rows),
         len(connectors),
     )
 

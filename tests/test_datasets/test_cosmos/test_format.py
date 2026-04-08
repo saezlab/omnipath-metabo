@@ -102,14 +102,11 @@ class TestFmtGene:
     def test_forward_explicit_false(self):
         assert _fmt_gene('ENSG00000141510', 5, reverse=False) == 'Gene5__ENSG00000141510'
 
-    def test_frozenset_joins_all_acs(self):
-        """frozenset input: all ACs joined with ';' in sorted order."""
-        fs = frozenset({'Q99999', 'P12345'})
-        assert _fmt_gene(fs, 1) == 'Gene1__P12345;Q99999'
+    def test_single_ac(self):
+        assert _fmt_gene('P12345', 1) == 'Gene1__P12345'
 
-    def test_frozenset_reverse(self):
-        fs = frozenset({'Q99999', 'P12345'})
-        assert _fmt_gene(fs, 2, reverse=True) == 'Gene2__P12345;Q99999_rev'
+    def test_single_ac_reverse(self):
+        assert _fmt_gene('P12345', 2, reverse=True) == 'Gene2__P12345_rev'
 
 
 class TestFmtRxn:
@@ -256,16 +253,24 @@ class TestFormatTransporter:
         ))
         return _call_format(df, include_orphans=True)
 
-    def test_four_main_rows_generated(self):
+    def test_eight_main_rows_generated(self):
+        """locations=('e','c') → 2 comps × 4 rows each = 8 main rows."""
         result = self._run()
+        main = result[result['interaction_type'] != 'connector']
+        assert len(main) == 8
+
+    def test_four_main_rows_single_location(self):
+        """Single location → exactly 4 main rows."""
+        result = self._run(locations=('e',))
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 4
 
-    def test_row1_met_other_to_gene_fwd(self):
+    def test_row1_met_e_to_gene_fwd(self):
+        """First group (src_comp='e'): met_e → Gene_fwd."""
         result = self._run()
         main = result[result['interaction_type'] != 'connector']
         r = main.iloc[0]
-        assert r['source'] == 'Metab__CHEBI:15422_e;c'
+        assert r['source'] == 'Metab__CHEBI:15422_e'
         assert r['target'] == 'Gene1__ENSG00000141510'
         assert r['attrs']['reverse'] is False
 
@@ -285,13 +290,21 @@ class TestFormatTransporter:
         assert r['target'] == 'Gene1__ENSG00000141510_rev'
         assert r['attrs']['reverse'] is True
 
-    def test_row4_gene_rev_to_met_other(self):
+    def test_row4_gene_rev_to_met_e(self):
         result = self._run()
         main = result[result['interaction_type'] != 'connector']
         r = main.iloc[3]
         assert r['source'] == 'Gene1__ENSG00000141510_rev'
-        assert r['target'] == 'Metab__CHEBI:15422_e;c'
+        assert r['target'] == 'Metab__CHEBI:15422_e'
         assert r['attrs']['reverse'] is True
+
+    def test_second_group_uses_c_as_src(self):
+        """Second group (src_comp='c'): met_c → Gene_fwd."""
+        result = self._run()
+        main = result[result['interaction_type'] != 'connector']
+        r = main.iloc[4]
+        assert r['source'] == 'Metab__CHEBI:15422_c'
+        assert r['target'] == 'Gene1__ENSG00000141510'
 
     def test_cosmos_formatted_flag_set(self):
         result = self._run()
@@ -363,33 +376,37 @@ class TestConnectorEdges:
         conn = result[result['interaction_type'] == 'connector']
         assert (conn['resource'] == 'COSMOS_formatter').all()
 
-    def test_frozenset_gene_node_joins_all_acs(self):
-        """A frozenset target → formatted node contains all ACs joined with ';'."""
+    def test_frozenset_gene_expands_to_separate_rows(self):
+        """frozenset target → one set of rows per AC, not joined with ';'."""
         df = _df(_row(
             target=frozenset({'Q99999', 'P12345'}),
             interaction_type='transport',
             resource='TCDB',
-            locations=('e', 'c'),
+            locations=('e',),
         ))
         result = _call_format(df)
         main = result[result['interaction_type'] != 'connector']
-        # 4 rows (transporter expansion), all use 'P12345;Q99999' in node ID
-        assert len(main) == 4
-        gene_targets = main[main['target_type'] == 'protein']['target'].tolist()
-        assert all('P12345;Q99999' in t for t in gene_targets)
+        # 1 location × 2 ACs × 4 rows = 8 main rows
+        assert len(main) == 8
+        gene_nodes = set(main[main['target_type'] == 'protein']['target'])
+        assert 'Gene1__P12345' in gene_nodes
+        assert 'Gene1__Q99999' in gene_nodes
+        assert not any(';' in n for n in gene_nodes)
 
-    def test_frozenset_gene_single_connector(self):
-        """A frozenset target emits one connector from the joined bare ID."""
+    def test_frozenset_gene_separate_connectors(self):
+        """frozenset target → one connector per AC (not a joined bare ID)."""
         df = _df(_row(
             target=frozenset({'Q99999', 'P12345'}),
             interaction_type='transport',
             resource='TCDB',
-            locations=('e', 'c'),
+            locations=('e',),
         ))
         result = _call_format(df)
         conn = result[result['interaction_type'] == 'connector']
-        gene_conn = conn[conn['source'] == 'P12345;Q99999']
-        assert len(gene_conn) >= 1  # forward and reverse connectors, same source
+        sources = set(conn['source'])
+        assert 'P12345' in sources
+        assert 'Q99999' in sources
+        assert 'P12345;Q99999' not in sources
 
 
 # ---------------------------------------------------------------------------
@@ -700,14 +717,15 @@ class TestFormatTransporters:
         df = _df(_row(interaction_type='transport', resource='TCDB', locations=('e', 'c')))
         result = format_transporters(df)
         main = _bundle_main_nodes(result)
-        assert len(main) == 4  # TCDB row expanded to 4
+        # 2 locations × 4 rows = 8 main rows
+        assert len(main) == 8
 
     def test_category_pure_bundle_is_noop(self):
         """Bundle already containing only transporters: same output as format_pkn."""
         bundle = _make_bundle(
             _row(interaction_type='transport', resource='TCDB', locations=('e', 'c')),
         )
-        assert len(_bundle_main_nodes(format_transporters(bundle))) == 4
+        assert len(_bundle_main_nodes(format_transporters(bundle))) == 8
 
 
 class TestFormatReceptorRow:
@@ -725,26 +743,36 @@ class TestFormatReceptorRow:
         ))
         return _call_format(df)
 
-    def test_always_one_row(self):
+    def test_two_rows_for_two_locations(self):
+        """locations=('e','c') → 2 separate rows, one per compartment."""
         result = self._run(locations=('e', 'c'))
         main = result[result['interaction_type'] != 'connector']
-        assert len(main) == 1
+        assert len(main) == 2
 
     def test_no_location_gives_one_row(self):
         result = self._run(locations=())
         main = result[result['interaction_type'] != 'connector']
         assert len(main) == 1
 
+    def test_single_location_gives_one_row(self):
+        result = self._run(locations=('e',))
+        main = result[result['interaction_type'] != 'connector']
+        assert len(main) == 1
+
     def test_protein_node_is_bare_uniprot(self):
         result = self._run(locations=('e', 'c'))
         main = result[result['interaction_type'] != 'connector']
-        assert main.iloc[0]['target'] == 'P00533'
-        assert not main.iloc[0]['target'].startswith('Gene')
+        assert all(r == 'P00533' for r in main['target'])
+        assert not any(r.startswith('Gene') for r in main['target'])
 
-    def test_metabolite_node_joins_compartments(self):
+    def test_metabolite_nodes_separate_per_compartment(self):
+        """Each compartment gets its own metabolite node ID."""
         result = self._run(locations=('e', 'c'))
         main = result[result['interaction_type'] != 'connector']
-        assert main.iloc[0]['source'] == 'Metab__CHEBI:15422_e;c'
+        sources = set(main['source'])
+        assert 'Metab__CHEBI:15422_e' in sources
+        assert 'Metab__CHEBI:15422_c' in sources
+        assert 'Metab__CHEBI:15422_e;c' not in sources
 
     def test_single_location(self):
         result = self._run(locations=('e',))
