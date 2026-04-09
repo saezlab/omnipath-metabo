@@ -267,10 +267,10 @@ _TRANSPORT_GEM_BY_RESOURCE = _row('gem_reaction', 'GEM_transporter:Human-GEM')
 _TRANSPORT_STITCH = _row('transporter', 'STITCH')
 
 # receptor rows
-# Note: stitch_interactions() maps receptor proteins to 'ligand_receptor',
-# not 'receptor' — the _classify_protein result 'receptor' is renamed there.
+# MRCLinksDB uses 'ligand_receptor'; STITCH uses 'receptor' (set by
+# _classify_protein — the protein's role, not the interaction type).
 _RECEPTOR_MRC = _row('ligand_receptor', 'MRCLinksDB')
-_RECEPTOR_STITCH = _row('ligand_receptor', 'STITCH')
+_RECEPTOR_STITCH = _row('receptor', 'STITCH')
 
 # allosteric rows
 _ALLOSTERIC_BRENDA = _row('allosteric_regulation', 'BRENDA')
@@ -396,7 +396,7 @@ class TestBuildReceptors:
         df = _net(build_receptors())
         stitch_rows = df[df['resource'].eq('STITCH')]
         assert len(stitch_rows) == 1
-        assert stitch_rows.iloc[0]['interaction_type'] == 'ligand_receptor'
+        assert stitch_rows.iloc[0]['interaction_type'] == 'receptor'
 
     def test_excludes_transport_rows(self, _mock_build_fn):
         df = _net(build_receptors())

@@ -613,7 +613,11 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
         with provenance filtered to the surviving edges.
     """
     def _is_receptor(row: Interaction) -> bool:
-        if row.interaction_type != 'ligand_receptor':
+        is_rec = (
+            row.interaction_type == 'ligand_receptor' or
+            (row.resource == 'STITCH' and row.interaction_type == 'receptor')
+        )
+        if not is_rec:
             return False
         if cell_surface_only:
             return 'e' in row.locations
