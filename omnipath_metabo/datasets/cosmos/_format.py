@@ -474,15 +474,18 @@ def format_pkn(
     # ------------------------------------------------------------------
     # Expansion statistics (vectorised, logged before the main loop)
     # ------------------------------------------------------------------
-    # Rows are split into two groups:
-    #   pre-expanded  (GEM / Recon3D): already carry both directions; no
-    #                  4-row expansion applied; ×1 at the reverse step.
-    #   other         (TCDB, SLC, MRCLinksDB, STITCH, BRENDA, ...):
-    #                  non-pre-expanded transporters get ×4 at reverse step.
+    # Three resource groups:
+    #   GEM      (resource starts with 'GEM'): pre-expanded, no ×4
+    #   Recon3D  (resource == 'Recon3D'):       pre-expanded, no ×4
+    #   other    (TCDB, SLC, MRCLinksDB, ...):  non-pre-expanded;
+    #             transporter rows get ×4 at the reverse step
     is_met_src = df['source_type'] == 'small_molecule'
     bare_gene_col = df['target'].where(is_met_src, df['source'])
 
-    is_pre_exp_mask = df['resource'].apply(_is_pre_expanded)
+    is_gem_mask    = df['resource'].str.startswith('GEM', na=False)
+    is_recon_mask  = df['resource'].eq('Recon3D')
+    is_other_mask  = ~(is_gem_mask | is_recon_mask)
+    is_pre_exp_mask = is_gem_mask | is_recon_mask
 
     n_comps = df['locations'].apply(
         lambda locs: max(len(locs), 1) if isinstance(locs, tuple) else 1
@@ -495,40 +498,50 @@ def format_pkn(
     )
     reverse_mult = is_non_pre_exp_transporter.map({True: 4, False: 1})
 
-    # per-group row counts at each stage
     n_prot_combos = n_comps * n_genes
 
-    def _grp(mask):
-        return n_prot_combos[mask].sum()
+    def _s(mask, series=None):
+        s = n_prot_combos if series is None else series
+        return int(s[mask].sum())
 
-    stat_original       = len(df)
-    stat_orig_pre       = int(is_pre_exp_mask.sum())
-    stat_orig_other     = stat_original - stat_orig_pre
+    # original
+    o_gem   = int(is_gem_mask.sum())
+    o_recon = int(is_recon_mask.sum())
+    o_other = int(is_other_mask.sum())
+    o_total = len(df)
 
-    stat_after_loc      = int(n_comps.sum())
-    stat_loc_pre        = int(n_comps[is_pre_exp_mask].sum())
-    stat_loc_other      = stat_after_loc - stat_loc_pre
+    # after location expand
+    l_gem   = _s(is_gem_mask,   n_comps)
+    l_recon = _s(is_recon_mask, n_comps)
+    l_other = _s(is_other_mask, n_comps)
+    l_total = int(n_comps.sum())
 
-    stat_after_prot     = int(n_prot_combos.sum())
-    stat_prot_pre       = int(_grp(is_pre_exp_mask))
-    stat_prot_other     = stat_after_prot - stat_prot_pre
+    # after protein ID expand
+    p_gem   = _s(is_gem_mask)
+    p_recon = _s(is_recon_mask)
+    p_other = _s(is_other_mask)
+    p_total = int(n_prot_combos.sum())
 
-    stat_after_reverse  = int((n_prot_combos * reverse_mult).sum())
-    stat_rev_pre        = int(_grp(is_pre_exp_mask))        # ×1
-    stat_rev_other      = stat_after_reverse - stat_rev_pre # ×4
+    # after reverse expand (GEM/Recon3D ×1, other transporter ×4)
+    r_vals  = n_prot_combos * reverse_mult
+    r_gem   = _s(is_gem_mask,   r_vals)
+    r_recon = _s(is_recon_mask, r_vals)
+    r_other = _s(is_other_mask, r_vals)
+    r_total = int(r_vals.sum())
 
     _log.info(
         '[COSMOS format] expansion pipeline:\n'
-        '  %-26s %6s  %6s  %6s\n'
-        '  %-26s %6d  %6d  %6d\n'
-        '  %-26s %6d  %6d  %6d\n'
-        '  %-26s %6d  %6d  %6d\n'
-        '  %-26s %6d  %6d  %6d',
-        '',                       'total',  'pre-exp', 'other',
-        'original edges',          stat_original, stat_orig_pre,  stat_orig_other,
-        'after location expand',   stat_after_loc, stat_loc_pre,  stat_loc_other,
-        'after protein ID expand', stat_after_prot, stat_prot_pre, stat_prot_other,
-        'after reverse expand',    stat_after_reverse, stat_rev_pre, stat_rev_other,
+        '  %-28s %7s  %7s  %7s  %7s\n'
+        '  %-28s %7d  %7d  %7d  %7d\n'
+        '  %-28s %7d  %7d  %7d  %7d\n'
+        '  %-28s %7d  %7d  %7d  %7d\n'
+        '  %-28s %7d  %7d  %7d  %7d\n'
+        '  (GEM/Recon3D: pre-expanded, no ×4 reverse; other: TCDB/SLC/MRCLinksDB ×4)',
+        '',                         'total',  'GEM',    'Recon3D', 'other',
+        'original edges',            o_total,  o_gem,    o_recon,   o_other,
+        'after location expand',     l_total,  l_gem,    l_recon,   l_other,
+        'after protein ID expand',   p_total,  p_gem,    p_recon,   p_other,
+        'after reverse expand',      r_total,  r_gem,    r_recon,   r_other,
     )
     # ------------------------------------------------------------------
 
