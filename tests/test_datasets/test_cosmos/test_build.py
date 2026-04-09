@@ -530,6 +530,98 @@ class TestBuildReceptorsCellSurfaceOnly:
 
 
 # ---------------------------------------------------------------------------
+# TestEnrichStitchLocations
+# ---------------------------------------------------------------------------
+
+class TestEnrichStitchLocations:
+    """Tests for _enrich_stitch_locations frozenset handling."""
+
+    def _make_df(self, target_val) -> pd.DataFrame:
+        """Build a minimal one-row DataFrame with STITCH resource."""
+        return pd.DataFrame([{
+            'source': 'CHEBI:1',
+            'target': target_val,
+            'source_type': 'small_molecule',
+            'target_type': 'protein',
+            'id_type_a': 'chebi',
+            'id_type_b': 'uniprot',
+            'interaction_type': 'ligand_receptor',
+            'resource': 'STITCH',
+            'mor': 1,
+            'locations': (),
+            'attrs': {},
+        }])
+
+    # Patch path: functions are imported locally inside _enrich_stitch_locations
+    # via `from .location import ...`, so we patch them at their source module.
+    _LOC_MOD = 'omnipath_metabo.datasets.cosmos.location'
+
+    def test_string_target_resolved(self):
+        """Plain string UniProt AC gets locations resolved."""
+        from omnipath_metabo.datasets.cosmos._build import _enrich_stitch_locations
+
+        with (
+            patch(f'{self._LOC_MOD}.uniprot_locations', return_value={}),
+            patch(f'{self._LOC_MOD}.tcdb_locations', return_value={'Cell membrane': 'e'}),
+            patch(
+                f'{self._LOC_MOD}.resolve_protein_locations',
+                side_effect=lambda uid, *_: {'e'} if uid == 'P00001' else None,
+            ),
+        ):
+            df = self._make_df('P00001')
+            result = _enrich_stitch_locations(df, organism=9606)
+            assert result.iloc[0]['locations'] == ('e',)
+
+    def test_frozenset_target_resolved(self):
+        """Frozenset target (post-translate_pkn) gets locations resolved."""
+        from omnipath_metabo.datasets.cosmos._build import _enrich_stitch_locations
+
+        with (
+            patch(f'{self._LOC_MOD}.uniprot_locations', return_value={}),
+            patch(f'{self._LOC_MOD}.tcdb_locations', return_value={'Cell membrane': 'e'}),
+            patch(
+                f'{self._LOC_MOD}.resolve_protein_locations',
+                side_effect=lambda uid, *_: {'e'} if uid == 'P00001' else None,
+            ),
+        ):
+            df = self._make_df(frozenset({'P00001'}))
+            result = _enrich_stitch_locations(df, organism=9606)
+            assert result.iloc[0]['locations'] == ('e',)
+
+    def test_frozenset_multi_ac_union(self):
+        """Multi-element frozenset: locations are union of all ACs."""
+        from omnipath_metabo.datasets.cosmos._build import _enrich_stitch_locations
+
+        def _fake_resolve(uid, *_):
+            return {'e', 'c'} if uid == 'P00001' else {'n'} if uid == 'P00002' else None
+
+        with (
+            patch(f'{self._LOC_MOD}.uniprot_locations', return_value={}),
+            patch(f'{self._LOC_MOD}.tcdb_locations', return_value={}),
+            patch(
+                f'{self._LOC_MOD}.resolve_protein_locations',
+                side_effect=_fake_resolve,
+            ),
+        ):
+            df = self._make_df(frozenset({'P00001', 'P00002'}))
+            result = _enrich_stitch_locations(df, organism=9606)
+            assert set(result.iloc[0]['locations']) == {'c', 'e', 'n'}
+
+    def test_frozenset_no_location_returns_empty_tuple(self):
+        """Frozenset where no AC has location data returns ()."""
+        from omnipath_metabo.datasets.cosmos._build import _enrich_stitch_locations
+
+        with (
+            patch(f'{self._LOC_MOD}.uniprot_locations', return_value={}),
+            patch(f'{self._LOC_MOD}.tcdb_locations', return_value={}),
+            patch(f'{self._LOC_MOD}.resolve_protein_locations', return_value=None),
+        ):
+            df = self._make_df(frozenset({'P99999'}))
+            result = _enrich_stitch_locations(df, organism=9606)
+            assert result.iloc[0]['locations'] == ()
+
+
+# ---------------------------------------------------------------------------
 # TestBuildAllosteric
 # ---------------------------------------------------------------------------
 

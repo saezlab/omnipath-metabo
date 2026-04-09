@@ -353,9 +353,16 @@ def _enrich_stitch_locations(df: pd.DataFrame, organism: int) -> pd.DataFrame:
     all_locations = uniprot_locations(organism=organism, reviewed=True)
     loc_map = tcdb_locations()
 
-    def _loc(uniprot: str) -> tuple:
-        abbr = resolve_protein_locations(uniprot, all_locations, loc_map)
-        return tuple(sorted(abbr)) if abbr else ()
+    def _loc(uniprot_val) -> tuple:
+        # After translate_pkn, target may be a frozenset of UniProt ACs.
+        # Take the union of locations across all ACs in the set.
+        ids = uniprot_val if isinstance(uniprot_val, frozenset) else (uniprot_val,)
+        abbr_all: set[str] = set()
+        for uid in ids:
+            abbr = resolve_protein_locations(uid, all_locations, loc_map)
+            if abbr:
+                abbr_all |= abbr
+        return tuple(sorted(abbr_all)) if abbr_all else ()
 
     df = df.copy()
     df.loc[stitch_mask, 'locations'] = (
