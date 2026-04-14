@@ -30,12 +30,13 @@ def _init_backend():
         from omnipath_utils.mapping import translate as _translate
         from omnipath_utils.mapping import translation_table as _table
 
-        # Smoke test: verify both translate and translation_table work.
-        # translation_table must return data for a known populated pair;
-        # otherwise the in-memory backend is being used instead of the DB,
-        # which would trigger large upstream downloads during the build.
+        # Smoke test: verify both translate and translation_table work
+        # against the PostgreSQL DB.  Test with a metabolite pair
+        # (organism=0) — if this returns empty, the in-memory backend is
+        # being used instead of the DB, which would trigger large upstream
+        # downloads during the build.
         _translate(['P04637'], 'uniprot', 'genesymbol', 9606)
-        _test_table = _table('genesymbol', 'uniprot', 9606)
+        _test_table = _table('pubchem', 'chebi', 0)
 
         if not _test_table:
             raise RuntimeError('translation_table returned empty — DB not reachable')
