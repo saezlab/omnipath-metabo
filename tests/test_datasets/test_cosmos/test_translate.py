@@ -3,25 +3,24 @@
 """Unit tests for COSMOS PKN ID translation.
 
 Fast tests cover the pass-through cases (chebi, ensembl, reaction_id)
-that require no external data.  Tests that exercise pypath BioMart
-mappings are marked slow.
+that require no external data.  Tests that exercise the omnipath-utils
+adapter mappings are mocked.
 """
 
 import pandas as pd
 import pytest
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
-    _ensg_to_uniprot_rest,
-    _ensp_to_uniprot_rest,
-    _entrez_to_uniprot_rest,
-    _lipidmaps_to_chebi,
+    _build_metab_mapping,
+    _build_protein_mapping,
+    _hmdb_synonyms_chebi,
+    _looks_like_chemical_name,
     _metatlas_to_chebi,
-    _normalise_hmdb,
-    _to_chebi,
-    _to_uniprot,
+    _name_to_chebi,
+    _ramp_synonyms_chebi,
     translate_pkn,
 )
 
@@ -33,42 +32,259 @@ def _make_df(rows):
 
 
 # ---------------------------------------------------------------------------
-# _to_chebi dispatch
+# _looks_like_chemical_name
 # ---------------------------------------------------------------------------
 
-class TestToChebi:
+class TestLooksLikeChemicalName:
 
-    def test_chebi_passthrough(self):
-        assert _to_chebi('CHEBI:12345', 'chebi') == 'CHEBI:12345'
+    def test_simple_name(self):
+        assert _looks_like_chemical_name('ATP') is True
 
-    def test_unknown_id_type_returns_none(self):
-        result = _to_chebi('X', 'unknown_type')
+    def test_percentage_rejected(self):
+        assert _looks_like_chemical_name('10.2% residual activity') is False
+
+    def test_concentration_rejected(self):
+        assert _looks_like_chemical_name('100 nM compound') is False
+
+    def test_assay_vocabulary_rejected(self):
+        assert _looks_like_chemical_name('protein signaling pathway') is False
+
+    def test_long_name_rejected(self):
+        assert _looks_like_chemical_name('x' * 200) is False
+
+
+# ---------------------------------------------------------------------------
+# Adapter tests (_mapping.py)
+# ---------------------------------------------------------------------------
+
+class TestMappingAdapter:
+    """Verify the dual-mode adapter imports and exports the expected symbols."""
+
+    def test_mapping_translate_callable(self):
+        from omnipath_metabo.datasets.cosmos._mapping import mapping_translate
+        assert callable(mapping_translate)
+
+    def test_mapping_table_callable(self):
+        from omnipath_metabo.datasets.cosmos._mapping import mapping_table
+        assert callable(mapping_table)
+
+    def test_mapping_mode_is_string(self):
+        from omnipath_metabo.datasets.cosmos._mapping import mapping_mode
+        assert isinstance(mapping_mode, str)
+        assert mapping_mode in ('database', 'http')
+
+
+# ---------------------------------------------------------------------------
+# Metabolite mapping table functions (mocked adapter)
+# ---------------------------------------------------------------------------
+
+class TestPubchemChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _pubchem_chebi_table
+        _pubchem_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={'5793': {'CHEBI:18367'}, '2244': {'CHEBI:15365'}},
+        ):
+            result = _pubchem_chebi_table()
+        assert isinstance(result, dict)
+        assert result['5793'] == 'CHEBI:18367'
+        assert result['2244'] == 'CHEBI:15365'
+
+
+class TestLipidmapsChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _lipidmaps_chebi_table
+        _lipidmaps_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={
+                'LMFA01010001': {'CHEBI:15756'},
+                'LMFA01010002': {'CHEBI:15904'},
+            },
+        ):
+            result = _lipidmaps_chebi_table()
+        assert isinstance(result, dict)
+        assert result['LMFA01010001'] == 'CHEBI:15756'
+        assert len(result) == 2
+
+    def test_unknown_id_absent(self):
+        from omnipath_metabo.datasets.cosmos._translate import _lipidmaps_chebi_table
+        _lipidmaps_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={'LMFA01010001': {'CHEBI:15756'}},
+        ):
+            result = _lipidmaps_chebi_table()
+        assert 'LMFA_NOTEXIST' not in result
+
+
+class TestHmdbChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _hmdb_chebi_table
+        _hmdb_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={
+                'HMDB0000001': {'CHEBI:16015'},
+                'HMDB0000190': {'CHEBI:17289'},
+            },
+        ):
+            result = _hmdb_chebi_table()
+        assert isinstance(result, dict)
+        assert result['HMDB0000001'] == 'CHEBI:16015'
+
+
+class TestBiggChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _bigg_chebi_table
+        _bigg_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={'glc__D': {'CHEBI:17634'}},
+        ):
+            result = _bigg_chebi_table()
+        assert isinstance(result, dict)
+        assert result['glc__D'] == 'CHEBI:17634'
+
+
+class TestKeggChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _kegg_chebi_table
+        _kegg_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={'C00001': {'CHEBI:15377'}},
+        ):
+            result = _kegg_chebi_table()
+        assert isinstance(result, dict)
+        assert result['C00001'] == 'CHEBI:15377'
+
+
+class TestMetanetxChebiTable:
+
+    def test_returns_dict(self):
+        from omnipath_metabo.datasets.cosmos._translate import _metanetx_chebi_table
+        _metanetx_chebi_table.cache_clear()
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            return_value={'MNXM999': {'CHEBI:222'}},
+        ):
+            result = _metanetx_chebi_table()
+        assert isinstance(result, dict)
+        assert result['MNXM999'] == 'CHEBI:222'
+
+
+# ---------------------------------------------------------------------------
+# _name_to_chebi, _hmdb_synonyms_chebi, _ramp_synonyms_chebi
+# ---------------------------------------------------------------------------
+
+class TestNameToChebi:
+
+    def test_hmdb_hit(self):
+        _hmdb_synonyms_chebi.cache_clear()
+        _ramp_synonyms_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+                return_value={'atp': 'CHEBI:30616'},
+            ),
+            patch(
+                'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+                return_value={},
+            ),
+        ):
+            result = _name_to_chebi('ATP')
+        assert result == 'CHEBI:30616'
+
+    def test_ramp_hit(self):
+        _hmdb_synonyms_chebi.cache_clear()
+        _ramp_synonyms_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+                return_value={},
+            ),
+            patch(
+                'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+                return_value={'nadh': 'CHEBI:57945'},
+            ),
+        ):
+            result = _name_to_chebi('NADH')
+        assert result == 'CHEBI:57945'
+
+    def test_returns_none_for_unknown(self):
+        _hmdb_synonyms_chebi.cache_clear()
+        _ramp_synonyms_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+                return_value={},
+            ),
+            patch(
+                'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+                return_value={},
+            ),
+            patch(
+                'pypath.inputs.pubchem.pubchem_name_cids',
+                return_value=[],
+            ),
+        ):
+            result = _name_to_chebi('totally_unknown_compound_xyz_999')
         assert result is None
 
 
+class TestHmdbSynonymsChebi:
+
+    def test_returns_dict(self):
+        _hmdb_synonyms_chebi.cache_clear()
+        with patch(
+            'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+            return_value={'glucose': 'CHEBI:17234'},
+        ):
+            result = _hmdb_synonyms_chebi()
+        assert isinstance(result, dict)
+        assert result['glucose'] == 'CHEBI:17234'
+
+    def test_returns_empty_on_failure(self):
+        _hmdb_synonyms_chebi.cache_clear()
+        with patch(
+            'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+            side_effect=ConnectionError('cloudflare block'),
+        ):
+            result = _hmdb_synonyms_chebi()
+        assert result == {}
+
+
+class TestRampSynonymsChebi:
+
+    def test_returns_dict(self):
+        _ramp_synonyms_chebi.cache_clear()
+        with patch(
+            'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+            return_value={'lactate': 'CHEBI:24996'},
+        ):
+            result = _ramp_synonyms_chebi()
+        assert isinstance(result, dict)
+        assert result['lactate'] == 'CHEBI:24996'
+
+    def test_returns_empty_on_failure(self):
+        _ramp_synonyms_chebi.cache_clear()
+        with patch(
+            'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+            side_effect=RuntimeError('download failed'),
+        ):
+            result = _ramp_synonyms_chebi()
+        assert result == {}
+
+
 # ---------------------------------------------------------------------------
-# _to_uniprot dispatch
-# ---------------------------------------------------------------------------
-
-class TestToUniprot:
-
-    def test_uniprot_passthrough(self):
-        assert _to_uniprot('P00533', 'uniprot', 9606) == 'P00533'
-
-    def test_reaction_id_passthrough(self):
-        # Orphan pseudo-enzyme IDs must pass through unchanged.
-        assert _to_uniprot('MAR04831', 'reaction_id', 9606) == 'MAR04831'
-
-    def test_reaction_id_with_underscores(self):
-        assert _to_uniprot('ORPHAN_NA_TRANS', 'reaction_id', 9606) == 'ORPHAN_NA_TRANS'
-
-    def test_unknown_id_type_returns_none(self):
-        result = _to_uniprot('X', 'unknown_type', 9606)
-        assert result is None
-
-
-# ---------------------------------------------------------------------------
-# translate_pkn — fast cases using chebi + ensembl/reaction_id id_types
+# translate_pkn -- fast cases using chebi + ensembl/reaction_id id_types
 # ---------------------------------------------------------------------------
 
 class TestTranslatePkn:
@@ -127,7 +343,7 @@ class TestTranslatePkn:
         assert result.iloc[0]['id_type_b'] == 'uniprot'
 
     def test_drops_row_when_source_untranslatable(self):
-        # pubchem id_type with no mapping available → source becomes None → dropped
+        # pubchem id_type with no mapping available -> source becomes None -> dropped
         row = self._make_met_protein_row(
             source='NOTACID',
             id_type_a='pubchem',
@@ -137,7 +353,7 @@ class TestTranslatePkn:
         assert len(result) == 0
 
     def test_drops_row_when_target_untranslatable(self):
-        # ensp with a fake ID: pypath returns empty set with unloaded tables → dropped
+        # ensp with a fake ID: mapping_translate returns empty -> dropped
         row = self._make_met_protein_row(
             target='ENSP999FAKE',
             id_type_b='ensp',
@@ -147,7 +363,7 @@ class TestTranslatePkn:
         assert len(result) == 0
 
     def test_reaction_id_preserved_as_target(self):
-        # Orphan edge: small_molecule → reaction_id
+        # Orphan edge: small_molecule -> reaction_id
         row = Interaction(
             source='CHEBI:30616',
             target='MAR04831',
@@ -167,7 +383,7 @@ class TestTranslatePkn:
         assert result.iloc[0]['id_type_b'] == 'reaction_id'
 
     def test_reaction_id_preserved_as_source(self):
-        # Orphan edge: reaction_id → small_molecule
+        # Orphan edge: reaction_id -> small_molecule
         row = Interaction(
             source='MAR04831',
             target='CHEBI:30616',
@@ -209,7 +425,7 @@ class TestTranslatePkn:
         assert result[result['id_type_b'] == 'reaction_id'].iloc[0]['target'] == 'MAR04831'
 
     def test_direction_aware_gem_protein_source(self):
-        # GEM produces protein-source edges (enzyme → metabolite); ensure
+        # GEM produces protein-source edges (enzyme -> metabolite); ensure
         # translate_pkn handles both directions.
         row = self._make_protein_met_row(
             source='P00533', target='CHEBI:30616',
@@ -228,84 +444,7 @@ class TestTranslatePkn:
 
 
 # ---------------------------------------------------------------------------
-# HMDB normalisation
-# ---------------------------------------------------------------------------
-
-class TestNormaliseHmdb:
-
-    def test_old_format_5digit(self):
-        assert _normalise_hmdb('HMDB00001') == 'HMDB0000001'
-
-    def test_old_format_no_leading_zeros(self):
-        assert _normalise_hmdb('HMDB00190') == 'HMDB0000190'
-
-    def test_new_format_already_7digit(self):
-        assert _normalise_hmdb('HMDB0000001') == 'HMDB0000001'
-
-    def test_idempotent_on_new_format(self):
-        val = 'HMDB0000190'
-        assert _normalise_hmdb(val) == val
-
-    def test_large_id(self):
-        # IDs with 7 digits already (e.g. HMDB0251697)
-        assert _normalise_hmdb('HMDB0251697') == 'HMDB0251697'
-
-    def test_no_prefix_passthrough(self):
-        assert _normalise_hmdb('CHEBI:12345') == 'CHEBI:12345'
-
-    def test_empty_string_passthrough(self):
-        assert _normalise_hmdb('') == ''
-
-
-# ---------------------------------------------------------------------------
-# _to_chebi with hmdb id_type (mocked UniChem)
-# ---------------------------------------------------------------------------
-
-class TestToChebiHmdb:
-
-    _FAKE_MAPPING = {
-        'HMDB0000001': 'CHEBI:16015',
-        'HMDB0000190': 'CHEBI:17289',
-    }
-
-    def test_new_format_translates(self):
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            result = _to_chebi('HMDB0000001', 'hmdb')
-        assert result == 'CHEBI:16015'
-
-    def test_old_format_normalised_and_translates(self):
-        """Old 5-digit HMDB ID is normalised before lookup."""
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            result = _to_chebi('HMDB00190', 'hmdb')
-        assert result == 'CHEBI:17289'
-
-    def test_unknown_hmdb_returns_none(self):
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            result = _to_chebi('HMDB9999999', 'hmdb')
-        assert result is None
-
-    def test_old_and_new_same_result(self):
-        """Old-format and new-format of the same ID produce the same ChEBI."""
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            old = _to_chebi('HMDB00001', 'hmdb')
-            new = _to_chebi('HMDB0000001', 'hmdb')
-        assert old == new == 'CHEBI:16015'
-
-
-# ---------------------------------------------------------------------------
-# Vectorized translate_pkn — output equivalence on a synthetic DataFrame
+# Vectorized translate_pkn -- output equivalence on a synthetic DataFrame
 # ---------------------------------------------------------------------------
 
 class TestTranslatePknVectorized:
@@ -358,13 +497,13 @@ class TestTranslatePknVectorized:
         row0 = result[result['id_type_a'] == 'chebi'].iloc[0]
         assert row0['source'] == 'CHEBI:30616'
         assert row0['id_type_b'] == 'uniprot'
-        # orphan row — reaction_id preserved
+        # orphan row -- reaction_id preserved
         orphan_rows = result[result['id_type_b'] == 'reaction_id']
         assert len(orphan_rows) == 1
         assert orphan_rows.iloc[0]['target'] == 'MAR04831'
 
     def test_pubchem_no_mapping_drops_row(self):
-        """A pubchem ID with no mapping in the dict → row is dropped."""
+        """A pubchem ID with no mapping in the dict -> row is dropped."""
         rows = [
             self._make_row('CHEBI:30616', 'P00533', 'chebi', 'uniprot'),
             self._make_row('9999999999', 'P00533', 'pubchem', 'uniprot'),
@@ -388,11 +527,11 @@ class TestTranslatePknVectorized:
 
 
 # ---------------------------------------------------------------------------
-# translate_pkn vectorized path — id_type='hmdb' (mocked UniChem)
+# translate_pkn vectorized path -- id_type='hmdb' (mocked table)
 # ---------------------------------------------------------------------------
 
 class TestTranslatePknHmdb:
-    """Verify translate_pkn normalises old HMDB IDs before the dict lookup."""
+    """Verify translate_pkn handles HMDB IDs via the bulk table lookup."""
 
     _FAKE_MAPPING = {
         'HMDB0000001': 'CHEBI:16015',
@@ -413,51 +552,27 @@ class TestTranslatePknHmdb:
             mor=1,
         )
 
-    def test_new_format_hmdb_translates(self):
-        """7-digit HMDB ID is looked up directly."""
+    def test_hmdb_translates(self):
+        """HMDB ID is looked up in the _hmdb_chebi_table dict."""
         rows = [self._make_row('HMDB0000001')]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
             return_value=self._FAKE_MAPPING,
         ):
             result = translate_pkn(df)
         assert len(result) == 1
         assert result.iloc[0]['source'] == 'CHEBI:16015'
 
-    def test_old_format_hmdb_normalised_then_translates(self):
-        """5-digit HMDB ID is normalised to 7-digit before lookup."""
-        rows = [self._make_row('HMDB00190')]
-        df = _make_df(rows)
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            result = translate_pkn(df)
-        assert len(result) == 1
-        assert result.iloc[0]['source'] == 'CHEBI:17289'
-
-    def test_old_and_new_same_id_same_output(self):
-        """Old-format and new-format of the same HMDB ID produce the same ChEBI."""
-        rows = [self._make_row('HMDB00001'), self._make_row('HMDB0000001')]
-        df = _make_df(rows)
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
-            return_value=self._FAKE_MAPPING,
-        ):
-            result = translate_pkn(df)
-        assert len(result) == 2
-        assert (result['source'] == 'CHEBI:16015').all()
-
     def test_unmapped_hmdb_drops_row(self):
         """HMDB ID with no ChEBI mapping causes the row to be dropped."""
         rows = [
-            self._make_row('HMDB9999999'),   # not in mapping → dropped
-            self._make_row('HMDB0000001'),   # maps → kept
+            self._make_row('HMDB9999999'),   # not in mapping -> dropped
+            self._make_row('HMDB0000001'),   # maps -> kept
         ]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
             return_value=self._FAKE_MAPPING,
         ):
             result = translate_pkn(df)
@@ -469,7 +584,7 @@ class TestTranslatePknHmdb:
         rows = [self._make_row('HMDB0000001')]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
             return_value=self._FAKE_MAPPING,
         ):
             result = translate_pkn(df)
@@ -477,59 +592,11 @@ class TestTranslatePknHmdb:
 
 
 # ---------------------------------------------------------------------------
-# _lipidmaps_to_chebi (mocked UniChem)
-# ---------------------------------------------------------------------------
-
-class TestLipidmapsToChebi:
-
-    _FAKE_MAPPING = {
-        'LMFA01010001': {'CHEBI:15756'},
-        'LMFA01010002': {'CHEBI:15904'},
-    }
-
-    def test_returns_dict(self):
-        with patch(
-            'pypath.inputs.unichem.unichem_mapping',
-            return_value=self._FAKE_MAPPING,
-        ):
-            _lipidmaps_to_chebi.cache_clear()
-            result = _lipidmaps_to_chebi()
-        assert isinstance(result, dict)
-
-    def test_known_id_resolves(self):
-        with patch(
-            'pypath.inputs.unichem.unichem_mapping',
-            return_value=self._FAKE_MAPPING,
-        ):
-            _lipidmaps_to_chebi.cache_clear()
-            result = _lipidmaps_to_chebi()
-        assert result['LMFA01010001'] == 'CHEBI:15756'
-
-    def test_all_entries_present(self):
-        with patch(
-            'pypath.inputs.unichem.unichem_mapping',
-            return_value=self._FAKE_MAPPING,
-        ):
-            _lipidmaps_to_chebi.cache_clear()
-            result = _lipidmaps_to_chebi()
-        assert len(result) == 2
-
-    def test_unknown_id_absent(self):
-        with patch(
-            'pypath.inputs.unichem.unichem_mapping',
-            return_value=self._FAKE_MAPPING,
-        ):
-            _lipidmaps_to_chebi.cache_clear()
-            result = _lipidmaps_to_chebi()
-        assert 'LMFA_NOTEXIST' not in result
-
-
-# ---------------------------------------------------------------------------
 # _metatlas_to_chebi fallback chain (mocked external sources)
 # ---------------------------------------------------------------------------
 
 class TestMetatlasToChebiFallbacks:
-    """Verify the four-step fallback chain in _metatlas_to_chebi.
+    """Verify the six-step fallback chain in _metatlas_to_chebi.
 
     Uses mocked external sources so no network calls are made.
     Each test covers a specific fallback step being the one that resolves
@@ -556,7 +623,7 @@ class TestMetatlasToChebiFallbacks:
         # resolved via HMDB
         {'metsNoComp': 'MAM00006', 'metChEBIID': '',
          'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': 'HMDB0000001'},
-        # unresolvable — no IDs
+        # unresolvable -- no IDs
         {'metsNoComp': 'MAM00007', 'metChEBIID': '',
          'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
     ]
@@ -570,27 +637,23 @@ class TestMetatlasToChebiFallbacks:
                 return_value=self._FAKE_ROWS,
             ),
             patch(
-                'pypath.inputs.metanetx.metanetx_metabolite_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._metanetx_chebi_table',
                 return_value={'MNXM999': 'CHEBI:222'},
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._lipidmaps_to_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._lipidmaps_chebi_table',
                 return_value={'LMFA01010001': 'CHEBI:333'},
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table',
                 return_value={'5793': 'CHEBI:444'},
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi_ramp',
-                return_value={},
-            ),
-            patch(
-                'pypath.inputs.kegg.kegg_compound_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._kegg_chebi_table',
                 return_value={'C00001': 'CHEBI:15377'},
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
                 return_value={'HMDB0000001': 'CHEBI:555'},
             ),
         ):
@@ -642,298 +705,202 @@ class TestMetatlasToChebiFallbacks:
                 return_value=rows,
             ),
             patch(
-                'pypath.inputs.metanetx.metanetx_metabolite_chebi',
+                'omnipath_metabo.datasets.cosmos._translate._metanetx_chebi_table',
                 return_value={'MNXM999': 'CHEBI:222'},
             ),
-            patch('omnipath_metabo.datasets.cosmos._translate._lipidmaps_to_chebi', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_to_chebi_ramp', return_value={}),
-            patch('pypath.inputs.kegg.kegg_compound_chebi', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._hmdb_to_chebi', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._lipidmaps_chebi_table', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._kegg_chebi_table', return_value={}),
+            patch('omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table', return_value={}),
         ):
             result = _metatlas_to_chebi('FakeGEM')
         assert result['MAM00010'] == 'CHEBI:222'
 
 
 # ---------------------------------------------------------------------------
-# _ensp_to_uniprot_rest — mocked HTTP
+# _build_protein_mapping -- mocked mapping_translate
 # ---------------------------------------------------------------------------
 
-class TestEnspToUniprotRest:
-    """Unit tests for _ensp_to_uniprot_rest using mocked HTTP responses."""
+class TestBuildProteinMapping:
+    """Tests for the batch protein ID translation dispatcher."""
 
-    def _mock_responses(self, results_payload, monkeypatch):
-        """
-        Wire up requests.post (submit) and requests.get (status + results).
-        """
-        import requests as _requests
+    def test_uniprot_passthrough(self):
+        ids = pd.Series(['P00533', 'P04637'])
+        result = _build_protein_mapping('uniprot', ids, 9606)
+        assert result['P00533'] == frozenset({'P00533'})
+        assert result['P04637'] == frozenset({'P04637'})
 
-        class _FakeSubmitResp:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {'jobId': 'TESTJOB'}
+    def test_reaction_id_passthrough(self):
+        ids = pd.Series(['MAR04831', 'ORPHAN_NA_TRANS'])
+        result = _build_protein_mapping('reaction_id', ids, 9606)
+        assert result['MAR04831'] == frozenset({'MAR04831'})
+        assert result['ORPHAN_NA_TRANS'] == frozenset({'ORPHAN_NA_TRANS'})
 
-        class _FakeStatusResp:
-            status_code = 200
-            def json(self): return {'jobStatus': 'FINISHED'}
+    def test_ensp_uses_mapping_translate(self):
+        ids = pd.Series(['ENSP00000269305', 'ENSP00000350283'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={
+                'ENSP00000269305': {'P04637'},
+                'ENSP00000350283': {'P00533'},
+            },
+        ):
+            result = _build_protein_mapping('ensp', ids, 9606)
+        assert result['ENSP00000269305'] == frozenset({'P04637'})
+        assert result['ENSP00000350283'] == frozenset({'P00533'})
 
-        class _FakeResultsResp:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return results_payload
+    def test_ensp_missing_returns_none(self):
+        ids = pd.Series(['ENSP_FAKE'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={},
+        ):
+            result = _build_protein_mapping('ensp', ids, 9606)
+        assert result['ENSP_FAKE'] is None
 
-        call_count = {'get': 0}
+    def test_ensembl_simple_ids(self):
+        ids = pd.Series(['ENSG00000141510'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'ENSG00000141510': {'P04637'}},
+        ):
+            result = _build_protein_mapping('ensembl', ids, 9606)
+        assert result['ENSG00000141510'] == frozenset({'P04637'})
 
-        def _fake_post(url, data=None, timeout=None):
-            return _FakeSubmitResp()
+    def test_ensembl_compound_ids(self):
+        """Compound ENSG IDs (A_B) are split and results unioned."""
+        ids = pd.Series(['ENSG0001_ENSG0002'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={
+                'ENSG0001': {'P11111'},
+                'ENSG0002': {'P22222'},
+            },
+        ):
+            result = _build_protein_mapping('ensembl', ids, 9606)
+        assert result['ENSG0001_ENSG0002'] == frozenset({'P11111', 'P22222'})
 
-        def _fake_get(url, timeout=None, allow_redirects=True):
-            call_count['get'] += 1
-            if 'status' in url:
-                return _FakeStatusResp()
-            return _FakeResultsResp()
+    def test_genesymbol_uses_mapping_translate(self):
+        ids = pd.Series(['TP53', 'EGFR'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={
+                'TP53': {'P04637'},
+                'EGFR': {'P00533'},
+            },
+        ):
+            result = _build_protein_mapping('genesymbol', ids, 9606)
+        assert result['TP53'] == frozenset({'P04637'})
+        assert result['EGFR'] == frozenset({'P00533'})
 
-        monkeypatch.setattr(_requests, 'post', _fake_post)
-        monkeypatch.setattr(_requests, 'get', _fake_get)
+    def test_entrez_with_bigg_fallback(self):
+        """Entrez IDs try BiGG gene symbol -> UniProt first, then batch."""
+        ids = pd.Series(['1591', '999999'])
+        with (
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate._entrez_to_uniprot_bigg',
+                return_value={'1591': 'P05108'},
+            ),
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+                return_value={'999999': {'Q99999'}},
+            ),
+        ):
+            result = _build_protein_mapping('entrez', ids, 9606)
+        assert result['1591'] == frozenset({'P05108'})
+        assert result['999999'] == frozenset({'Q99999'})
 
-    def test_returns_dict(self, monkeypatch):
-        self._mock_responses({'results': [], 'failedIds': ['ENSP0001']}, monkeypatch)
-        result = _ensp_to_uniprot_rest(['ENSP0001'])
-        assert isinstance(result, dict)
-
-    def test_resolved_ensp_present(self, monkeypatch):
-        self._mock_responses({
-            'results': [{'from': 'ENSP0001', 'to': 'P12345'}],
-            'failedIds': [],
-        }, monkeypatch)
-        result = _ensp_to_uniprot_rest(['ENSP0001'])
-        assert result['ENSP0001'] == 'P12345'
-
-    def test_failed_ensp_absent(self, monkeypatch):
-        self._mock_responses({
-            'results': [],
-            'failedIds': ['ENSP0002'],
-        }, monkeypatch)
-        result = _ensp_to_uniprot_rest(['ENSP0002'])
-        assert 'ENSP0002' not in result
-
-    def test_mixed_resolved_and_failed(self, monkeypatch):
-        self._mock_responses({
-            'results': [{'from': 'ENSP0001', 'to': 'P12345'}],
-            'failedIds': ['ENSP0002'],
-        }, monkeypatch)
-        result = _ensp_to_uniprot_rest(['ENSP0001', 'ENSP0002'])
-        assert result['ENSP0001'] == 'P12345'
-        assert 'ENSP0002' not in result
-
-    def test_to_as_dict_with_primary_accession(self, monkeypatch):
-        """UniProt sometimes returns 'to' as a dict with primaryAccession."""
-        self._mock_responses({
-            'results': [{'from': 'ENSP0003', 'to': {'primaryAccession': 'Q99999'}}],
-            'failedIds': [],
-        }, monkeypatch)
-        result = _ensp_to_uniprot_rest(['ENSP0003'])
-        assert result['ENSP0003'] == 'Q99999'
-
-    def test_empty_input_returns_empty(self, monkeypatch):
-        # Should not make any HTTP calls
-        result = _ensp_to_uniprot_rest([])
-        assert result == {}
-
-    def test_submit_failure_returns_empty(self, monkeypatch):
-        import requests as _requests
-
-        def _bad_post(url, data=None, timeout=None):
-            raise ConnectionError('network down')
-
-        monkeypatch.setattr(_requests, 'post', _bad_post)
-        result = _ensp_to_uniprot_rest(['ENSP0001'])
-        assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# _ensg_to_uniprot_rest — delegates to _uniprot_idmap_batch
-# ---------------------------------------------------------------------------
-
-class TestEnsgToUniprotRest:
-    """_ensg_to_uniprot_rest is a thin wrapper — just verify delegation."""
-
-    def test_returns_dict(self, monkeypatch):
-        import requests as _requests
-
-        class _FakeSubmit:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {'jobId': 'JOB2'}
-
-        class _FakeStatus:
-            status_code = 200
-            def json(self): return {'jobStatus': 'FINISHED'}
-
-        class _FakeResults:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {
-                'results': [{'from': 'ENSG0001', 'to': 'Q11111'}],
-                'failedIds': [],
-            }
-
-        def _fake_post(url, data=None, timeout=None):
-            assert data.get('from') == 'Ensembl', 'wrong from_db'
-            return _FakeSubmit()
-
-        def _fake_get(url, timeout=None, allow_redirects=True):
-            if 'status' in url:
-                return _FakeStatus()
-            return _FakeResults()
-
-        monkeypatch.setattr(_requests, 'post', _fake_post)
-        monkeypatch.setattr(_requests, 'get', _fake_get)
-
-        result = _ensg_to_uniprot_rest(['ENSG0001'])
-        assert result == {'ENSG0001': 'Q11111'}
-
-    def test_empty_input_returns_empty(self, monkeypatch):
-        result = _ensg_to_uniprot_rest([])
-        assert result == {}
+    def test_unknown_type_returns_none(self):
+        ids = pd.Series(['X123'])
+        result = _build_protein_mapping('unknown_type', ids, 9606)
+        assert result['X123'] is None
 
 
 # ---------------------------------------------------------------------------
-# _entrez_to_uniprot_rest — delegates to _uniprot_idmap_batch with 'GeneID'
+# _build_metab_mapping -- mocked table functions
 # ---------------------------------------------------------------------------
 
-class TestEntrezToUniprotRest:
-    """_entrez_to_uniprot_rest is a thin wrapper — verify delegation and basic flow."""
+class TestBuildMetabMapping:
+    """Tests for the batch metabolite ID translation dispatcher."""
 
-    def _mock_responses(self, results_payload, monkeypatch):
-        import requests as _requests
+    def test_chebi_passthrough(self):
+        ids = pd.Series(['CHEBI:30616', 'CHEBI:15422'])
+        resource = pd.Series(['STITCH', 'STITCH'])
+        result = _build_metab_mapping('chebi', ids, resource)
+        assert result['CHEBI:30616'] == 'CHEBI:30616'
+        assert result['CHEBI:15422'] == 'CHEBI:15422'
 
-        class _FakeSubmit:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return {'jobId': 'ENTREZJOB'}
+    def test_pubchem_uses_table(self):
+        ids = pd.Series(['5793', '2244'])
+        resource = pd.Series(['STITCH', 'STITCH'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table',
+            return_value={'5793': 'CHEBI:18367', '2244': 'CHEBI:15365'},
+        ):
+            result = _build_metab_mapping('pubchem', ids, resource)
+        assert result['5793'] == 'CHEBI:18367'
+        assert result['2244'] == 'CHEBI:15365'
 
-        class _FakeStatus:
-            status_code = 200
-            def json(self): return {'jobStatus': 'FINISHED'}
+    def test_hmdb_uses_table(self):
+        ids = pd.Series(['HMDB0000001'])
+        resource = pd.Series(['STITCH'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
+            return_value={'HMDB0000001': 'CHEBI:16015'},
+        ):
+            result = _build_metab_mapping('hmdb', ids, resource)
+        assert result['HMDB0000001'] == 'CHEBI:16015'
 
-        class _FakeResults:
-            status_code = 200
-            def raise_for_status(self): pass
-            def json(self): return results_payload
+    def test_bigg_uses_table(self):
+        ids = pd.Series(['glc__D'])
+        resource = pd.Series(['BiGG'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate._bigg_chebi_table',
+            return_value={'glc__D': 'CHEBI:17634'},
+        ):
+            result = _build_metab_mapping('bigg', ids, resource)
+        assert result['glc__D'] == 'CHEBI:17634'
 
-        def _fake_post(url, data=None, timeout=None):
-            assert data.get('from') == 'GeneID', 'wrong from_db'
-            return _FakeSubmit()
+    def test_unknown_type_returns_none(self):
+        ids = pd.Series(['X123'])
+        resource = pd.Series(['UnknownDB'])
+        result = _build_metab_mapping('unknown_type', ids, resource)
+        assert result['X123'] is None
 
-        def _fake_get(url, timeout=None, allow_redirects=True):
-            if 'status' in url:
-                return _FakeStatus()
-            return _FakeResults()
+    def test_synonym_hmdb_hit(self):
+        """Synonym lookup tries HMDB synonyms first."""
+        ids = pd.Series(['ATP'])
+        resource = pd.Series(['BRENDA'])
+        _hmdb_synonyms_chebi.cache_clear()
+        _ramp_synonyms_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+                return_value={'atp': 'CHEBI:30616'},
+            ),
+            patch(
+                'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+                return_value={},
+            ),
+        ):
+            result = _build_metab_mapping('synonym', ids, resource)
+        assert result['ATP'] == 'CHEBI:30616'
 
-        monkeypatch.setattr(_requests, 'post', _fake_post)
-        monkeypatch.setattr(_requests, 'get', _fake_get)
-
-    def test_uses_gene_id_from_db(self, monkeypatch):
-        """Verifies 'from=GeneID' is passed to the UniProt API."""
-        self._mock_responses({'results': [], 'failedIds': ['1591']}, monkeypatch)
-        result = _entrez_to_uniprot_rest(['1591'])
-        assert isinstance(result, dict)
-
-    def test_resolved_entrez_present(self, monkeypatch):
-        self._mock_responses({
-            'results': [{'from': '1591', 'to': 'P05108'}],
-            'failedIds': [],
-        }, monkeypatch)
-        result = _entrez_to_uniprot_rest(['1591'])
-        assert result['1591'] == 'P05108'
-
-    def test_failed_entrez_absent(self, monkeypatch):
-        self._mock_responses({'results': [], 'failedIds': ['9999999']}, monkeypatch)
-        result = _entrez_to_uniprot_rest(['9999999'])
-        assert '9999999' not in result
-
-    def test_empty_input_returns_empty(self, monkeypatch):
-        result = _entrez_to_uniprot_rest([])
-        assert result == {}
-
-
-# ---------------------------------------------------------------------------
-# ensembl compound-ID split logic in translate_pkn
-# ---------------------------------------------------------------------------
-
-class TestEnsemblCompoundIdSplit:
-    """Verify that _-joined compound ENSG IDs are split and resolved."""
-
-    def _make_gem_df(self, ensg_id):
-        """One GEM metabolic edge with a compound ENSG protein target."""
-        from omnipath_metabo.datasets.cosmos._record import Interaction
-        row = Interaction(
-            source='MAM00001',
-            target=ensg_id,
-            source_type='small_molecule',
-            target_type='protein',
-            id_type_a='metatlas',
-            id_type_b='ensembl',
-            interaction_type='reaction',
-            resource='GEM:Human-GEM',
-            mor=1,
-            locations=['c'],
-            attrs={},
-        )
-        return pd.DataFrame([row], columns=list(Interaction._fields))
-
-    def test_compound_ensg_split_resolves(self, monkeypatch):
-        """A _-joined ENSG that fails as a whole resolves via first component."""
-        import pypath.utils.mapping as mapping_mod
-
-        compound = 'ENSG00000001_ENSG00000002'
-
-        def _fake_map(uid, src, tgt, ncbi_tax_id=9606):
-            # Whole compound ID fails; first component resolves
-            if uid == 'ENSG00000001':
-                return {'P99999'}
-            return set()
-
-        monkeypatch.setattr(mapping_mod, 'map_name', _fake_map)
-
-        # Also mock metatlas→ChEBI so the metabolite side passes through
-        import omnipath_metabo.datasets.cosmos._translate as tr
-        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
-
-        df = self._make_gem_df(compound)
-        result = translate_pkn(df, organism=9606)
-        assert len(result) == 1
-        assert result.iloc[0]['target'] == frozenset({'P99999'})
-
-    def test_single_ensg_no_split(self, monkeypatch):
-        """A single ENSG that resolves directly is not split."""
-        import pypath.utils.mapping as mapping_mod
-
-        def _fake_map(uid, src, tgt, ncbi_tax_id=9606):
-            if uid == 'ENSG00000001':
-                return {'P11111'}
-            return set()
-
-        monkeypatch.setattr(mapping_mod, 'map_name', _fake_map)
-
-        import omnipath_metabo.datasets.cosmos._translate as tr
-        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
-
-        df = self._make_gem_df('ENSG00000001')
-        result = translate_pkn(df, organism=9606)
-        assert len(result) == 1
-        assert result.iloc[0]['target'] == frozenset({'P11111'})
-
-    def test_unresolvable_compound_drops_row(self, monkeypatch):
-        """A compound ENSG where all components fail → row dropped."""
-        import pypath.utils.mapping as mapping_mod
-        import omnipath_metabo.datasets.cosmos._translate as tr
-
-        monkeypatch.setattr(mapping_mod, 'map_name', lambda *a, **kw: set())
-        monkeypatch.setattr(tr, '_ensg_to_uniprot_rest', lambda ids: {})
-        monkeypatch.setattr(tr, '_metatlas_to_chebi', lambda gem: {'MAM00001': 'CHEBI:1'})
-
-        df = self._make_gem_df('ENSG00000999_ENSG00000998')
-        result = translate_pkn(df, organism=9606)
-        assert len(result) == 0
+    def test_synonym_ramp_fallback(self):
+        """Synonym lookup falls back to RaMP when HMDB misses."""
+        ids = pd.Series(['NADH'])
+        resource = pd.Series(['BRENDA'])
+        _hmdb_synonyms_chebi.cache_clear()
+        _ramp_synonyms_chebi.cache_clear()
+        with (
+            patch(
+                'pypath.inputs.hmdb.metabolites.synonyms_chebi',
+                return_value={},
+            ),
+            patch(
+                'pypath.inputs.ramp._mapping.ramp_synonyms_chebi',
+                return_value={'nadh': 'CHEBI:57945'},
+            ),
+        ):
+            result = _build_metab_mapping('synonym', ids, resource)
+        assert result['NADH'] == 'CHEBI:57945'
