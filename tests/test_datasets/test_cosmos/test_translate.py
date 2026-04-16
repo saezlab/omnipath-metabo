@@ -330,7 +330,9 @@ class TestTranslatePkn:
     def test_uniprot_target_preserved(self):
         df = _make_df([self._make_met_protein_row(target='P00533')])
         result = translate_pkn(df)
-        assert result.iloc[0]['target'] == 'P00533'
+        # translate_pkn wraps protein IDs in frozensets (consistent with all
+        # other id_types); downstream formatter explodes them into plain strings.
+        assert result.iloc[0]['target'] == frozenset({'P00533'})
 
     def test_id_type_a_updated_to_chebi(self):
         df = _make_df([self._make_met_protein_row()])
@@ -379,7 +381,7 @@ class TestTranslatePkn:
         df = _make_df([row])
         result = translate_pkn(df)
         assert len(result) == 1
-        assert result.iloc[0]['target'] == 'MAR04831'
+        assert result.iloc[0]['target'] == frozenset({'MAR04831'})
         assert result.iloc[0]['id_type_b'] == 'reaction_id'
 
     def test_reaction_id_preserved_as_source(self):
@@ -399,7 +401,7 @@ class TestTranslatePkn:
         df = _make_df([row])
         result = translate_pkn(df)
         assert len(result) == 1
-        assert result.iloc[0]['source'] == 'MAR04831'
+        assert result.iloc[0]['source'] == frozenset({'MAR04831'})
         assert result.iloc[0]['id_type_a'] == 'reaction_id'
 
     def test_mixed_normal_and_orphan_rows(self):
@@ -421,8 +423,8 @@ class TestTranslatePkn:
         df = _make_df([normal, orphan])
         result = translate_pkn(df)
         assert len(result) == 2
-        assert result[result['id_type_b'] == 'uniprot'].iloc[0]['target'] == 'P00533'
-        assert result[result['id_type_b'] == 'reaction_id'].iloc[0]['target'] == 'MAR04831'
+        assert result[result['id_type_b'] == 'uniprot'].iloc[0]['target'] == frozenset({'P00533'})
+        assert result[result['id_type_b'] == 'reaction_id'].iloc[0]['target'] == frozenset({'MAR04831'})
 
     def test_direction_aware_gem_protein_source(self):
         # GEM produces protein-source edges (enzyme -> metabolite); ensure
@@ -476,7 +478,7 @@ class TestTranslatePknVectorized:
         df = _make_df(rows)
         result = translate_pkn(df)
         assert list(result['source']) == ['CHEBI:30616', 'CHEBI:15422']
-        assert list(result['target']) == ['P00533', 'P04637']
+        assert list(result['target']) == [frozenset({'P00533'}), frozenset({'P04637'})]
 
     def test_multiple_id_types_in_one_call(self):
         """DataFrame with mixed id_types handled correctly in a single call."""
@@ -500,7 +502,7 @@ class TestTranslatePknVectorized:
         # orphan row -- reaction_id preserved
         orphan_rows = result[result['id_type_b'] == 'reaction_id']
         assert len(orphan_rows) == 1
-        assert orphan_rows.iloc[0]['target'] == 'MAR04831'
+        assert orphan_rows.iloc[0]['target'] == frozenset({'MAR04831'})
 
     def test_pubchem_no_mapping_drops_row(self):
         """A pubchem ID with no mapping in the dict -> row is dropped."""

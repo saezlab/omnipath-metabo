@@ -48,7 +48,24 @@ def _init_backend():
 
     # Fall back to HTTP
     from omnipath_client.utils import translate as _translate
-    from omnipath_client.utils import translation_dict as _table
+
+    def _table(id_type: str, target_id_type: str, ncbi_tax_id: int = 0) -> dict:
+        """HTTP mode shim: full-table fetches are not supported without DB.
+
+        translation_dict was removed from omnipath_client; the HTTP API only
+        supports translating known IDs.  Callers that pre-load entire tables
+        (e.g. pubchem→chebi) will receive an empty dict, meaning metabolite ID
+        translation will be skipped in HTTP-only mode.  Use omnipath-utils with
+        a reachable PostgreSQL instance for full metabolite translation support.
+        """
+        _log.warning(
+            '[COSMOS] HTTP mode: full mapping table (%s→%s) unavailable '
+            '(omnipath_client no longer provides translation_dict). '
+            'Metabolite ID translation requires DB mode.',
+            id_type,
+            target_id_type,
+        )
+        return {}
 
     _log.info('[COSMOS] Using omnipath-client HTTP mode for ID translation.')
     return _translate, _table, 'http'
