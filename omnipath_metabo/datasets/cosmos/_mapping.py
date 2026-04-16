@@ -23,30 +23,42 @@ _log = logging.getLogger(__name__)
 
 
 def _init_backend():
-    """Return (translate_fn, table_fn, mode_name)."""
+    """Return (translate_fn, table_fn, mode_name).
 
-    # Try direct DB mode first (requires omnipath-utils[db] + reachable PostgreSQL)
-    try:
-        from omnipath_utils.mapping import translate as _translate
-        from omnipath_utils.mapping import translation_table as _table
+    Selects between two backends:
 
-        # Smoke test: verify both translate and translation_table work
-        # against the PostgreSQL DB.  Test with a metabolite pair
-        # (organism=0) — if this returns empty, the in-memory backend is
-        # being used instead of the DB, which would trigger large upstream
-        # downloads during the build.
-        _translate(['P04637'], 'uniprot', 'genesymbol', 9606)
-        _test_table = _table('pubchem', 'chebi', 0)
+    - **HTTP mode** (default): via ``omnipath-client``, queries the deployed
+      service at ``utils.omnipathdb.org``.  This uses the pre-populated
+      PostgreSQL database directly and is the right choice for most users.
 
-        if not _test_table:
-            raise RuntimeError('translation_table returned empty — DB not reachable')
+    - **Database mode** (opt-in via ``COSMOS_MAPPING_MODE=database``): via
+      ``omnipath_utils.mapping`` Python API.  Note this uses the in-memory
+      backend system, not the PostgreSQL DB — it will trigger upstream
+      downloads (UniChem, BioMart, etc.) on first use of each mapping pair.
+      Useful for offline development with cached pypath data.
+    """
 
-        _log.info('[COSMOS] Using omnipath-utils DB mode for ID translation.')
-        return _translate, _table, 'database'
-    except Exception:
-        pass
+    import os
 
-    # Fall back to HTTP
+    mode = os.environ.get('COSMOS_MAPPING_MODE', 'http').lower()
+
+    if mode == 'database':
+        try:
+            from omnipath_utils.mapping import translate as _translate
+            from omnipath_utils.mapping import translation_table as _table
+
+            _translate(['P04637'], 'uniprot', 'genesymbol', 9606)
+            _log.info(
+                '[COSMOS] Using omnipath-utils in-memory mode '
+                '(COSMOS_MAPPING_MODE=database).'
+            )
+            return _translate, _table, 'database'
+        except Exception as exc:
+            _log.warning(
+                '[COSMOS] Database mode requested but unavailable (%s); '
+                'falling back to HTTP.', exc,
+            )
+
     from omnipath_client.utils import translate as _translate
 
     def _table(id_type: str, target_id_type: str, ncbi_tax_id: int = 0) -> dict:
@@ -67,7 +79,9 @@ def _init_backend():
         )
         return {}
 
-    _log.info('[COSMOS] Using omnipath-client HTTP mode for ID translation.')
+    _log.info(
+        '[COSMOS] Using omnipath-client HTTP mode for ID translation.'
+    )
     return _translate, _table, 'http'
 
 
