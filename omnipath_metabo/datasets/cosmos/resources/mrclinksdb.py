@@ -65,7 +65,10 @@ def mrclinksdb_interactions(
 
     organism_name = ORGANISM_NAMES.get(organism, str(organism))
     location_mapping = tcdb_locations()
-    all_locations = uniprot_locations(organism=organism, reviewed=True)
+    # For non-human organisms, include unreviewed (TrEMBL) entries — many
+    # non-human proteins are not in SwissProt and would otherwise all be dropped.
+    reviewed = organism == 9606
+    all_locations = uniprot_locations(organism=organism, reviewed=reviewed)
     protein_types = _multidb_uniprot_types(organism)
 
     for rec in _interactions.mrclinksdb_interaction(organism=organism_name):
@@ -84,10 +87,7 @@ def mrclinksdb_interactions(
         if not receptor or not pubchem:
             continue
 
-        abbreviations = resolve_protein_locations(receptor, all_locations, location_mapping)
-
-        if not abbreviations:
-            continue
+        abbreviations = resolve_protein_locations(receptor, all_locations, location_mapping) or set()
 
         ptype = protein_types.get(receptor, 'other')
         interaction_type = 'transport' if ptype == 'transporter' else 'ligand_receptor'
