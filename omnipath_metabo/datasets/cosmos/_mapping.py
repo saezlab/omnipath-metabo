@@ -31,6 +31,7 @@ def _chunked_translate(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int = 9606,
+    **kwargs,
 ) -> dict:
     """
     Call *_translate_fn* in chunks to avoid HTTP read timeouts on large batches.
@@ -42,7 +43,7 @@ def _chunked_translate(
     """
 
     if len(identifiers) <= _HTTP_CHUNK_SIZE:
-        return _translate_fn(identifiers, id_type, target_id_type, ncbi_tax_id)
+        return _translate_fn(identifiers, id_type, target_id_type, ncbi_tax_id, **kwargs)
 
     result: dict = {}
 
@@ -52,7 +53,7 @@ def _chunked_translate(
             '[COSMOS] HTTP translate chunk %d-%d / %d (%s→%s)',
             i, i + len(chunk), len(identifiers), id_type, target_id_type,
         )
-        result.update(_translate_fn(chunk, id_type, target_id_type, ncbi_tax_id))
+        result.update(_translate_fn(chunk, id_type, target_id_type, ncbi_tax_id, **kwargs))
 
     return result
 
@@ -101,9 +102,11 @@ def _init_backend():
         id_type: str,
         target_id_type: str,
         ncbi_tax_id: int = 9606,
+        **kwargs,
     ) -> dict:
         return _chunked_translate(
             _http_translate, identifiers, id_type, target_id_type, ncbi_tax_id,
+            **kwargs,
         )
 
     def _table(id_type: str, target_id_type: str, ncbi_tax_id: int = 0) -> dict:
