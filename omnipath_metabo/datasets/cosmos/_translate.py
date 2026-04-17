@@ -84,7 +84,7 @@ def _looks_like_chemical_name(name: str) -> bool:
 # -- Metabolite translation tables via omnipath-utils adapter ----------------
 
 
-_BATCH_CHUNK_SIZE = 500  # max IDs per HTTP request
+_BATCH_CHUNK_SIZE = 100  # max IDs per HTTP request (keep well under 120s timeout)
 
 
 def _chunked_translate(
