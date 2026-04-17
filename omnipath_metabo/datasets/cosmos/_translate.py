@@ -84,6 +84,27 @@ def _looks_like_chemical_name(name: str) -> bool:
 # -- Metabolite translation tables via omnipath-utils adapter ----------------
 
 
+_BATCH_CHUNK_SIZE = 500  # max IDs per HTTP request
+
+
+def _chunked_translate(
+    ids: list[str],
+    id_type: str,
+    target_id_type: str,
+    ncbi_tax_id: int,
+    raw: bool = True,
+) -> dict[str, set[str]]:
+    """Translate IDs in chunks to avoid HTTP timeout for large batches."""
+
+    result: dict[str, set[str]] = {}
+
+    for i in range(0, len(ids), _BATCH_CHUNK_SIZE):
+        chunk = ids[i:i + _BATCH_CHUNK_SIZE]
+        result.update(mapping_translate(chunk, id_type, target_id_type, ncbi_tax_id, raw=raw))
+
+    return result
+
+
 def _batch_to_chebi(
     ids: list[str],
     id_type: str,
@@ -93,6 +114,8 @@ def _batch_to_chebi(
     Uses ``mapping_translate`` (batch query) rather than downloading the
     full translation table — this scales with the actual IDs needed
     instead of the full table size, and works in HTTP-only mode.
+
+    Large batches are automatically chunked to avoid HTTP timeouts.
     Returns ``{id: chebi_or_None}`` for every input ID.  When multiple
     ChEBI hits exist, the lexicographically smallest (deterministic) is
     picked.
@@ -101,7 +124,7 @@ def _batch_to_chebi(
     if not ids:
         return {}
 
-    raw = mapping_translate(list(set(ids)), id_type, 'chebi', 0, raw=True)
+    raw = _chunked_translate(list(set(ids)), id_type, 'chebi', 0)
 
     result: dict[str, str | None] = {}
 
@@ -240,7 +263,7 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
 
     # Batch translate all gene symbols at once
     symbols = list({sym for _, sym in id_symbol_pairs})
-    sym_to_uniprot = mapping_translate(symbols, 'genesymbol', 'uniprot', 9606, raw=True)
+    sym_to_uniprot = _chunked_translate(symbols, 'genesymbol', 'uniprot', 9606, raw=True)
 
     for entrez, name in id_symbol_pairs:
         if entrez in result:
@@ -708,7 +731,7 @@ def _build_protein_mapping(
 
         # Batch translate remaining via omnipath-utils
         if remaining:
-            batch = mapping_translate(remaining, 'entrez', 'uniprot', organism, raw=True)
+            batch = _chunked_translate(remaining, 'entrez', 'uniprot', organism, raw=True)
             for uid in remaining:
                 targets = batch.get(uid)
                 if targets:
@@ -719,7 +742,7 @@ def _build_protein_mapping(
     if id_type == 'ensp':
         _log.info('[COSMOS] Translating %d ENSP IDs -> UniProt...', len(unique_ids))
 
-        batch = mapping_translate(list(unique_ids), 'ensp', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(unique_ids), 'ensp', 'uniprot', organism, raw=True)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
@@ -742,7 +765,7 @@ def _build_protein_mapping(
         for uid in compound_ids:
             all_parts.update(uid.split('_'))
 
-        batch = mapping_translate(list(all_parts), 'ensg', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(all_parts), 'ensg', 'uniprot', organism, raw=True)
 
         result: dict[str, frozenset | None] = {}
 
@@ -765,7 +788,7 @@ def _build_protein_mapping(
     if id_type == 'genesymbol':
         _log.info('[COSMOS] Translating %d gene symbols -> UniProt...', len(unique_ids))
 
-        batch = mapping_translate(list(unique_ids), 'genesymbol', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(unique_ids), 'genesymbol', 'uniprot', organism, raw=True)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
