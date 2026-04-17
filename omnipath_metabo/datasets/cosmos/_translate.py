@@ -84,69 +84,31 @@ def _looks_like_chemical_name(name: str) -> bool:
 # -- Metabolite translation tables via omnipath-utils adapter ----------------
 
 
-@cache
-def _pubchem_chebi_table() -> dict[str, str]:
-    """PubChem CID -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
+def _batch_to_chebi(
+    ids: list[str],
+    id_type: str,
+) -> dict[str, str | None]:
+    """Batch-translate metabolite IDs to ChEBI via omnipath-utils.
 
-    _log.info('[COSMOS] Loading PubChem->ChEBI via omnipath-utils...')
-    raw = mapping_table('pubchem', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] PubChem->ChEBI loaded: %d entries', len(result))
-    return result
+    Uses ``mapping_translate`` (batch query) rather than downloading the
+    full translation table — this scales with the actual IDs needed
+    instead of the full table size, and works in HTTP-only mode.
+    Returns ``{id: chebi_or_None}`` for every input ID.  When multiple
+    ChEBI hits exist, the lexicographically smallest (deterministic) is
+    picked.
+    """
 
+    if not ids:
+        return {}
 
-@cache
-def _hmdb_chebi_table() -> dict[str, str]:
-    """HMDB -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
+    raw = mapping_translate(list(set(ids)), id_type, 'chebi', 0)
 
-    _log.info('[COSMOS] Loading HMDB->ChEBI via omnipath-utils...')
-    raw = mapping_table('hmdb', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] HMDB->ChEBI loaded: %d entries', len(result))
-    return result
+    result: dict[str, str | None] = {}
 
+    for uid in ids:
+        hits = raw.get(uid)
+        result[uid] = min(hits) if hits else None
 
-@cache
-def _lipidmaps_chebi_table() -> dict[str, str]:
-    """LipidMaps -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
-
-    _log.info('[COSMOS] Loading LipidMaps->ChEBI via omnipath-utils...')
-    raw = mapping_table('lipidmaps', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] LipidMaps->ChEBI loaded: %d entries', len(result))
-    return result
-
-
-@cache
-def _kegg_chebi_table() -> dict[str, str]:
-    """KEGG compound -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
-
-    _log.info('[COSMOS] Loading KEGG->ChEBI via omnipath-utils...')
-    raw = mapping_table('kegg', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] KEGG->ChEBI loaded: %d entries', len(result))
-    return result
-
-
-@cache
-def _metanetx_chebi_table() -> dict[str, str]:
-    """MetaNetX -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
-
-    _log.info('[COSMOS] Loading MetaNetX->ChEBI via omnipath-utils...')
-    raw = mapping_table('metanetx', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] MetaNetX->ChEBI loaded: %d entries', len(result))
-    return result
-
-
-@cache
-def _bigg_chebi_table() -> dict[str, str]:
-    """BiGG -> ChEBI via omnipath-utils DB (or HTTP fallback)."""
-
-    _log.info('[COSMOS] Loading BiGG->ChEBI via omnipath-utils...')
-    raw = mapping_table('bigg', 'chebi', ncbi_tax_id=0)
-    result = {k: next(iter(v)) for k, v in raw.items() if v}
-    _log.info('[COSMOS] BiGG->ChEBI loaded: %d entries', len(result))
     return result
 
 
@@ -178,7 +140,8 @@ def _name_to_chebi(name: str) -> str | None:
 
         cids = pubchem_name_cids(name)
         if cids:
-            return _pubchem_chebi_table().get(next(iter(cids)))
+            cid = next(iter(cids))
+            return _batch_to_chebi([str(cid)], 'pubchem').get(str(cid))
 
     return None
 
@@ -344,12 +307,34 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
         gem, n_direct, len(missing),
     )
 
-    # Pre-load all bulk maps once (cached after first call)
-    mnx_map = _metanetx_chebi_table()
-    lm_map = _lipidmaps_chebi_table()
-    pc_map = _pubchem_chebi_table()
-    kegg_map = _kegg_chebi_table()
-    hmdb_map = _hmdb_chebi_table()
+    # Collect cross-reference IDs across all missing rows, then batch-translate
+    # each external ID type in one round-trip via the adapter.  This scales
+    # with the actual IDs needed rather than the size of the reference tables.
+    mnx_ids: set[str] = set()
+    lm_ids: set[str] = set()
+    pc_ids: set[str] = set()
+    kegg_ids: set[str] = set()
+    hmdb_ids: set[str] = set()
+
+    for row in missing:
+        for part in (row.get('metMetaNetXID') or '').split(';'):
+            part = part.strip()
+            if part:
+                mnx_ids.add(part)
+        if row.get('metLipidMapsID'):
+            lm_ids.add(row['metLipidMapsID'])
+        if row.get('metPubChemID'):
+            pc_ids.add(row['metPubChemID'])
+        if row.get('metKEGGID'):
+            kegg_ids.add(row['metKEGGID'])
+        if row.get('metHMDBID'):
+            hmdb_ids.add(row['metHMDBID'])
+
+    mnx_map = _batch_to_chebi(list(mnx_ids), 'metanetx') if mnx_ids else {}
+    lm_map = _batch_to_chebi(list(lm_ids), 'lipidmaps') if lm_ids else {}
+    pc_map = _batch_to_chebi(list(pc_ids), 'pubchem') if pc_ids else {}
+    kegg_map = _batch_to_chebi(list(kegg_ids), 'kegg') if kegg_ids else {}
+    hmdb_map = _batch_to_chebi(list(hmdb_ids), 'hmdb') if hmdb_ids else {}
 
     n_mnx = n_lm = n_pc = n_kegg = n_hmdb = 0
 
@@ -372,38 +357,30 @@ def _metatlas_to_chebi(gem: str) -> dict[str, str]:
 
         # Step 3: LipidMaps
         lm_id = row.get('metLipidMapsID', '')
-        if lm_id:
-            chebi = lm_map.get(lm_id)
-            if chebi:
-                mapping[base_id] = chebi
-                n_lm += 1
-                continue
+        if lm_id and lm_map.get(lm_id):
+            mapping[base_id] = lm_map[lm_id]
+            n_lm += 1
+            continue
 
         # Step 4: PubChem
         pc_id = row.get('metPubChemID', '')
-        if pc_id:
-            chebi = pc_map.get(pc_id)
-            if chebi:
-                mapping[base_id] = chebi
-                n_pc += 1
-                continue
+        if pc_id and pc_map.get(pc_id):
+            mapping[base_id] = pc_map[pc_id]
+            n_pc += 1
+            continue
 
         # Step 5: KEGG compound
         kegg_id = row.get('metKEGGID', '')
-        if kegg_id:
-            chebi = kegg_map.get(kegg_id)
-            if chebi:
-                mapping[base_id] = chebi
-                n_kegg += 1
-                continue
+        if kegg_id and kegg_map.get(kegg_id):
+            mapping[base_id] = kegg_map[kegg_id]
+            n_kegg += 1
+            continue
 
         # Step 6: HMDB
         hmdb_id = row.get('metHMDBID', '')
-        if hmdb_id:
-            chebi = hmdb_map.get(hmdb_id)
-            if chebi:
-                mapping[base_id] = chebi
-                n_hmdb += 1
+        if hmdb_id and hmdb_map.get(hmdb_id):
+            mapping[base_id] = hmdb_map[hmdb_id]
+            n_hmdb += 1
 
     _log.info(
         '[COSMOS] MetAtlas->ChEBI (%s): %d total '
@@ -587,28 +564,19 @@ def _build_metab_mapping(
     if id_type == 'chebi':
         return {uid: uid for uid in unique_ids}
 
-    if id_type == 'pubchem':
-        table = _pubchem_chebi_table()
-        result: dict[str, str | None] = {}
-
-        for uid in unique_ids:
-            result[uid] = table.get(str(uid))
-
+    if id_type in ('pubchem', 'bigg', 'hmdb'):
+        result = _batch_to_chebi(
+            [str(uid) for uid in unique_ids],
+            id_type,
+        )
         n_resolved = sum(1 for v in result.values() if v is not None)
         _log.info(
-            '[COSMOS] pubchem->ChEBI: %d/%d unique CIDs resolved',
+            '[COSMOS] %s->ChEBI: %d/%d unique IDs resolved',
+            id_type,
             n_resolved,
             len(unique_ids),
         )
         return result
-
-    if id_type == 'bigg':
-        table = _bigg_chebi_table()
-        return {uid: table.get(uid) for uid in unique_ids}
-
-    if id_type == 'hmdb':
-        table = _hmdb_chebi_table()
-        return {uid: table.get(uid) for uid in unique_ids}
 
     if id_type == 'metatlas':
         # Each row may come from a different GEM -- build per-GEM mappings.
@@ -671,11 +639,19 @@ def _build_metab_mapping(
             from pypath.inputs.pubchem import pubchem_names_cids
 
             name_to_cids = pubchem_names_cids(candidates)
-            pubchem_chebi = _pubchem_chebi_table()
+
+            # Collect all CIDs and batch-translate in one call
+            all_cids: set[str] = set()
+            for cids in name_to_cids.values():
+                if cids:
+                    all_cids.add(str(next(iter(cids))))
+
+            cid_to_chebi = _batch_to_chebi(list(all_cids), 'pubchem')
 
             for uid, cids in name_to_cids.items():
                 if cids and result[uid] is None:
-                    result[uid] = pubchem_chebi.get(next(iter(cids)))
+                    cid = str(next(iter(cids)))
+                    result[uid] = cid_to_chebi.get(cid)
 
         n_final = len([v for v in result.values() if v is not None])
         _log.info('[COSMOS] synonym->ChEBI: %d/%d resolved total', n_final, len(unique_ids))
