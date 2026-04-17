@@ -101,7 +101,7 @@ def _batch_to_chebi(
     if not ids:
         return {}
 
-    raw = mapping_translate(list(set(ids)), id_type, 'chebi', 0)
+    raw = mapping_translate(list(set(ids)), id_type, 'chebi', 0, raw=True)
 
     result: dict[str, str | None] = {}
 
@@ -708,7 +708,7 @@ def _build_protein_mapping(
 
         # Batch translate remaining via omnipath-utils
         if remaining:
-            batch = mapping_translate(remaining, 'entrez', 'uniprot', organism)
+            batch = mapping_translate(remaining, 'entrez', 'uniprot', organism, raw=True)
             for uid in remaining:
                 targets = batch.get(uid)
                 if targets:
@@ -719,7 +719,7 @@ def _build_protein_mapping(
     if id_type == 'ensp':
         _log.info('[COSMOS] Translating %d ENSP IDs -> UniProt...', len(unique_ids))
 
-        batch = mapping_translate(list(unique_ids), 'ensp', 'uniprot', organism)
+        batch = mapping_translate(list(unique_ids), 'ensp', 'uniprot', organism, raw=True)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
@@ -742,7 +742,7 @@ def _build_protein_mapping(
         for uid in compound_ids:
             all_parts.update(uid.split('_'))
 
-        batch = mapping_translate(list(all_parts), 'ensg', 'uniprot', organism)
+        batch = mapping_translate(list(all_parts), 'ensg', 'uniprot', organism, raw=True)
 
         result: dict[str, frozenset | None] = {}
 
