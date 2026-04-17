@@ -240,7 +240,7 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
 
     # Batch translate all gene symbols at once
     symbols = list({sym for _, sym in id_symbol_pairs})
-    sym_to_uniprot = mapping_translate(symbols, 'genesymbol', 'uniprot', 9606)
+    sym_to_uniprot = mapping_translate(symbols, 'genesymbol', 'uniprot', 9606, raw=True)
 
     for entrez, name in id_symbol_pairs:
         if entrez in result:
@@ -765,7 +765,7 @@ def _build_protein_mapping(
     if id_type == 'genesymbol':
         _log.info('[COSMOS] Translating %d gene symbols -> UniProt...', len(unique_ids))
 
-        batch = mapping_translate(list(unique_ids), 'genesymbol', 'uniprot', organism)
+        batch = mapping_translate(list(unique_ids), 'genesymbol', 'uniprot', organism, raw=True)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
