@@ -263,7 +263,7 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
 
     # Batch translate all gene symbols at once
     symbols = list({sym for _, sym in id_symbol_pairs})
-    sym_to_uniprot = _chunked_translate(symbols, 'genesymbol', 'uniprot', 9606, raw=True)
+    sym_to_uniprot = _chunked_translate(symbols, 'genesymbol', 'uniprot', 9606)
 
     for entrez, name in id_symbol_pairs:
         if entrez in result:
@@ -731,7 +731,7 @@ def _build_protein_mapping(
 
         # Batch translate remaining via omnipath-utils
         if remaining:
-            batch = _chunked_translate(remaining, 'entrez', 'uniprot', organism, raw=True)
+            batch = _chunked_translate(remaining, 'entrez', 'uniprot', organism)
             for uid in remaining:
                 targets = batch.get(uid)
                 if targets:
@@ -742,7 +742,7 @@ def _build_protein_mapping(
     if id_type == 'ensp':
         _log.info('[COSMOS] Translating %d ENSP IDs -> UniProt...', len(unique_ids))
 
-        batch = _chunked_translate(list(unique_ids), 'ensp', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(unique_ids), 'ensp', 'uniprot', organism)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
@@ -765,7 +765,7 @@ def _build_protein_mapping(
         for uid in compound_ids:
             all_parts.update(uid.split('_'))
 
-        batch = _chunked_translate(list(all_parts), 'ensg', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(all_parts), 'ensg', 'uniprot', organism)
 
         result: dict[str, frozenset | None] = {}
 
@@ -788,7 +788,7 @@ def _build_protein_mapping(
     if id_type == 'genesymbol':
         _log.info('[COSMOS] Translating %d gene symbols -> UniProt...', len(unique_ids))
 
-        batch = _chunked_translate(list(unique_ids), 'genesymbol', 'uniprot', organism, raw=True)
+        batch = _chunked_translate(list(unique_ids), 'genesymbol', 'uniprot', organism)
         return {
             uid: frozenset(targets) if (targets := batch.get(uid)) else None
             for uid in unique_ids
