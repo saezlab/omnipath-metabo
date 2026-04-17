@@ -22,6 +22,41 @@ import logging
 _log = logging.getLogger(__name__)
 
 
+_HTTP_CHUNK_SIZE = 500
+
+
+def _chunked_translate(
+    _translate_fn,
+    identifiers: list,
+    id_type: str,
+    target_id_type: str,
+    ncbi_tax_id: int = 9606,
+) -> dict:
+    """
+    Call *_translate_fn* in chunks to avoid HTTP read timeouts on large batches.
+
+    The omnipath-client HTTP backend sends everything in a single POST with a
+    120-second timeout. Gene symbol lists from Mouse-GEM (5000+) regularly
+    exceed this. Splitting into chunks of :data:`_HTTP_CHUNK_SIZE` keeps each
+    request well under the limit.
+    """
+
+    if len(identifiers) <= _HTTP_CHUNK_SIZE:
+        return _translate_fn(identifiers, id_type, target_id_type, ncbi_tax_id)
+
+    result: dict = {}
+
+    for i in range(0, len(identifiers), _HTTP_CHUNK_SIZE):
+        chunk = identifiers[i: i + _HTTP_CHUNK_SIZE]
+        _log.debug(
+            '[COSMOS] HTTP translate chunk %d-%d / %d (%s→%s)',
+            i, i + len(chunk), len(identifiers), id_type, target_id_type,
+        )
+        result.update(_translate_fn(chunk, id_type, target_id_type, ncbi_tax_id))
+
+    return result
+
+
 def _init_backend():
     """Return (translate_fn, table_fn, mode_name).
 
@@ -59,7 +94,17 @@ def _init_backend():
                 'falling back to HTTP.', exc,
             )
 
-    from omnipath_client.utils import translate as _translate
+    from omnipath_client.utils import translate as _http_translate
+
+    def _translate(
+        identifiers: list,
+        id_type: str,
+        target_id_type: str,
+        ncbi_tax_id: int = 9606,
+    ) -> dict:
+        return _chunked_translate(
+            _http_translate, identifiers, id_type, target_id_type, ncbi_tax_id,
+        )
 
     def _table(id_type: str, target_id_type: str, ncbi_tax_id: int = 0) -> dict:
         """HTTP mode shim: full-table fetches are not supported without DB.

@@ -78,106 +78,42 @@ class TestMappingAdapter:
 # Metabolite mapping table functions (mocked adapter)
 # ---------------------------------------------------------------------------
 
-class TestPubchemChebiTable:
+class TestBatchToChebi:
+    """Tests for _batch_to_chebi, which replaced the per-type table functions."""
 
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _pubchem_chebi_table
-        _pubchem_chebi_table.cache_clear()
+    def test_maps_ids_via_mapping_translate(self):
+        from omnipath_metabo.datasets.cosmos._translate import _batch_to_chebi
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
             return_value={'5793': {'CHEBI:18367'}, '2244': {'CHEBI:15365'}},
         ):
-            result = _pubchem_chebi_table()
-        assert isinstance(result, dict)
+            result = _batch_to_chebi(['5793', '2244'], 'pubchem')
         assert result['5793'] == 'CHEBI:18367'
         assert result['2244'] == 'CHEBI:15365'
 
-
-class TestLipidmapsChebiTable:
-
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _lipidmaps_chebi_table
-        _lipidmaps_chebi_table.cache_clear()
+    def test_unknown_id_returns_none(self):
+        from omnipath_metabo.datasets.cosmos._translate import _batch_to_chebi
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={
-                'LMFA01010001': {'CHEBI:15756'},
-                'LMFA01010002': {'CHEBI:15904'},
-            },
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={},
         ):
-            result = _lipidmaps_chebi_table()
-        assert isinstance(result, dict)
-        assert result['LMFA01010001'] == 'CHEBI:15756'
-        assert len(result) == 2
+            result = _batch_to_chebi(['FAKE999'], 'pubchem')
+        assert result['FAKE999'] is None
 
-    def test_unknown_id_absent(self):
-        from omnipath_metabo.datasets.cosmos._translate import _lipidmaps_chebi_table
-        _lipidmaps_chebi_table.cache_clear()
+    def test_empty_ids_returns_empty(self):
+        from omnipath_metabo.datasets.cosmos._translate import _batch_to_chebi
+        result = _batch_to_chebi([], 'pubchem')
+        assert result == {}
+
+    def test_multiple_hits_picks_min(self):
+        """When multiple ChEBI hits exist, lexicographic minimum is picked."""
+        from omnipath_metabo.datasets.cosmos._translate import _batch_to_chebi
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={'LMFA01010001': {'CHEBI:15756'}},
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'5793': {'CHEBI:18367', 'CHEBI:00001'}},
         ):
-            result = _lipidmaps_chebi_table()
-        assert 'LMFA_NOTEXIST' not in result
-
-
-class TestHmdbChebiTable:
-
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _hmdb_chebi_table
-        _hmdb_chebi_table.cache_clear()
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={
-                'HMDB0000001': {'CHEBI:16015'},
-                'HMDB0000190': {'CHEBI:17289'},
-            },
-        ):
-            result = _hmdb_chebi_table()
-        assert isinstance(result, dict)
-        assert result['HMDB0000001'] == 'CHEBI:16015'
-
-
-class TestBiggChebiTable:
-
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _bigg_chebi_table
-        _bigg_chebi_table.cache_clear()
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={'glc__D': {'CHEBI:17634'}},
-        ):
-            result = _bigg_chebi_table()
-        assert isinstance(result, dict)
-        assert result['glc__D'] == 'CHEBI:17634'
-
-
-class TestKeggChebiTable:
-
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _kegg_chebi_table
-        _kegg_chebi_table.cache_clear()
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={'C00001': {'CHEBI:15377'}},
-        ):
-            result = _kegg_chebi_table()
-        assert isinstance(result, dict)
-        assert result['C00001'] == 'CHEBI:15377'
-
-
-class TestMetanetxChebiTable:
-
-    def test_returns_dict(self):
-        from omnipath_metabo.datasets.cosmos._translate import _metanetx_chebi_table
-        _metanetx_chebi_table.cache_clear()
-        with patch(
-            'omnipath_metabo.datasets.cosmos._translate.mapping_table',
-            return_value={'MNXM999': {'CHEBI:222'}},
-        ):
-            result = _metanetx_chebi_table()
-        assert isinstance(result, dict)
-        assert result['MNXM999'] == 'CHEBI:222'
+            result = _batch_to_chebi(['5793'], 'pubchem')
+        assert result['5793'] == 'CHEBI:00001'
 
 
 # ---------------------------------------------------------------------------
@@ -351,7 +287,11 @@ class TestTranslatePkn:
             id_type_a='pubchem',
         )
         df = _make_df([row])
-        result = translate_pkn(df)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={},
+        ):
+            result = translate_pkn(df)
         assert len(result) == 0
 
     def test_drops_row_when_target_untranslatable(self):
@@ -361,7 +301,11 @@ class TestTranslatePkn:
             id_type_b='ensp',
         )
         df = _make_df([row])
-        result = translate_pkn(df)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={},
+        ):
+            result = translate_pkn(df)
         assert len(result) == 0
 
     def test_reaction_id_preserved_as_target(self):
@@ -511,7 +455,11 @@ class TestTranslatePknVectorized:
             self._make_row('9999999999', 'P00533', 'pubchem', 'uniprot'),
         ]
         df = _make_df(rows)
-        result = translate_pkn(df)
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={},
+        ):
+            result = translate_pkn(df)
         # Only the chebi row survives; the pubchem one is dropped.
         assert len(result) == 1
         assert result.iloc[0]['source'] == 'CHEBI:30616'
@@ -533,11 +481,12 @@ class TestTranslatePknVectorized:
 # ---------------------------------------------------------------------------
 
 class TestTranslatePknHmdb:
-    """Verify translate_pkn handles HMDB IDs via the bulk table lookup."""
+    """Verify translate_pkn handles HMDB IDs via _batch_to_chebi."""
 
-    _FAKE_MAPPING = {
-        'HMDB0000001': 'CHEBI:16015',
-        'HMDB0000190': 'CHEBI:17289',
+    # mapping_translate returns sets; _batch_to_chebi picks min()
+    _FAKE_TRANSLATE = {
+        'HMDB0000001': {'CHEBI:16015'},
+        'HMDB0000190': {'CHEBI:17289'},
     }
 
     def _make_row(self, source, target='P00533', id_type_a='hmdb',
@@ -555,12 +504,12 @@ class TestTranslatePknHmdb:
         )
 
     def test_hmdb_translates(self):
-        """HMDB ID is looked up in the _hmdb_chebi_table dict."""
+        """HMDB ID is translated via _batch_to_chebi -> mapping_translate."""
         rows = [self._make_row('HMDB0000001')]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
-            return_value=self._FAKE_MAPPING,
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value=self._FAKE_TRANSLATE,
         ):
             result = translate_pkn(df)
         assert len(result) == 1
@@ -574,8 +523,8 @@ class TestTranslatePknHmdb:
         ]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
-            return_value=self._FAKE_MAPPING,
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value=self._FAKE_TRANSLATE,
         ):
             result = translate_pkn(df)
         assert len(result) == 1
@@ -586,8 +535,8 @@ class TestTranslatePknHmdb:
         rows = [self._make_row('HMDB0000001')]
         df = _make_df(rows)
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
-            return_value=self._FAKE_MAPPING,
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value=self._FAKE_TRANSLATE,
         ):
             result = translate_pkn(df)
         assert result.iloc[0]['id_type_a'] == 'chebi'
@@ -630,33 +579,31 @@ class TestMetatlasToChebiFallbacks:
          'metMetaNetXID': '', 'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
     ]
 
+    # Per-type responses for the _batch_to_chebi side_effect
+    _BATCH_RESPONSES = {
+        'metanetx': {'MNXM999': {'CHEBI:222'}},
+        'lipidmaps': {'LMFA01010001': {'CHEBI:333'}},
+        'pubchem': {'5793': {'CHEBI:444'}},
+        'kegg': {'C00001': {'CHEBI:15377'}},
+        'hmdb': {'HMDB0000001': {'CHEBI:555'}},
+    }
+
     def _run(self):
         """Run _metatlas_to_chebi with all external sources mocked."""
         _metatlas_to_chebi.cache_clear()
+
+        def _mock_batch(ids, id_type):
+            raw = self._BATCH_RESPONSES.get(id_type, {})
+            return {uid: min(hits) for uid in ids if (hits := raw.get(uid))}
+
         with (
             patch(
                 'pypath.inputs.metatlas._gem.metatlas_gem_metabolites',
                 return_value=self._FAKE_ROWS,
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._metanetx_chebi_table',
-                return_value={'MNXM999': 'CHEBI:222'},
-            ),
-            patch(
-                'omnipath_metabo.datasets.cosmos._translate._lipidmaps_chebi_table',
-                return_value={'LMFA01010001': 'CHEBI:333'},
-            ),
-            patch(
-                'omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table',
-                return_value={'5793': 'CHEBI:444'},
-            ),
-            patch(
-                'omnipath_metabo.datasets.cosmos._translate._kegg_chebi_table',
-                return_value={'C00001': 'CHEBI:15377'},
-            ),
-            patch(
-                'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
-                return_value={'HMDB0000001': 'CHEBI:555'},
+                'omnipath_metabo.datasets.cosmos._translate._batch_to_chebi',
+                side_effect=_mock_batch,
             ),
         ):
             return _metatlas_to_chebi('FakeGEM')
@@ -701,19 +648,22 @@ class TestMetatlasToChebiFallbacks:
              'metLipidMapsID': '', 'metPubChemID': '', 'metKEGGID': '', 'metHMDBID': ''},
         ]
         _metatlas_to_chebi.cache_clear()
+
+        def _mock_batch(ids, id_type):
+            if id_type == 'metanetx':
+                raw = {'MNXM999': {'CHEBI:222'}}
+                return {uid: min(hits) for uid in ids if (hits := raw.get(uid))}
+            return {}
+
         with (
             patch(
                 'pypath.inputs.metatlas._gem.metatlas_gem_metabolites',
                 return_value=rows,
             ),
             patch(
-                'omnipath_metabo.datasets.cosmos._translate._metanetx_chebi_table',
-                return_value={'MNXM999': 'CHEBI:222'},
+                'omnipath_metabo.datasets.cosmos._translate._batch_to_chebi',
+                side_effect=_mock_batch,
             ),
-            patch('omnipath_metabo.datasets.cosmos._translate._lipidmaps_chebi_table', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._kegg_chebi_table', return_value={}),
-            patch('omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table', return_value={}),
         ):
             result = _metatlas_to_chebi('FakeGEM')
         assert result['MAM00010'] == 'CHEBI:222'
@@ -832,33 +782,33 @@ class TestBuildMetabMapping:
         assert result['CHEBI:30616'] == 'CHEBI:30616'
         assert result['CHEBI:15422'] == 'CHEBI:15422'
 
-    def test_pubchem_uses_table(self):
+    def test_pubchem_uses_batch_to_chebi(self):
         ids = pd.Series(['5793', '2244'])
         resource = pd.Series(['STITCH', 'STITCH'])
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._pubchem_chebi_table',
-            return_value={'5793': 'CHEBI:18367', '2244': 'CHEBI:15365'},
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'5793': {'CHEBI:18367'}, '2244': {'CHEBI:15365'}},
         ):
             result = _build_metab_mapping('pubchem', ids, resource)
         assert result['5793'] == 'CHEBI:18367'
         assert result['2244'] == 'CHEBI:15365'
 
-    def test_hmdb_uses_table(self):
+    def test_hmdb_uses_batch_to_chebi(self):
         ids = pd.Series(['HMDB0000001'])
         resource = pd.Series(['STITCH'])
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._hmdb_chebi_table',
-            return_value={'HMDB0000001': 'CHEBI:16015'},
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'HMDB0000001': {'CHEBI:16015'}},
         ):
             result = _build_metab_mapping('hmdb', ids, resource)
         assert result['HMDB0000001'] == 'CHEBI:16015'
 
-    def test_bigg_uses_table(self):
+    def test_bigg_uses_batch_to_chebi(self):
         ids = pd.Series(['glc__D'])
         resource = pd.Series(['BiGG'])
         with patch(
-            'omnipath_metabo.datasets.cosmos._translate._bigg_chebi_table',
-            return_value={'glc__D': 'CHEBI:17634'},
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'glc__D': {'CHEBI:17634'}},
         ):
             result = _build_metab_mapping('bigg', ids, resource)
         assert result['glc__D'] == 'CHEBI:17634'

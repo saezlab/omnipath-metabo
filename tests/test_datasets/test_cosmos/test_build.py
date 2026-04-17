@@ -99,6 +99,7 @@ def _mock_processors():
     processors = {'capture': capture_resource}
     default_cfg = {
         'organism': 9606,
+        'translate_ids': False,  # fake IDs can't be translated; skip for unit tests
         'resources': {'capture': {}},
     }
 
