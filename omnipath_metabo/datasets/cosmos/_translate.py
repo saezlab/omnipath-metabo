@@ -92,7 +92,7 @@ def _chunked_translate(
     id_type: str,
     target_id_type: str,
     ncbi_tax_id: int,
-    raw: bool = True,
+    raw: bool = False,
 ) -> dict[str, set[str]]:
     """Translate IDs in chunks to avoid HTTP timeout for large batches."""
 
