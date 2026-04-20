@@ -107,7 +107,7 @@ _LANDING_HTML = """\
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OmniPath Metabolomics</title>
+    <title>OmniPath Metabo: Integrated prior-knowledge for metabolomics</title>
     <link href="https://fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet">
     <link rel="stylesheet" href="https://omnipathdb.org/css/normalize.css">
     <link rel="stylesheet" href="https://omnipathdb.org/css/barebones.css">
@@ -127,7 +127,7 @@ _LANDING_HTML = """\
                  title="OmniPath" class="full-width" />
         </div>
         <div class="span2 u-align-right">
-            <h2>Metabolomics prior knowledge for systems biology</h2>
+            <h2>Integrated prior-knowledge for metabolomics</h2>
         </div>
     </div>
 
