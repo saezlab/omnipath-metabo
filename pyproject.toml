@@ -44,6 +44,11 @@ docs = [
     "pymdown-extensions>=10.15",
     "mkdocstrings[python]>=0.29.1,<0.30"
 ]
+server = [
+    "litestar[standard]>=2.0",
+    "uvicorn[standard]>=0.30",
+    "pyarrow>=14.0",
+]
 tests = [
     "pytest>=6.0",
     "pytest-cov",
@@ -55,6 +60,7 @@ tests = [
 
 [project.scripts]
 cosmos-pkn = "omnipath_metabo.datasets.cosmos._cli:main"
+omnipath-metabo = "omnipath_metabo.cli._main:main"
 
 [project.urls]
 Documentation = "https://saezlab.github.io/omnipath-metabo"

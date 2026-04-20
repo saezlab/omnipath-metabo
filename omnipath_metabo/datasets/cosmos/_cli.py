@@ -62,6 +62,49 @@ def _parse_args() -> argparse.Namespace:
         description='Build and export the COSMOS prior-knowledge network.',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
+    sub = p.add_subparsers(dest='command')
+
+    # ── export (default, backward-compatible) ─────────────────────────
+    export_p = sub.add_parser(
+        'export',
+        help='Build PKN and export to CSV/TSV.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    _add_export_args(export_p)
+
+    # ── build-cache ───────────────────────────────────────────────────
+    cache_p = sub.add_parser(
+        'build-cache',
+        help='Pre-build PKN categories as Parquet files for the server.',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    cache_p.add_argument(
+        '--organism', type=int, nargs='+', default=[9606],
+        help='NCBI taxonomy ID(s) to build for.',
+    )
+    cache_p.add_argument(
+        '--category', nargs='+', default=None,
+        choices=['transporters', 'receptors', 'allosteric', 'enzyme_metabolite'],
+        help='Categories to build (default: all four).',
+    )
+    cache_p.add_argument(
+        '--cache-dir', default=None,
+        help='Directory for Parquet cache files.',
+    )
+
+    args = p.parse_args()
+
+    # When invoked without a subcommand, fall back to ``export``
+    # for backward-compatibility (``cosmos-pkn --organism 9606`` still works).
+    if args.command is None:
+        args = export_p.parse_args(sys.argv[1:])
+        args.command = 'export'
+
+    return args
+
+
+def _add_export_args(p: argparse.ArgumentParser) -> None:
+    """Add the export-specific CLI arguments to *p*."""
 
     # --- organism / resources ------------------------------------------------
     p.add_argument(
@@ -132,8 +175,6 @@ def _parse_args() -> argparse.Namespace:
         ),
     )
 
-    return p.parse_args()
-
 
 def _build(args: argparse.Namespace):
     """Call the appropriate build function and return a CosmosBundle."""
@@ -193,12 +234,37 @@ def _separator(args: argparse.Namespace) -> str:
 def main() -> None:
     """Entry point for the ``cosmos-pkn`` command."""
 
+    args = _parse_args()
+
+    if args.command == 'build-cache':
+        _run_build_cache(args)
+        return
+
+    _run_export(args)
+
+
+def _run_build_cache(args: argparse.Namespace) -> None:
+    """Execute the ``build-cache`` subcommand."""
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format='%(message)s')
+
+    from omnipath_metabo.datasets.cosmos._cache import build_cache
+
+    build_cache(
+        organisms=args.organism,
+        categories=args.category,
+        cache_dir=args.cache_dir,
+    )
+
+
+def _run_export(args: argparse.Namespace) -> None:
+    """Execute the ``export`` subcommand (default)."""
+
     import pandas as pd
 
     from omnipath_metabo.datasets.cosmos._format import format_pkn
     from omnipath_metabo.datasets.cosmos._record import CosmosEdge
-
-    args = _parse_args()
 
     # ------------------------------------------------------------------
     # 1. Build translated PKN
