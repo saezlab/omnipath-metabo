@@ -105,6 +105,14 @@ def _save_bundle(
 
     records = [row._asdict() for row in bundle.network]
     df = pd.DataFrame(records)
+
+    # Convert frozenset values to semicolon-joined strings for Parquet
+    for col in ('source', 'target'):
+        if col in df.columns:
+            df[col] = df[col].apply(
+                lambda x: ';'.join(sorted(x)) if isinstance(x, frozenset) else str(x)
+            )
+
     path = cache_dir / f'{category}_{organism}.parquet'
     df.to_parquet(path, index=False)
     _log.info('Saved %s (%d edges)', path, len(df))
