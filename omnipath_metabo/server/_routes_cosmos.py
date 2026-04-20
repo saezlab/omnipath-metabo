@@ -120,8 +120,23 @@ class CosmosController(Controller):
                 },
             )
 
+        # Convert non-serializable columns for JSON output
+        for col in result.columns:
+            if result[col].dtype == object:
+                result[col] = result[col].apply(
+                    lambda x: list(x) if hasattr(x, '__iter__') and not isinstance(x, (str, dict)) else x
+                )
+
         records = result.to_dict(orient='records')
-        return records
+        return {
+            'network': records,
+            'meta': {
+                'organism': organism,
+                'categories': cats,
+                'resources': resources.split(',') if resources else None,
+                'total_edges': len(records),
+            },
+        }
 
     @get('/categories')
     async def categories(self) -> list[str]:
