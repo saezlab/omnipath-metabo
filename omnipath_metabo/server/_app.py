@@ -58,12 +58,12 @@ def create_app(cache_dir: Path | str | None = None) -> 'Litestar':
         or DEFAULT_CACHE_DIR
     )
 
-    from litestar.response import Response
+    from litestar.response import Response as LitestarResponse
 
-    @get('/', media_type='text/html')
-    async def landing() -> Response:
+    @get('/', media_type='text/html', include_in_schema=False)
+    async def landing() -> LitestarResponse:
         """Landing page."""
-        return Response(content=_LANDING_HTML, media_type='text/html')
+        return LitestarResponse(content=_LANDING_HTML, media_type='text/html')
 
     @get('/health')
     async def health() -> dict[str, str]:
