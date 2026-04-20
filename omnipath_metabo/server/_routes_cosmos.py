@@ -127,8 +127,10 @@ class CosmosController(Controller):
                     lambda x: list(x) if hasattr(x, '__iter__') and not isinstance(x, (str, dict)) else x
                 )
 
+        import json as _json
+
         records = result.to_dict(orient='records')
-        return {
+        body = _json.dumps({
             'network': records,
             'meta': {
                 'organism': organism,
@@ -136,7 +138,8 @@ class CosmosController(Controller):
                 'resources': resources.split(',') if resources else None,
                 'total_edges': len(records),
             },
-        }
+        })
+        return Response(content=body, media_type='application/json')
 
     @get('/categories')
     async def categories(self) -> list[str]:
