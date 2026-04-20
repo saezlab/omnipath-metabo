@@ -54,6 +54,19 @@ class CosmosController(Controller):
         """Resolve cache directory from app state."""
         return request.app.state.get('cache_dir', DEFAULT_CACHE_DIR)
 
+    @get('/')
+    async def cosmos_root(self, request: Request) -> dict[str, Any]:
+        """Root endpoint — returns cache status."""
+        cache_dir = self._cache_dir(request)
+        cached = list_cached(cache_dir)
+        total_mb = sum(e['size_mb'] for e in cached)
+        return {
+            'cache_dir': str(cache_dir),
+            'components': cached,
+            'total_size_mb': round(total_mb, 3),
+            'n_components': len(cached),
+        }
+
     @get('/pkn')
     async def get_pkn(
         self,
@@ -122,14 +135,20 @@ class CosmosController(Controller):
 
         import numpy as np
 
-        # Convert non-serializable columns for JSON output
+        # Recursively convert non-serializable values for JSON output
         def _to_json_safe(x):
             if isinstance(x, np.ndarray):
                 return x.tolist()
+            if isinstance(x, np.integer):
+                return int(x)
+            if isinstance(x, np.floating):
+                return float(x)
+            if isinstance(x, dict):
+                return {k: _to_json_safe(v) for k, v in x.items()}
             if isinstance(x, (list, tuple)):
-                return list(x)
-            if hasattr(x, '__iter__') and not isinstance(x, (str, dict)):
-                return list(x)
+                return [_to_json_safe(i) for i in x]
+            if hasattr(x, '__iter__') and not isinstance(x, str):
+                return [_to_json_safe(i) for i in x]
             return x
 
         for col in result.columns:
