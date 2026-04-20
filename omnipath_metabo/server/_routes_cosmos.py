@@ -120,12 +120,21 @@ class CosmosController(Controller):
                 },
             )
 
+        import numpy as np
+
         # Convert non-serializable columns for JSON output
+        def _to_json_safe(x):
+            if isinstance(x, np.ndarray):
+                return x.tolist()
+            if isinstance(x, (list, tuple)):
+                return list(x)
+            if hasattr(x, '__iter__') and not isinstance(x, (str, dict)):
+                return list(x)
+            return x
+
         for col in result.columns:
             if result[col].dtype == object:
-                result[col] = result[col].apply(
-                    lambda x: list(x) if hasattr(x, '__iter__') and not isinstance(x, (str, dict)) else x
-                )
+                result[col] = result[col].apply(_to_json_safe)
 
         import json as _json
 
