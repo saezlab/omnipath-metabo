@@ -54,6 +54,11 @@ import pandas as pd
 ORGANISM_NAMES: dict[int, str] = {
     9606: 'human',
     10090: 'mouse',
+    10116: 'rat',
+    7955: 'zebrafish',
+    7227: 'fruit fly',
+    6239: 'nematode',
+    4932: 'yeast',
 }
 
 from .data import data_path

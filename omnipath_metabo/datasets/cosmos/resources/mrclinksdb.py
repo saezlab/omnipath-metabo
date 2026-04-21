@@ -30,6 +30,10 @@ is stored in ``interaction_type``:
 
 from __future__ import annotations
 
+import logging
+
+_log = logging.getLogger(__name__)
+
 __all__ = ['mrclinksdb_interactions']
 
 from collections.abc import Generator
@@ -71,7 +75,19 @@ def mrclinksdb_interactions(
     all_locations = uniprot_locations(organism=organism, reviewed=reviewed)
     protein_types = _multidb_uniprot_types(organism)
 
-    for rec in _interactions.mrclinksdb_interaction(organism=organism_name):
+    try:
+        mrclinks_data = list(
+            _interactions.mrclinksdb_interaction(organism=organism_name)
+        )
+    except (TypeError, Exception):
+        # MRCLinksDB doesn't support this organism (download returns None)
+        _log.info(
+            '[COSMOS] MRCLinksDB: no data for organism %s, skipping.',
+            organism_name,
+        )
+        return
+
+    for rec in mrclinks_data:
 
         receptor = str(rec.receptor_uniprot)
         pubchem_raw = str(rec.pubchem)
