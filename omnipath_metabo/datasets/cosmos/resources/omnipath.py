@@ -14,12 +14,13 @@
 #
 
 """
-OmniPath signaling, ligand-receptor, and gene regulatory interactions.
+OmniPath protein-protein and gene regulatory interactions.
 
 Queries the legacy OmniPath web service (omnipathdb.org) for
-protein-protein signaling, ligand-receptor, and transcription
-factor-target gene interactions.  These complement the metabolite-
-protein interactions from the other COSMOS resources.
+protein-protein signaling (including ligand-receptor and kinase-
+substrate) and transcription factor-target gene interactions.
+These complement the metabolite-protein interactions from the other
+COSMOS resources.
 
 This is a temporary bridge module — once the new OmniPath database
 build (omnipath-server) is operational, these interactions will be
@@ -29,8 +30,7 @@ sourced directly from the new database.
 from __future__ import annotations
 
 __all__ = [
-    'signaling_interactions',
-    'ligrec_interactions',
+    'ppi_interactions',
     'grn_interactions',
 ]
 
@@ -43,19 +43,23 @@ from .._record import Interaction
 
 _log = logging.getLogger(__name__)
 
-_OMNIPATH_API = 'https://omnipathdb.org/interactions'
+_OMNIPATH_BASE = 'https://omnipathdb.org'
 
 
 def _query_omnipath(
-    datasets: str,
+    endpoint: str = 'interactions',
+    datasets: str | None = None,
     organism: int = 9606,
+    resources: str | None = None,
     **extra_params: str,
 ) -> list[dict]:
     """Query the OmniPath web API and return rows as dicts.
 
     Args:
-        datasets: Comma-separated dataset names.
+        endpoint: API endpoint (``'interactions'`` or ``'enzsub'``).
+        datasets: Comma-separated dataset names (for ``/interactions``).
         organism: NCBI taxonomy ID.
+        resources: Comma-separated resource filter (e.g. ``'SIGNOR'``).
         **extra_params: Additional query parameters.
 
     Returns:
@@ -63,15 +67,21 @@ def _query_omnipath(
     """
 
     params = {
-        'datasets': datasets,
         'genesymbols': 'yes',
         'fields': 'sources,references',
         'organisms': str(organism),
     }
+
+    if datasets:
+        params['datasets'] = datasets
+
+    if resources:
+        params['resources'] = resources
+
     params.update(extra_params)
 
     query = '&'.join(f'{k}={v}' for k, v in params.items())
-    url = f'{_OMNIPATH_API}?{query}'
+    url = f'{_OMNIPATH_BASE}/{endpoint}?{query}'
 
     _log.info('[COSMOS] Querying OmniPath: %s', url)
 
@@ -93,7 +103,8 @@ def _query_omnipath(
     rows = list(reader)
 
     _log.info(
-        '[COSMOS] OmniPath %s: %d interactions', datasets, len(rows),
+        '[COSMOS] OmniPath %s/%s: %d interactions',
+        endpoint, datasets or '', len(rows),
     )
 
     return rows
@@ -113,27 +124,30 @@ def _sign_to_mor(row: dict) -> int:
     return 0  # unknown or contradictory
 
 
-def signaling_interactions(
+def ppi_interactions(
     organism: int = 9606,
-    datasets: str = 'omnipath',
+    datasets: str = 'omnipath,ligrecextra',
+    resources: str | None = None,
 ) -> Generator[Interaction, None, None]:
-    """Protein-protein signaling interactions from OmniPath.
+    """Protein-protein interactions from OmniPath.
 
-    Yields directed edges from the ``omnipath`` dataset (core PPI and
-    signaling). Optionally includes ``kinaseextra`` and/or
-    ``pathwayextra`` datasets.
+    Yields directed edges from the combined OmniPath datasets.
+    All protein-protein interactions (signaling, ligand-receptor,
+    kinase-substrate) are queried together to avoid duplicate edges
+    from overlapping datasets.
 
     Args:
         organism: NCBI taxonomy ID.
         datasets: Comma-separated OmniPath dataset names.
-            Default ``'omnipath'``.
-            Use ``'omnipath,kinaseextra,pathwayextra'`` for extended.
+            Default ``'omnipath,ligrecextra'``.
+            Extended: ``'omnipath,ligrecextra,kinaseextra,pathwayextra'``.
+        resources: Comma-separated resource filter (e.g. ``'SIGNOR'``).
 
     Yields:
         :class:`~.Interaction` records.
     """
 
-    rows = _query_omnipath(datasets, organism=organism)
+    rows = _query_omnipath(datasets=datasets, organism=organism, resources=resources)
 
     for row in rows:
         source = row.get('source_genesymbol', '')
@@ -161,57 +175,15 @@ def signaling_interactions(
         )
 
 
-def ligrec_interactions(
-    organism: int = 9606,
-    datasets: str = 'ligrecextra',
-) -> Generator[Interaction, None, None]:
-    """Ligand-receptor interactions from OmniPath.
-
-    Yields directed edges from the ``ligrecextra`` dataset.
-
-    Args:
-        organism: NCBI taxonomy ID.
-        datasets: Comma-separated dataset names. Default ``'ligrecextra'``.
-
-    Yields:
-        :class:`~.Interaction` records.
-    """
-
-    rows = _query_omnipath(datasets, organism=organism)
-
-    for row in rows:
-        source = row.get('source_genesymbol', '')
-        target = row.get('target_genesymbol', '')
-
-        if not source or not target:
-            continue
-
-        yield Interaction(
-            source=source,
-            target=target,
-            source_type='protein',
-            target_type='protein',
-            id_type_a='genesymbol',
-            id_type_b='genesymbol',
-            interaction_type='ligand_receptor',
-            resource=f'OmniPath:{datasets}',
-            mor=_sign_to_mor(row),
-            locations=(),
-            attrs={
-                'sources': row.get('sources', ''),
-                'references': row.get('references', ''),
-            },
-        )
-
-
 def grn_interactions(
     organism: int = 9606,
     datasets: str = 'collectri',
+    resources: str | None = None,
     dorothea_levels: str | None = None,
 ) -> Generator[Interaction, None, None]:
     """Gene regulatory network from OmniPath.
 
-    Yields TF→gene directed edges from ``collectri`` by default.
+    Yields TF->gene directed edges from ``collectri`` by default.
     Optionally includes ``dorothea`` with confidence level filtering.
 
     Args:
@@ -219,6 +191,7 @@ def grn_interactions(
         datasets: Comma-separated dataset names.
             Default ``'collectri'``.
             Use ``'collectri,dorothea'`` for combined.
+        resources: Comma-separated resource filter.
         dorothea_levels: Confidence levels for DoRothEA (e.g. ``'A,B,C'``).
             Only applied when ``'dorothea'`` is in *datasets*.
             Default: ``'A,B,C'``.
@@ -234,7 +207,10 @@ def grn_interactions(
     elif 'dorothea' in datasets:
         extra_params['dorothea_levels'] = 'A,B,C'
 
-    rows = _query_omnipath(datasets, organism=organism, **extra_params)
+    rows = _query_omnipath(
+        datasets=datasets, organism=organism,
+        resources=resources, **extra_params,
+    )
 
     for row in rows:
         source = row.get('source_genesymbol', '')

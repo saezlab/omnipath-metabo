@@ -50,8 +50,7 @@ _CATEGORIES = {
     'receptors': 'build_receptors',
     'allosteric': 'build_allosteric',
     'enzyme_metabolite': 'build_enzyme_metabolite',
-    'signaling': 'build_signaling',
-    'ligrec': 'build_ligrec',
+    'ppi': 'build_ppi',
     'grn': 'build_grn',
 }
 
