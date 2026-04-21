@@ -42,6 +42,9 @@ _ALL_CATEGORIES = [
     'receptors',
     'allosteric',
     'enzyme_metabolite',
+    'signaling',
+    'ligrec',
+    'grn',
 ]
 
 

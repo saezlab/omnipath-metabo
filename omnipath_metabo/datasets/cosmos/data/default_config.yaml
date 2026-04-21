@@ -43,3 +43,15 @@ resources:
   recon3d:
     include_reverse: true
     include_orphans: true
+
+  # Signaling network from OmniPath (protein-protein)
+  signaling:
+    datasets: omnipath
+
+  # Ligand-receptor interactions from OmniPath
+  ligrec:
+    datasets: ligrecextra
+
+  # Gene regulatory network (TF-gene)
+  grn:
+    datasets: collectri

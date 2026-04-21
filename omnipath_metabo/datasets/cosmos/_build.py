@@ -68,6 +68,11 @@ from .resources import (
     stitch_interactions,
     tcdb_interactions,
 )
+from .resources.omnipath import (
+    grn_interactions,
+    ligrec_interactions,
+    signaling_interactions,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -81,6 +86,9 @@ PROCESSORS = {
     'mrclinksdb': mrclinksdb_interactions,
     'gem': gem_interactions,
     'recon3d': recon3d_transporter_interactions,
+    'signaling': signaling_interactions,
+    'ligrec': ligrec_interactions,
+    'grn': grn_interactions,
 }
 
 
@@ -738,3 +746,67 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     bundle = build(*args, row_filter=lambda row: row.resource.startswith('GEM:'), **kwargs)
     _report_resource_overlaps(bundle, 'enzyme-metabolite', kwargs.get('translate_ids', True))
     return bundle
+
+
+def build_signaling(*args, **kwargs) -> CosmosBundle:
+    """Build the signaling (PPI) layer from OmniPath.
+
+    Uses the ``omnipath`` dataset by default.  Set
+    ``signaling={'datasets': 'omnipath,kinaseextra,pathwayextra'}``
+    for extended coverage.
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  All metabolite
+            resources are disabled.
+
+    Returns:
+        :class:`CosmosBundle` containing signaling interactions.
+    """
+
+    # Disable all metabolite resources
+    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d', 'stitch', 'ligrec', 'grn'):
+        kwargs.setdefault(res, False)
+
+    return build(*args, **kwargs)
+
+
+def build_ligrec(*args, **kwargs) -> CosmosBundle:
+    """Build the ligand-receptor layer from OmniPath.
+
+    Uses the ``ligrecextra`` dataset by default.
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  All other
+            resources are disabled.
+
+    Returns:
+        :class:`CosmosBundle` containing ligand-receptor interactions.
+    """
+
+    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d', 'stitch', 'signaling', 'grn'):
+        kwargs.setdefault(res, False)
+
+    return build(*args, **kwargs)
+
+
+def build_grn(*args, **kwargs) -> CosmosBundle:
+    """Build the gene regulatory network from OmniPath.
+
+    Uses ``collectri`` by default.  For DoRothEA, set
+    ``grn={'datasets': 'collectri,dorothea', 'dorothea_levels': 'A,B,C'}``.
+
+    Args:
+        *args: Passed through to :func:`build`.
+        **kwargs: Passed through to :func:`build`.  All other
+            resources are disabled.
+
+    Returns:
+        :class:`CosmosBundle` containing gene regulatory interactions.
+    """
+
+    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d', 'stitch', 'signaling', 'ligrec'):
+        kwargs.setdefault(res, False)
+
+    return build(*args, **kwargs)
