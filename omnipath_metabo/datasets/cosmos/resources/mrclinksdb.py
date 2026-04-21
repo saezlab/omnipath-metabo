@@ -87,7 +87,10 @@ def mrclinksdb_interactions(
         if not receptor or not pubchem:
             continue
 
-        abbreviations = resolve_protein_locations(receptor, all_locations, location_mapping) or set()
+        # MRCLinksDB catalogues only plasma-membrane interactions, so 'e'
+        # is the correct fallback for proteins without UniProt location data
+        # (common for unreviewed non-human entries).
+        abbreviations = resolve_protein_locations(receptor, all_locations, location_mapping) or {'e'}
 
         ptype = protein_types.get(receptor, 'other')
         interaction_type = 'transport' if ptype == 'transporter' else 'ligand_receptor'
