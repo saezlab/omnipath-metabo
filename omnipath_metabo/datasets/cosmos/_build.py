@@ -511,6 +511,16 @@ def build(
         df = df.drop(columns=['_row_id'])
         df = _enrich_stitch_locations(df, organism)
 
+        # Orthology translation for human-only resources in non-human builds
+        if organism != 9606 and cfg.get('orthology_translation', True):
+            from ._orthology import translate_bundle_by_orthology
+
+            df = translate_bundle_by_orthology(
+                df,
+                source_organism=9606,
+                target_organism=organism,
+            )
+
     else:
         if cfg.get('apply_blacklist', True):
             from ._blacklist import apply_blacklist

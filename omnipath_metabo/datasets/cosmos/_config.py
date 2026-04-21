@@ -105,6 +105,8 @@ def config(
     if kwargs:
         _deep_merge(result, _expand_kwargs(kwargs))
 
+    _auto_select_gem(result)
+
     return result
 
 
@@ -117,7 +119,10 @@ def _expand_kwargs(kwargs: dict) -> dict:
     ``stitch={...}`` becomes ``{'resources': {'stitch': {...}}}``.
     """
 
-    top_keys = {'organism', 'resources'}
+    top_keys = {
+        'organism', 'resources', 'translate_ids', 'apply_blacklist',
+        'orthology_translation',
+    }
     expanded: dict = {}
     resource_overrides: dict = {}
 
@@ -132,6 +137,43 @@ def _expand_kwargs(kwargs: dict) -> dict:
         _deep_merge(expanded['resources'], resource_overrides)
 
     return expanded
+
+
+def _auto_select_gem(cfg: dict) -> None:
+    """Auto-select GEM name based on organism if not explicitly set.
+
+    If the user hasn't specified a GEM name in the config and the
+    organism has a known default GEM, set it automatically.  If the
+    organism has no GEM, disable the GEM resource.
+    """
+
+    organism = cfg.get('organism', 9606)
+    gem_cfg = cfg.get('resources', {}).get('gem')
+
+    if gem_cfg is False:
+        return  # explicitly disabled
+
+    if gem_cfg is None:
+        gem_cfg = {}
+        cfg.setdefault('resources', {})['gem'] = gem_cfg
+
+    # Only auto-select if the user hasn't specified a GEM name
+    if 'gem' not in gem_cfg or gem_cfg['gem'] == 'Human-GEM':
+        from omnipath_metabo.datasets.cosmos._organisms import default_gem
+
+        gem_name = default_gem(organism)
+
+        if gem_name:
+            gem_cfg['gem'] = gem_name
+        elif organism != 9606:
+            # No GEM for this organism — disable the resource
+            cfg['resources']['gem'] = False
+
+    # Also disable Recon3D for non-human organisms
+    if organism != 9606:
+        recon_cfg = cfg.get('resources', {}).get('recon3d')
+        if recon_cfg is not False:
+            cfg.setdefault('resources', {})['recon3d'] = False
 
 
 def _load_yaml(path: Path | str) -> dict:
