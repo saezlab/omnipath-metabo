@@ -36,7 +36,7 @@ import warnings
 import pandas as pd
 
 from omnipath_metabo.datasets import cosmos
-from omnipath_metabo.datasets.cosmos._record import Interaction
+from omnipath_metabo.datasets.cosmos import CosmosEdge
 
 warnings.filterwarnings('ignore', module='paramiko')
 warnings.filterwarnings('ignore', module='rdata')
@@ -54,6 +54,13 @@ pd.set_option('display.width', None)
 Build each PKN category separately and inspect before formatting.
 Each `build_*()` call returns a `CosmosBundle` with translated ChEBI / UniProt IDs.
 
+After `build_*()` the `network` attribute holds **`Interaction`** namedtuples
+(fields: `source`, `target`, `source_type`, `target_type`, `id_type_a`,
+`id_type_b`, `interaction_type`, `resource`, `mor`, `locations`, `attrs`).
+After `format_*()` it holds **`CosmosEdge`** namedtuples (COSMOS node IDs,
+no `id_type_a`/`id_type_b`).  In both cases `pd.DataFrame(bundle.network)`
+produces correct column names automatically.
+
 ### Transporters
 
 ```python
@@ -63,7 +70,7 @@ transporters = cosmos.build_transporters(
     gem={'include_orphans': False},
     cell_surface_only=True,
 )
-df_t = pd.DataFrame(transporters.network, columns=Interaction._fields)
+df_t = pd.DataFrame(transporters.network)
 
 print(df_t.groupby('resource').size())
 print(df_t[df_t['resource'] == 'TCDB'])
@@ -72,7 +79,7 @@ print(df_t[df_t['resource'] == 'Recon3D'])
 print(df_t[df_t['resource'] == 'GEM_transporter:Human-GEM'])
 print(df_t[df_t['resource'] == 'MRCLinksDB'])
 
-# Inspect GEM transporter column types
+# Inspect GEM transporter column types (Interaction fields, pre-format)
 df_gem = df_t[df_t['resource'] == 'GEM_transporter:Human-GEM']
 for col in ['source_type', 'target_type', 'id_type_a', 'id_type_b', 'interaction_type']:
     print(df_gem[col].value_counts())
@@ -86,13 +93,13 @@ transporters_mouse = cosmos.build_transporters(
     organism=10090,
     cell_surface_only=True,
 )
-df = pd.DataFrame(transporters_mouse.network, columns=Interaction._fields)
-df_tm = df[df['resource'] == 'GEM_transporter:Mouse-GEM']
+df_tm = pd.DataFrame(transporters_mouse.network)
+df_gem_mouse = df_tm[df_tm['resource'] == 'GEM_transporter:Mouse-GEM']
 
 # Inspect orphan transport reactions (no gene rule)
-orphans = df_tm[
-    df_tm['attrs'].apply(lambda a: isinstance(a, dict) and a.get('orphan', False)) &
-    (df_tm['source_type'] == 'small_molecule')
+orphans = df_gem_mouse[
+    df_gem_mouse['attrs'].apply(lambda a: isinstance(a, dict) and a.get('orphan', False)) &
+    (df_gem_mouse['source_type'] == 'small_molecule')
 ]
 print(f'Orphan transport reactions (Mouse-GEM): {orphans["attrs"].apply(lambda a: a["reaction_id"]).nunique()}')
 print(orphans[['source', 'target', 'locations', 'attrs']].head())
@@ -103,7 +110,7 @@ print(orphans[['source', 'target', 'locations', 'attrs']].head())
 ```python
 # Human
 receptors = cosmos.build_receptors(cell_surface_only=True)
-df_r = pd.DataFrame(receptors.network, columns=Interaction._fields)
+df_r = pd.DataFrame(receptors.network)
 print(df_r.groupby('resource').size())
 print(df_r[df_r['resource'] == 'STITCH'])
 ```
@@ -111,7 +118,7 @@ print(df_r[df_r['resource'] == 'STITCH'])
 ```python
 # Mouse
 receptors_mouse = cosmos.build_receptors(organism=10090, cell_surface_only=True)
-df_rm = pd.DataFrame(receptors_mouse.network, columns=Interaction._fields)
+df_rm = pd.DataFrame(receptors_mouse.network)
 print(df_rm.groupby('resource').size())
 ```
 
@@ -120,7 +127,7 @@ print(df_rm.groupby('resource').size())
 ```python
 # Default: BRENDA + STITCH-other
 allosteric = cosmos.build_allosteric()
-df_a = pd.DataFrame(allosteric.network, columns=Interaction._fields)
+df_a = pd.DataFrame(allosteric.network)
 print(df_a.groupby(['resource', 'interaction_type']).size())
 
 # Higher STITCH confidence threshold
@@ -134,7 +141,7 @@ allosteric_brenda = cosmos.build_allosteric(stitch=False)
 
 ```python
 enzyme_met = cosmos.build_enzyme_metabolite(gem={'include_orphans': False})
-df_e = pd.DataFrame(enzyme_met.network, columns=Interaction._fields)
+df_e = pd.DataFrame(enzyme_met.network)
 print(df_e.groupby('resource').size())
 print(f'Unique reactions: {df_e["attrs"].apply(lambda a: a.get("reaction_id", "")).nunique()}')
 ```
@@ -184,12 +191,55 @@ Export each category — ready to load in `cosmosR::preprocess_COSMOS_*`:
 for name, bundle in [('transporters', fmt_t), ('receptors', fmt_r),
                      ('allosteric', fmt_a), ('enzyme_met', fmt_e)]:
     df = pd.DataFrame(bundle.network)
-    df[['source', 'target', 'mor']].to_csv(f'cosmos_pkn_{name}.csv', index=False)
+    df[['source', 'target', 'mor']].rename(columns={'mor': 'sign'}).to_csv(
+        f'cosmos_pkn_{name}.csv', index=False,
+    )
+```
+
+Alternatively, use `to_dataframes()` to get all bundle components at once:
+
+```python
+dfs = fmt_t.to_dataframes()
+net_df  = dfs['network']      # CosmosEdge rows
+met_df  = dfs['metabolites']  # CosmosMetabolite rows
+prot_df = dfs['proteins']     # CosmosProtein rows
+rxn_df  = dfs['reactions']    # CosmosReaction rows
 ```
 
 ---
 
-## 4. Customise the build
+## 4. CLI usage
+
+For scripted or one-off exports, use the `cosmos-pkn` command installed with the package:
+
+```bash
+# Full human PKN (3-column CSV: source, target, sign)
+cosmos-pkn
+
+# Transporters only, TSV output
+cosmos-pkn --subset transporters --output cosmos_transporters.tsv
+
+# Mouse, no STITCH, no connector edges
+cosmos-pkn --organism 10090 --no-stitch --no-connector-edges
+
+# All columns (source, target, sign, interaction_type, resource, ...)
+cosmos-pkn --all-columns --output cosmos_pkn_full.csv
+
+# Higher STITCH confidence, drop pseudo-enzyme orphan nodes
+cosmos-pkn --score-threshold 900 --no-orphans
+```
+
+Available subsets: `all` (default), `transporters`, `receptors`, `allosteric`, `enzyme_metabolite`.
+
+To pre-build Parquet cache files for the server:
+
+```bash
+cosmos-pkn build-cache --organism 9606 10090 --category transporters receptors
+```
+
+---
+
+## 5. Customise the build
 
 **Change organism (mouse):**
 
@@ -220,9 +270,16 @@ transporters_minimal = cosmos.build_transporters(
 )
 ```
 
+**Override config via YAML file:**
+
+```python
+cfg = cosmos.config('my_config.yaml', organism=10090)
+transporters = cosmos.build_transporters(**cfg)
+```
+
 ---
 
-## 5. Provenance lookup
+## 6. Provenance lookup
 
 The bundle tracks the mapping between translated canonical IDs and the original
 identifiers from each source database.
