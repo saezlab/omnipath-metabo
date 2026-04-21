@@ -83,7 +83,7 @@ def _is_pre_expanded(resource: str) -> bool:
 
 
 def _row_category(itype: str, resource: str) -> str:
-    """Classify an interaction row as 'transporter', 'receptor', or 'other'."""
+    """Classify an interaction row into a formatting category."""
     if (
         itype == 'transport'
         or resource.startswith('GEM_transporter')
@@ -92,6 +92,8 @@ def _row_category(itype: str, resource: str) -> str:
         return 'transporter'
     if itype == 'ligand_receptor' or (resource == 'STITCH' and itype == 'receptor'):
         return 'receptor'
+    if itype in ('signaling', 'gene_regulation'):
+        return 'protein_protein'
     return 'other'
 
 
@@ -366,6 +368,43 @@ def _format_receptor_row(
 
 
 
+def _format_protein_protein_row(
+    row: dict,
+    n: int,
+    connectors: set[tuple[str, str]],
+) -> list[dict]:
+    """Format a protein-protein edge (signaling, GRN, ligand-receptor).
+
+    Both source and target are bare UniProt ACs — no ``Gene{N}__``
+    prefix, no metabolite formatting.  These edges bridge the signaling
+    and gene regulatory layers to the metabolic layer via connector
+    edges generated separately.
+
+    If either side is a frozenset (ambiguous ID), each AC is expanded
+    into a separate row.
+    """
+    attrs = dict(row['attrs']) if isinstance(row['attrs'], dict) else {}
+
+    src_raw = row['source']
+    tgt_raw = row['target']
+
+    src_ids = sorted(src_raw) if isinstance(src_raw, frozenset) else [str(src_raw)]
+    tgt_ids = sorted(tgt_raw) if isinstance(tgt_raw, frozenset) else [str(tgt_raw)]
+
+    output = []
+
+    for sid in src_ids:
+        for tid in tgt_ids:
+            out = dict(row)
+            out['source'] = sid
+            out['target'] = tid
+            out['locations'] = ()
+            out['attrs'] = {**attrs, 'cosmos_formatted': True}
+            output.append(out)
+
+    return output
+
+
 def _make_connector_rows(
     connectors: set[tuple[str, str]],
     columns: list[str],
@@ -555,7 +594,11 @@ def format_pkn(
         cat = row['_category']
         n = int(row['_n'])
 
-        if _is_pre_expanded(row['resource']):
+        if cat == 'protein_protein':
+            output_rows.extend(
+                _format_protein_protein_row(row_dict, n, connectors)
+            )
+        elif _is_pre_expanded(row['resource']):
             output_rows.extend(
                 _format_pre_expanded_row(row_dict, n, connectors)
             )
@@ -571,6 +614,26 @@ def format_pkn(
             output_rows.extend(
                 _format_receptor_row(row_dict, n, connectors)
             )
+
+    # Filter connectors: only keep those where the bare AC appears as a
+    # node in the signaling/GRN/ligrec layer (protein-protein edges).
+    # This avoids orphan connector edges for enzymes with no signaling
+    # counterpart, following the legacy R implementation.
+    pp_nodes: set[str] = set()
+    for row_dict in output_rows:
+        if row_dict.get('interaction_type') in ('signaling', 'gene_regulation', 'ligand_receptor'):
+            pp_nodes.add(str(row_dict.get('source', '')))
+            pp_nodes.add(str(row_dict.get('target', '')))
+
+    if pp_nodes:
+        n_before = len(connectors)
+        connectors = {(bare, fmt) for bare, fmt in connectors if bare in pp_nodes}
+        _log.info(
+            '[COSMOS format] connectors filtered: %d → %d '
+            '(kept only those with signaling/GRN counterpart)',
+            n_before,
+            len(connectors),
+        )
 
     _log.info(
         '[COSMOS format] output: %d main rows + %d connector edges = %d total edges',
