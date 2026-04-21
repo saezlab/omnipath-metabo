@@ -1,9 +1,11 @@
 # COSMOS PKN Quickstart
 
 This tutorial shows how to build and explore the COSMOS prior-knowledge network
-(PKN) using `omnipath-metabo`. The PKN covers metabolite-protein interactions
-from seven curated databases and is ready to use directly with the
-[cosmosR](https://github.com/saezlab/cosmosR) R package.
+(PKN) using `omnipath-metabo`. The PKN covers metabolite-protein interactions,
+protein-protein signaling (PPI), and gene regulatory networks (GRN) from nine
+curated databases and is ready to use directly with the
+[cosmosR](https://github.com/saezlab/cosmosR) R package or via the
+`metabo.omnipathdb.org` web service.
 
 ## Prerequisites
 
@@ -146,6 +148,55 @@ print(df_e.groupby('resource').size())
 print(f'Unique reactions: {df_e["attrs"].apply(lambda a: a.get("reaction_id", "")).nunique()}')
 ```
 
+### Protein–protein interactions (PPI)
+
+Protein-protein signaling edges from the OmniPath database, covering
+kinase-substrate, ligand-receptor, and other signaling interactions.
+
+```python
+from omnipath_metabo.datasets.cosmos._build import build_ppi
+
+ppi = build_ppi()
+df_ppi = pd.DataFrame(ppi.network)
+print(df_ppi.groupby('resource').size())
+print(f'PPI edges: {len(df_ppi):,}')
+
+# Filter to stimulatory interactions only
+stim = df_ppi[df_ppi['mor'] == 1]
+print(f'Stimulatory: {len(stim):,}')
+```
+
+```python
+# Mouse PPI (OmniPath supports multiple organisms)
+ppi_mouse = build_ppi(organism=10090)
+df_ppi_m = pd.DataFrame(ppi_mouse.network)
+print(f'Mouse PPI edges: {len(df_ppi_m):,}')
+```
+
+### Gene regulatory network (GRN)
+
+Transcription factor-target gene edges from CollecTRI (default) or DoRothEA.
+
+```python
+from omnipath_metabo.datasets.cosmos._build import build_grn
+
+grn = build_grn()
+df_grn = pd.DataFrame(grn.network)
+print(df_grn.groupby('resource').size())
+print(f'GRN edges: {len(df_grn):,}')
+
+# All GRN edges have interaction_type='gene_regulation'
+assert (df_grn['interaction_type'] == 'gene_regulation').all()
+```
+
+```python
+# Include DoRothEA with confidence levels A,B,C
+grn_ext = build_grn(
+    ppi=False,
+    resources={'grn': {'datasets': 'collectri,dorothea', 'dorothea_levels': 'A,B,C'}},
+)
+```
+
 ---
 
 ## 3. Format for cosmosR
@@ -229,12 +280,12 @@ cosmos-pkn --all-columns --output cosmos_pkn_full.csv
 cosmos-pkn --score-threshold 900 --no-orphans
 ```
 
-Available subsets: `all` (default), `transporters`, `receptors`, `allosteric`, `enzyme_metabolite`.
+Available subsets: `all` (default), `transporters`, `receptors`, `allosteric`, `enzyme_metabolite`, `ppi`, `grn`.
 
 To pre-build Parquet cache files for the server:
 
 ```bash
-cosmos-pkn build-cache --organism 9606 10090 --category transporters receptors
+cosmos-pkn build-cache --organism 9606 10090 --category transporters receptors ppi grn
 ```
 
 ---
@@ -303,6 +354,145 @@ print(df_rxn.head())
 
 ---
 
+## 7. Multi-organism builds
+
+The `build()` function and all `build_*()` category builders accept an `organism`
+parameter (NCBI taxonomy ID). Resources that natively support the organism
+query it directly; human-only resources (SLC, Recon3D) are translated via
+orthology.
+
+```python
+# Full mouse PKN (all categories)
+from omnipath_metabo.datasets.cosmos import build
+
+mouse_pkn = build(organism=10090)
+df_mouse = pd.DataFrame(mouse_pkn.network)
+print(f'Mouse PKN: {len(df_mouse):,} edges')
+print(df_mouse.groupby('resource').size())
+```
+
+```python
+# Check which resources need orthology translation for an organism
+from omnipath_metabo.datasets.cosmos._organisms import (
+    needs_orthology,
+    organism_resources,
+    default_gem,
+)
+
+# Mouse: most resources are direct, SLC + Recon3D need orthology
+print(organism_resources(10090))
+print(f'Needs orthology: {needs_orthology(10090)}')
+print(f'Default GEM: {default_gem(10090)}')
+```
+
+Supported organisms with GEMs: human (9606), mouse (10090), rat (10116),
+zebrafish (7955), fruit fly (7227), worm (6239), yeast (4932), *E. coli* (562).
+Resources marked "all" (TCDB, BRENDA, STITCH) accept any organism.
+
+---
+
+## 8. Web service
+
+Pre-built PKNs are available from the `metabo.omnipathdb.org` web service.
+The server caches each category per organism as Parquet files and assembles
+them on request.
+
+```
+GET https://metabo.omnipathdb.org/cosmos/pkn?organism=9606&categories=all
+GET https://metabo.omnipathdb.org/cosmos/pkn?organism=10090&categories=transporters,ppi
+GET https://metabo.omnipathdb.org/cosmos/pkn?organism=9606&format=parquet
+```
+
+Additional endpoints:
+
+```
+GET /cosmos/categories    # list available categories
+GET /cosmos/organisms     # list organisms with cached data
+GET /cosmos/resources     # list resources per category
+GET /cosmos/status        # cache status and sizes
+```
+
+---
+
+## 9. Python client (`omnipath-client`)
+
+The `omnipath-client` package provides a high-level interface to the web service.
+Install with `pip install omnipath-client`.
+
+```python
+import omnipath_client as oc
+
+# Fetch human transporters as a DataFrame (polars by default, pandas fallback)
+df = oc.cosmos.get_pkn(organism='human', categories='transporters')
+
+# Full mouse PKN
+df_mouse = oc.cosmos.get_pkn(organism=10090)
+
+# Specific categories
+df_subset = oc.cosmos.get_pkn(
+    organism=9606,
+    categories=['transporters', 'receptors', 'ppi'],
+)
+
+# Filter by resource
+df_signor = oc.cosmos.get_pkn(
+    organism=9606,
+    categories='ppi',
+    resources='OmniPath:omnipath',
+)
+
+# Raw dict (JSON response)
+data = oc.cosmos.get_pkn(organism=9606, format='dict')
+
+# Explore available data
+print(oc.cosmos.categories())    # ['transporters', 'receptors', ...]
+print(oc.cosmos.organisms())     # [9606, 10090, ...]
+print(oc.cosmos.resources())     # {'transporters': ['GEM:Human-GEM', ...], ...}
+```
+
+The `organism` parameter accepts any form recognised by the OmniPath taxonomy
+service: NCBI ID (`9606`), common name (`'human'`), Latin name
+(`'Homo sapiens'`), Ensembl code (`'hsapiens'`), or KEGG code (`'hsa'`).
+
+---
+
+## 10. AnnNet graph conversion
+
+The PKN can be converted to an [AnnNet](https://github.com/saezlab/annnet)
+graph object for network analysis. This works with both the local build
+output and the web service client.
+
+```python
+# Via the web service client (recommended for quick access)
+import omnipath_client as oc
+
+g = oc.cosmos.get_pkn(organism='human', format='annnet')
+
+# Or convert an existing DataFrame
+df = oc.cosmos.get_pkn(organism='human')
+g = oc.cosmos.to_annnet(df)
+```
+
+```python
+# From a local build
+from omnipath_metabo.datasets.cosmos import build, format_transporters
+
+bundle = build()
+fmt = format_transporters(bundle)
+df_local = pd.DataFrame(fmt.network)
+
+# Convert to AnnNet (requires the annnet package)
+from omnipath_client.cosmos import to_annnet
+
+g = to_annnet(df_local)
+```
+
+The AnnNet graph stores entity types (protein, small_molecule) as vertex
+attributes and interaction metadata (interaction_type, resource, MOR as weight)
+as edge attributes.
+
+---
+
 ## Default resources
 
 | Resource | Category | Species |
@@ -314,3 +504,5 @@ print(df_rxn.head())
 | BRENDA | Allosteric regulation | Multi-species |
 | Human-GEM | Transporters, enzyme-metabolite | Human |
 | Recon3D | Transporters | Human |
+| OmniPath PPI | Protein-protein signaling | Multi-species |
+| OmniPath GRN | Gene regulation (CollecTRI/DoRothEA) | Multi-species |
