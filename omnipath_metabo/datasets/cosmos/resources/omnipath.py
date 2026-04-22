@@ -93,10 +93,17 @@ def _query_omnipath(
         text = dl.result.text
 
     except (ImportError, Exception):
-        # Fallback to urllib
+        import ssl
         import urllib.request
 
-        with urllib.request.urlopen(url, timeout=120) as resp:
+        try:
+            import certifi
+            ctx = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            _log.warning('[COSMOS] certifi not found; disabling SSL verification for OmniPath request')
+            ctx = ssl._create_unverified_context()
+
+        with urllib.request.urlopen(url, timeout=120, context=ctx) as resp:
             text = resp.read().decode('utf-8')
 
     reader = csv.DictReader(io.StringIO(text), delimiter='\t')
