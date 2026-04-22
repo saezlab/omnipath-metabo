@@ -562,6 +562,14 @@ def _to_hmdb(source_id: str, id_type: str, gem: str = '') -> str | None:
 # -- Bulk mapping builders ---------------------------------------------------
 
 
+def _normalize_chebi(chebi_id: str | None) -> str | None:
+    """Ensure a ChEBI ID has the ``CHEBI:`` prefix (e.g. ``'3647'`` → ``'CHEBI:3647'``)."""
+    if chebi_id is None:
+        return None
+    s = str(chebi_id)
+    return s if s.startswith('CHEBI:') else f'CHEBI:{s}'
+
+
 def _build_metab_mapping(
     id_type: str,
     ids: pd.Series,
@@ -574,6 +582,9 @@ def _build_metab_mapping(
     bulk dictionaries from omnipath-utils wherever possible; falls back to
     per-name HTTP calls only for ``'synonym'`` (BRENDA) entries.
 
+    All returned ChEBI IDs are normalised to have the ``CHEBI:`` prefix
+    (some upstream sources omit it).
+
     Args:
         id_type: Metabolite identifier type (e.g. ``'pubchem'``, ``'metatlas'``).
         ids: Series of source IDs (same index as the group slice).
@@ -585,7 +596,7 @@ def _build_metab_mapping(
     unique_ids = ids.unique()
 
     if id_type == 'chebi':
-        return {uid: uid for uid in unique_ids}
+        return {uid: _normalize_chebi(uid) for uid in unique_ids}
 
     if id_type in ('pubchem', 'bigg', 'hmdb'):
         result = _batch_to_chebi(
@@ -599,7 +610,7 @@ def _build_metab_mapping(
             n_resolved,
             len(unique_ids),
         )
-        return result
+        return {k: _normalize_chebi(v) for k, v in result.items()}
 
     if id_type == 'metatlas':
         # Each row may come from a different GEM -- build per-GEM mappings.
@@ -610,7 +621,7 @@ def _build_metab_mapping(
             uid_mask = ids == uid
             gem = gem_names[uid_mask].iloc[0] if uid_mask.any() else ''
             result[uid] = _metatlas_to_chebi(gem).get(uid) if gem else None
-        return result
+        return {k: _normalize_chebi(v) for k, v in result.items()}
 
     if id_type == 'synonym':
         # Three-step fallback chain (bulk sources first, per-name HTTP last):
@@ -678,7 +689,7 @@ def _build_metab_mapping(
 
         n_final = len([v for v in result.values() if v is not None])
         _log.info('[COSMOS] synonym->ChEBI: %d/%d resolved total', n_final, len(unique_ids))
-        return result
+        return {k: _normalize_chebi(v) for k, v in result.items()}
 
     _log.debug('Unknown metabolite id_type %r, cannot translate to ChEBI.', id_type)
     return {uid: None for uid in unique_ids}

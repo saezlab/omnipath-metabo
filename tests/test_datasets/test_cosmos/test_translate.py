@@ -20,6 +20,7 @@ from omnipath_metabo.datasets.cosmos._translate import (
     _looks_like_chemical_name,
     _metatlas_to_chebi,
     _name_to_chebi,
+    _normalize_chebi,
     _ramp_synonyms_chebi,
     translate_pkn,
 )
@@ -856,3 +857,45 @@ class TestBuildMetabMapping:
         ):
             result = _build_metab_mapping('synonym', ids, resource)
         assert result['NADH'] == 'CHEBI:57945'
+
+    def test_chebi_bare_number_normalised(self):
+        """Bare numeric ChEBI IDs (no prefix) are normalised to CHEBI:xxxx."""
+        ids = pd.Series(['3647', '92795'])
+        resource = pd.Series(['TCDB', 'SLC'])
+        result = _build_metab_mapping('chebi', ids, resource)
+        assert result['3647'] == 'CHEBI:3647'
+        assert result['92795'] == 'CHEBI:92795'
+
+    def test_chebi_already_prefixed_unchanged(self):
+        """IDs already carrying CHEBI: prefix are not double-prefixed."""
+        ids = pd.Series(['CHEBI:3647'])
+        resource = pd.Series(['TCDB'])
+        result = _build_metab_mapping('chebi', ids, resource)
+        assert result['CHEBI:3647'] == 'CHEBI:3647'
+
+    def test_pubchem_bare_chebi_normalised(self):
+        """pubchem->ChEBI results without prefix are normalised."""
+        ids = pd.Series(['5793'])
+        resource = pd.Series(['STITCH'])
+        with patch(
+            'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+            return_value={'5793': {'3647'}},
+        ):
+            result = _build_metab_mapping('pubchem', ids, resource)
+        assert result['5793'] == 'CHEBI:3647'
+
+
+# ---------------------------------------------------------------------------
+# _normalize_chebi
+# ---------------------------------------------------------------------------
+
+class TestNormalizeChebi:
+
+    def test_bare_number(self):
+        assert _normalize_chebi('3647') == 'CHEBI:3647'
+
+    def test_already_prefixed(self):
+        assert _normalize_chebi('CHEBI:3647') == 'CHEBI:3647'
+
+    def test_none_returns_none(self):
+        assert _normalize_chebi(None) is None
