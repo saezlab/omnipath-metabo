@@ -39,6 +39,7 @@ __all__ = ['translate_pkn', '_to_hmdb']
 
 import logging
 import re
+import time
 from functools import cache
 
 import pandas as pd
@@ -85,6 +86,8 @@ def _looks_like_chemical_name(name: str) -> bool:
 
 
 _BATCH_CHUNK_SIZE = 100  # max IDs per HTTP request (keep well under 120s timeout)
+_TRANSLATE_MAX_RETRIES = 3
+_TRANSLATE_RETRY_BACKOFF = 2.0  # seconds; doubles on each retry
 
 
 def _chunked_translate(
@@ -94,13 +97,35 @@ def _chunked_translate(
     ncbi_tax_id: int,
     raw: bool = False,
 ) -> dict[str, set[str]]:
-    """Translate IDs in chunks to avoid HTTP timeout for large batches."""
+    """Translate IDs in chunks to avoid HTTP timeout for large batches.
+
+    Each chunk is retried up to ``_TRANSLATE_MAX_RETRIES`` times on
+    transient connection errors (reset, aborted) before propagating.
+    """
+    import requests.exceptions
 
     result: dict[str, set[str]] = {}
 
     for i in range(0, len(ids), _BATCH_CHUNK_SIZE):
         chunk = ids[i:i + _BATCH_CHUNK_SIZE]
-        result.update(mapping_translate(chunk, id_type, target_id_type, ncbi_tax_id, raw=raw))
+        delay = _TRANSLATE_RETRY_BACKOFF
+        for attempt in range(1, _TRANSLATE_MAX_RETRIES + 1):
+            try:
+                result.update(
+                    mapping_translate(chunk, id_type, target_id_type, ncbi_tax_id, raw=raw)
+                )
+                break
+            except (requests.exceptions.ConnectionError, ConnectionResetError) as exc:
+                if attempt == _TRANSLATE_MAX_RETRIES:
+                    raise
+                _log.warning(
+                    '[COSMOS] chunk %d-%d %s->%s: connection error (%s), '
+                    'retrying in %.0fs (attempt %d/%d)',
+                    i, i + len(chunk), id_type, target_id_type,
+                    type(exc).__name__, delay, attempt, _TRANSLATE_MAX_RETRIES,
+                )
+                time.sleep(delay)
+                delay *= 2
 
     return result
 

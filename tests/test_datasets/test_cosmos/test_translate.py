@@ -16,6 +16,7 @@ from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos._translate import (
     _build_metab_mapping,
     _build_protein_mapping,
+    _chunked_translate,
     _hmdb_synonyms_chebi,
     _looks_like_chemical_name,
     _metatlas_to_chebi,
@@ -57,6 +58,59 @@ class TestLooksLikeChemicalName:
 # ---------------------------------------------------------------------------
 # Adapter tests (_mapping.py)
 # ---------------------------------------------------------------------------
+
+class TestChunkedTranslateRetry:
+    """_chunked_translate retries on transient connection errors."""
+
+    def test_succeeds_after_one_retry(self):
+        import requests.exceptions
+        call_count = {'n': 0}
+
+        def flaky_translate(ids, *args, **kwargs):
+            call_count['n'] += 1
+            if call_count['n'] == 1:
+                raise requests.exceptions.ConnectionError('reset')
+            return {i: {f'CHEBI:{i}'} for i in ids}
+
+        with (
+            patch('omnipath_metabo.datasets.cosmos._translate.mapping_translate', side_effect=flaky_translate),
+            patch('omnipath_metabo.datasets.cosmos._translate.time.sleep'),
+        ):
+            result = _chunked_translate(['1', '2'], 'pubchem', 'chebi', 0)
+
+        assert result == {'1': {'CHEBI:1'}, '2': {'CHEBI:2'}}
+        assert call_count['n'] == 2
+
+    def test_raises_after_max_retries(self):
+        import requests.exceptions
+
+        with (
+            patch(
+                'omnipath_metabo.datasets.cosmos._translate.mapping_translate',
+                side_effect=requests.exceptions.ConnectionError('reset'),
+            ),
+            patch('omnipath_metabo.datasets.cosmos._translate.time.sleep'),
+        ):
+            with pytest.raises(requests.exceptions.ConnectionError):
+                _chunked_translate(['1'], 'pubchem', 'chebi', 0)
+
+    def test_connection_reset_error_also_retried(self):
+        call_count = {'n': 0}
+
+        def flaky(ids, *args, **kwargs):
+            call_count['n'] += 1
+            if call_count['n'] == 1:
+                raise ConnectionResetError(54, 'Connection reset by peer')
+            return {i: {f'CHEBI:{i}'} for i in ids}
+
+        with (
+            patch('omnipath_metabo.datasets.cosmos._translate.mapping_translate', side_effect=flaky),
+            patch('omnipath_metabo.datasets.cosmos._translate.time.sleep'),
+        ):
+            result = _chunked_translate(['42'], 'pubchem', 'chebi', 0)
+
+        assert result == {'42': {'CHEBI:42'}}
+
 
 class TestMappingAdapter:
     """Verify the dual-mode adapter imports and exports the expected symbols."""
