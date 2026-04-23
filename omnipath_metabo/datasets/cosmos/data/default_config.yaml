@@ -35,6 +35,8 @@ resources:
 
   mrclinksdb: {}
 
+  mrclinksdb_transporter: {}
+
   gem:
     gem: Human-GEM
     include_reverse: true

@@ -30,10 +30,15 @@ class TestDefaultConfig:
         assert isinstance(cfg['resources'], dict)
 
     def test_default_resources(self):
-        """All seven resources present by default."""
+        """All resources present by default."""
 
         cfg = default_config()
-        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d'}
+        expected = {
+            'stitch', 'tcdb', 'slc', 'brenda',
+            'mrclinksdb', 'mrclinksdb_transporter',
+            'gem', 'recon3d',
+            'ppi', 'grn',
+        }
         assert set(cfg['resources']) == expected
 
     def test_stitch_defaults(self):

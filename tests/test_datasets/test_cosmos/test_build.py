@@ -58,6 +58,17 @@ FAKE_DEFAULT_CONFIG = {
     'resources': {
         'fake_a': {},
         'fake_b': {},
+        # Disable all real resources so _auto_select_gem doesn't inject 'gem'.
+        'gem': False,
+        'recon3d': False,
+        'tcdb': False,
+        'slc': False,
+        'brenda': False,
+        'mrclinksdb': False,
+        'mrclinksdb_transporter': False,
+        'stitch': False,
+        'ppi': False,
+        'grn': False,
     },
 }
 
@@ -100,7 +111,10 @@ def _mock_processors():
     default_cfg = {
         'organism': 9606,
         'translate_ids': False,  # fake IDs can't be translated; skip for unit tests
-        'resources': {'capture': {}},
+        'resources': {
+            'capture': {},
+            'gem': False,
+        },
     }
 
     with (
@@ -186,7 +200,12 @@ class TestProcessorsRegistry:
     """Tests for the PROCESSORS constant."""
 
     def test_all_resources_registered(self):
-        expected = {'stitch', 'tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d'}
+        expected = {
+            'stitch', 'tcdb', 'slc', 'brenda',
+            'mrclinksdb', 'mrclinksdb_transporter',
+            'gem', 'recon3d',
+            'ppi', 'grn',
+        }
         assert set(PROCESSORS) == expected
 
     def test_all_callable(self):

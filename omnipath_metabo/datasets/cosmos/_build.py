@@ -63,6 +63,7 @@ from .resources import (
     brenda_regulations,
     gem_interactions,
     mrclinksdb_interactions,
+    mrclinksdb_transporter_protein_interactions,
     recon3d_transporter_interactions,
     slc_interactions,
     stitch_interactions,
@@ -83,6 +84,7 @@ PROCESSORS = {
     'slc': slc_interactions,
     'brenda': brenda_regulations,
     'mrclinksdb': mrclinksdb_interactions,
+    'mrclinksdb_transporter': mrclinksdb_transporter_protein_interactions,
     'gem': gem_interactions,
     'recon3d': recon3d_transporter_interactions,
     'ppi': ppi_interactions,
@@ -573,6 +575,8 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
             ``stitch`` are disabled unless explicitly re-enabled.
             ``mrclinksdb`` is enabled: its transport-classified records
             (``interaction_type='transport'``) are included.
+            ``mrclinksdb_transporter`` is enabled: the dedicated transporter
+            protein file (all records have ``interaction_type='transport'``).
 
     Returns:
         :class:`CosmosBundle` containing only transporter interactions,
@@ -651,6 +655,7 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
+    kwargs.setdefault('mrclinksdb_transporter', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, _is_receptor)
     _report_resource_overlaps(bundle, 'receptor', kwargs.get('translate_ids', True))
@@ -687,6 +692,7 @@ def build_allosteric(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('tcdb', False)
     kwargs.setdefault('slc', False)
     kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('mrclinksdb_transporter', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
     bundle = build(*args, **kwargs)
@@ -739,6 +745,7 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('slc', False)
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('mrclinksdb', False)
+    kwargs.setdefault('mrclinksdb_transporter', False)
     kwargs.setdefault('recon3d', False)
     kwargs.setdefault('stitch', False)
     bundle = build(*args, row_filter=lambda row: row.resource.startswith('GEM:'), **kwargs)
@@ -765,7 +772,7 @@ def build_ppi(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing PPI interactions.
     """
 
-    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d', 'stitch', 'grn'):
+    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter', 'gem', 'recon3d', 'stitch', 'grn'):
         kwargs.setdefault(res, False)
 
     return build(*args, **kwargs)
@@ -788,7 +795,7 @@ def build_grn(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing gene regulatory interactions.
     """
 
-    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'gem', 'recon3d', 'stitch', 'ppi'):
+    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter', 'gem', 'recon3d', 'stitch', 'ppi'):
         kwargs.setdefault(res, False)
 
     return build(*args, **kwargs)

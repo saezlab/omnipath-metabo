@@ -72,6 +72,7 @@ FAKE_DEFAULT_CONFIG = {
     'apply_blacklist': False,
     'resources': {
         'fake': {},
+        'gem': False,
     },
 }
 

@@ -34,7 +34,7 @@ import logging
 
 _log = logging.getLogger(__name__)
 
-__all__ = ['mrclinksdb_interactions']
+__all__ = ['mrclinksdb_interactions', 'mrclinksdb_transporter_protein_interactions']
 
 from collections.abc import Generator
 
@@ -120,6 +120,86 @@ def mrclinksdb_interactions(
             id_type_b='uniprot',
             interaction_type=interaction_type,
             resource='MRCLinksDB',
+            mor=1,
+            locations=tuple(sorted(abbreviations)),
+        )
+
+
+def mrclinksdb_transporter_protein_interactions(
+    organism: int = 9606,
+) -> Generator[Interaction, None, None]:
+    """
+    Yield MRCLinksDB transporter-protein interactions from the dedicated
+    transporter protein file.
+
+    Unlike :func:`mrclinksdb_interactions`, which parses the ligand-receptor
+    file and infers transport vs. receptor class from protein annotations, this
+    function reads the separate organism-specific transporter protein file
+    (``<Organism> transporter protein.txt``).  Every protein in that file is
+    a confirmed transporter, so no protein classification is needed.
+
+    Metabolite IDs are HMDB accessions (``id_type_a='hmdb'``); protein IDs
+    are UniProt accessions already present in the file (``id_type_b='uniprot'``
+    is a pass-through in the translation step).
+
+    Args:
+        organism:
+            NCBI taxonomy ID (default: 9606 for human).
+
+    Yields:
+        :class:`Interaction` records with *source_type* ``'small_molecule'``
+        and *target_type* ``'protein'``, ``interaction_type='transport'``,
+        ``resource='MRCLinksDB_transporter'``.
+    """
+
+    from pypath.inputs.mrclinksdb import _interactions
+
+    from ..location import (
+        resolve_protein_locations,
+        tcdb_locations,
+        uniprot_locations,
+    )
+
+    organism_name = ORGANISM_NAMES.get(organism, str(organism))
+    location_mapping = tcdb_locations()
+    reviewed = organism == 9606
+    all_locations = uniprot_locations(organism=organism, reviewed=reviewed)
+
+    try:
+        data = list(
+            _interactions.mrclinksdb_transporter_interaction(organism=organism_name)
+        )
+    except Exception:
+        _log.info(
+            '[COSMOS] MRCLinksDB transporter: no data for organism %s, skipping.',
+            organism_name,
+        )
+        return
+
+    for rec in data:
+
+        uniprot_id = str(rec.transporter_uniprot)
+        hmdb_id = str(rec.hmdb)
+
+        if not hmdb_id or not uniprot_id:
+            continue
+
+        # All proteins in this file are plasma-membrane transporters; use 'e'
+        # as fallback for entries without UniProt location data.
+        abbreviations = (
+            resolve_protein_locations(uniprot_id, all_locations, location_mapping)
+            or {'e'}
+        )
+
+        yield Interaction(
+            source=hmdb_id,
+            target=uniprot_id,
+            source_type='small_molecule',
+            target_type='protein',
+            id_type_a='hmdb',
+            id_type_b='uniprot',
+            interaction_type='transport',
+            resource='MRCLinksDB_transporter',
             mor=1,
             locations=tuple(sorted(abbreviations)),
         )
