@@ -62,8 +62,11 @@ def _progress(iterable, desc: str, **kwargs):
 from .resources import (
     brenda_regulations,
     gem_interactions,
+    imm1415_metabolic_interactions,
+    imm1415_transporter_interactions,
     mrclinksdb_interactions,
     mrclinksdb_transporter_protein_interactions,
+    recon3d_metabolic_interactions,
     recon3d_transporter_interactions,
     slc_interactions,
     stitch_interactions,
@@ -87,6 +90,9 @@ PROCESSORS = {
     'mrclinksdb_transporter': mrclinksdb_transporter_protein_interactions,
     'gem': gem_interactions,
     'recon3d': recon3d_transporter_interactions,
+    'recon3d_metabolic': recon3d_metabolic_interactions,
+    'imm1415': imm1415_transporter_interactions,
+    'imm1415_metabolic': imm1415_metabolic_interactions,
     'ppi': ppi_interactions,
     'grn': grn_interactions,
 }
@@ -595,6 +601,8 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
 
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('stitch', False)
+    kwargs.setdefault('recon3d_metabolic', False)
+    kwargs.setdefault('imm1415_metabolic', False)
     bundle = build(*args, row_filter=_is_transport, **kwargs)
     _report_resource_overlaps(bundle, 'transporter', kwargs.get('translate_ids', True))
     return bundle
@@ -655,6 +663,9 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
     kwargs.setdefault('brenda', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
+    kwargs.setdefault('recon3d_metabolic', False)
+    kwargs.setdefault('imm1415', False)
+    kwargs.setdefault('imm1415_metabolic', False)
     kwargs.setdefault('mrclinksdb_transporter', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, _is_receptor)
@@ -695,6 +706,9 @@ def build_allosteric(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('mrclinksdb_transporter', False)
     kwargs.setdefault('gem', False)
     kwargs.setdefault('recon3d', False)
+    kwargs.setdefault('recon3d_metabolic', False)
+    kwargs.setdefault('imm1415', False)
+    kwargs.setdefault('imm1415_metabolic', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, lambda row: (
         row.interaction_type == 'allosteric_regulation' or
@@ -747,7 +761,10 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('mrclinksdb', False)
     kwargs.setdefault('mrclinksdb_transporter', False)
     kwargs.setdefault('recon3d', False)
+    kwargs.setdefault('imm1415', False)
     kwargs.setdefault('stitch', False)
+    # recon3d_metabolic and imm1415_metabolic are enabled by default from config;
+    # their resource labels start with 'GEM:' so they pass the row_filter unchanged.
     bundle = build(*args, row_filter=lambda row: row.resource.startswith('GEM:'), **kwargs)
     _report_resource_overlaps(bundle, 'enzyme-metabolite', kwargs.get('translate_ids', True))
     return bundle
@@ -772,7 +789,11 @@ def build_ppi(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing PPI interactions.
     """
 
-    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter', 'gem', 'recon3d', 'stitch', 'grn'):
+    for res in (
+        'tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter',
+        'gem', 'recon3d', 'recon3d_metabolic', 'imm1415', 'imm1415_metabolic',
+        'stitch', 'grn',
+    ):
         kwargs.setdefault(res, False)
 
     return build(*args, **kwargs)
@@ -795,7 +816,11 @@ def build_grn(*args, **kwargs) -> CosmosBundle:
         :class:`CosmosBundle` containing gene regulatory interactions.
     """
 
-    for res in ('tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter', 'gem', 'recon3d', 'stitch', 'ppi'):
+    for res in (
+        'tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter',
+        'gem', 'recon3d', 'recon3d_metabolic', 'imm1415', 'imm1415_metabolic',
+        'stitch', 'ppi',
+    ):
         kwargs.setdefault(res, False)
 
     return build(*args, **kwargs)

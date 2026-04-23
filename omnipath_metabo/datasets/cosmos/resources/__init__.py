@@ -18,8 +18,11 @@
 __all__ = [
     'brenda_regulations',
     'gem_interactions',
+    'imm1415_metabolic_interactions',
+    'imm1415_transporter_interactions',
     'mrclinksdb_interactions',
     'mrclinksdb_transporter_protein_interactions',
+    'recon3d_metabolic_interactions',
     'recon3d_transporter_interactions',
     'rhea_reactions',
     'slc_interactions',
@@ -29,8 +32,9 @@ __all__ = [
 
 from .brenda import brenda_regulations
 from .gem import gem_interactions
+from .imm1415 import imm1415_metabolic_interactions, imm1415_transporter_interactions
 from .mrclinksdb import mrclinksdb_interactions, mrclinksdb_transporter_protein_interactions
-from .recon3d import recon3d_transporter_interactions
+from .recon3d import recon3d_metabolic_interactions, recon3d_transporter_interactions
 from .rhea import rhea_reactions
 from .slc import slc_interactions
 from .stitch import stitch_interactions

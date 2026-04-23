@@ -73,6 +73,9 @@ FAKE_DEFAULT_CONFIG = {
     'resources': {
         'fake': {},
         'gem': False,
+        'recon3d_metabolic': False,
+        'imm1415': False,
+        'imm1415_metabolic': False,
     },
 }
 

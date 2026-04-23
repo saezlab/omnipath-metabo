@@ -249,7 +249,7 @@ def _ramp_synonyms_chebi() -> dict[str, str]:
 @cache
 def _entrez_to_uniprot_bigg() -> dict[str, str]:
     """
-    Build an Entrez Gene ID -> UniProt AC mapping via BiGG gene symbols.
+    Build a human Entrez Gene ID -> UniProt AC mapping via Recon3D gene symbols.
 
     The BiGG JSON gene objects carry a ``name`` field containing the HGNC
     gene symbol (e.g. ``'SLC25A21'``).  This function strips the ``_ATN``
@@ -265,10 +265,8 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
 
     from pypath.inputs.recon3d._gem import recon3d_genes
 
-    _log.info('[COSMOS] Building Entrez->UniProt via BiGG gene symbols...')
+    _log.info('[COSMOS] Building Entrez->UniProt via Recon3D gene symbols (human)...')
     result: dict[str, str] = {}
-
-    # Collect all gene symbols to translate in one batch
     id_symbol_pairs: list[tuple[str, str]] = []
 
     for gene in recon3d_genes():
@@ -286,7 +284,6 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
     if not id_symbol_pairs:
         return result
 
-    # Batch translate all gene symbols at once
     symbols = list({sym for _, sym in id_symbol_pairs})
     sym_to_uniprot = _chunked_translate(symbols, 'genesymbol', 'uniprot', 9606)
 
@@ -297,7 +294,56 @@ def _entrez_to_uniprot_bigg() -> dict[str, str]:
         if targets:
             result[entrez] = next(iter(targets))
 
-    _log.info('[COSMOS] Entrez->UniProt (BiGG): %d entries', len(result))
+    _log.info('[COSMOS] Entrez->UniProt (Recon3D/BiGG, human): %d entries', len(result))
+    return result
+
+
+@cache
+def _imm1415_entrez_to_uniprot_bigg() -> dict[str, str]:
+    """
+    Build a mouse Entrez Gene ID -> UniProt AC mapping via iMM1415 gene symbols.
+
+    Same approach as :func:`_entrez_to_uniprot_bigg` but uses iMM1415
+    (Mus musculus) gene symbols and maps to UniProt with organism 10090.
+
+    Returns:
+        Dict mapping mouse Entrez Gene ID strings to mouse UniProt ACs.
+    """
+
+    import re
+
+    from pypath.inputs.imm1415._gem import imm1415_genes
+
+    _log.info('[COSMOS] Building Entrez->UniProt via iMM1415 gene symbols (mouse)...')
+    result: dict[str, str] = {}
+    id_symbol_pairs: list[tuple[str, str]] = []
+
+    for gene in imm1415_genes():
+        raw_id = gene.get('id', '')
+        name = gene.get('name', '')
+
+        if not raw_id or not name:
+            continue
+
+        entrez = re.sub(r'_AT\d+$', '', raw_id)
+
+        if entrez not in result:
+            id_symbol_pairs.append((entrez, name))
+
+    if not id_symbol_pairs:
+        return result
+
+    symbols = list({sym for _, sym in id_symbol_pairs})
+    sym_to_uniprot = _chunked_translate(symbols, 'genesymbol', 'uniprot', 10090)
+
+    for entrez, name in id_symbol_pairs:
+        if entrez in result:
+            continue
+        targets = sym_to_uniprot.get(name)
+        if targets:
+            result[entrez] = next(iter(targets))
+
+    _log.info('[COSMOS] Entrez->UniProt (iMM1415/BiGG, mouse): %d entries', len(result))
     return result
 
 
@@ -752,8 +798,14 @@ def _build_protein_mapping(
     if id_type == 'entrez':
         _log.info('[COSMOS] Translating %d Entrez IDs -> UniProt...', len(unique_ids))
 
-        # Try BiGG-embedded gene symbol -> UniProt first (resource-specific)
-        bigg_map = _entrez_to_uniprot_bigg()
+        # Use organism-specific BiGG gene symbol cache as primary lookup.
+        if organism == 9606:
+            bigg_map = _entrez_to_uniprot_bigg()
+        elif organism == 10090:
+            bigg_map = _imm1415_entrez_to_uniprot_bigg()
+        else:
+            bigg_map = {}
+
         result: dict[str, frozenset | None] = {}
         remaining = []
 

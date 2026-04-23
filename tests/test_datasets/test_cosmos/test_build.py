@@ -61,6 +61,9 @@ FAKE_DEFAULT_CONFIG = {
         # Disable all real resources so _auto_select_gem doesn't inject 'gem'.
         'gem': False,
         'recon3d': False,
+        'recon3d_metabolic': False,
+        'imm1415': False,
+        'imm1415_metabolic': False,
         'tcdb': False,
         'slc': False,
         'brenda': False,
@@ -203,7 +206,8 @@ class TestProcessorsRegistry:
         expected = {
             'stitch', 'tcdb', 'slc', 'brenda',
             'mrclinksdb', 'mrclinksdb_transporter',
-            'gem', 'recon3d',
+            'gem', 'recon3d', 'recon3d_metabolic',
+            'imm1415', 'imm1415_metabolic',
             'ppi', 'grn',
         }
         assert set(PROCESSORS) == expected
@@ -226,7 +230,8 @@ class TestBuildIntegration:
             stitch={'score_threshold': 900},
             tcdb=False, slc=False, brenda=False,
             mrclinksdb=False, mrclinksdb_transporter=False,
-            gem=False, recon3d=False, ppi=False, grn=False,
+            gem=False, recon3d=False, recon3d_metabolic=False,
+            imm1415=False, imm1415_metabolic=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)
@@ -241,7 +246,8 @@ class TestBuildIntegration:
             slc={},
             stitch=False, tcdb=False, brenda=False,
             mrclinksdb=False, mrclinksdb_transporter=False,
-            gem=False, recon3d=False, ppi=False, grn=False,
+            gem=False, recon3d=False, recon3d_metabolic=False,
+            imm1415=False, imm1415_metabolic=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)
@@ -254,7 +260,8 @@ class TestBuildIntegration:
             brenda={},
             stitch=False, tcdb=False, slc=False,
             mrclinksdb=False, mrclinksdb_transporter=False,
-            gem=False, recon3d=False, ppi=False, grn=False,
+            gem=False, recon3d=False, recon3d_metabolic=False,
+            imm1415=False, imm1415_metabolic=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)

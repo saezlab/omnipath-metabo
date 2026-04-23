@@ -169,11 +169,13 @@ def _auto_select_gem(cfg: dict) -> None:
             # No GEM for this organism — disable the resource
             cfg['resources']['gem'] = False
 
-    # Also disable Recon3D for non-human organisms
+    # Disable human-only GEMs (Recon3D) for non-human organisms.
+    # iMM1415 (mouse-only) relies on its own organism guard and is not
+    # auto-disabled here, so that config() == default_config() for human builds.
     if organism != 9606:
-        recon_cfg = cfg.get('resources', {}).get('recon3d')
-        if recon_cfg is not False:
-            cfg.setdefault('resources', {})['recon3d'] = False
+        for key in ('recon3d', 'recon3d_metabolic'):
+            if cfg.get('resources', {}).get(key) is not False:
+                cfg.setdefault('resources', {})[key] = False
 
 
 def _load_yaml(path: Path | str) -> dict:

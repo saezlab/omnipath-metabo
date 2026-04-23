@@ -36,7 +36,8 @@ class TestDefaultConfig:
         expected = {
             'stitch', 'tcdb', 'slc', 'brenda',
             'mrclinksdb', 'mrclinksdb_transporter',
-            'gem', 'recon3d',
+            'gem', 'recon3d', 'recon3d_metabolic',
+            'imm1415', 'imm1415_metabolic',
             'ppi', 'grn',
         }
         assert set(cfg['resources']) == expected

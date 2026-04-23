@@ -46,6 +46,16 @@ resources:
     include_reverse: true
     include_orphans: true
 
+  recon3d_metabolic:
+    include_reverse: true
+
+  imm1415:
+    include_reverse: true
+    include_orphans: false
+
+  imm1415_metabolic:
+    include_reverse: true
+
   # Protein-protein interactions from OmniPath (signaling, ligand-receptor, kinase-substrate)
   ppi:
     datasets: omnipath,ligrecextra
