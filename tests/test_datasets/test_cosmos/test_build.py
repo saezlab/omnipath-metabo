@@ -224,8 +224,9 @@ class TestBuildIntegration:
     def test_build_stitch_only(self):
         bundle = build(
             stitch={'score_threshold': 900},
-            tcdb=False, slc=False, brenda=False, mrclinksdb=False,
-            gem=False, recon3d=False,
+            tcdb=False, slc=False, brenda=False,
+            mrclinksdb=False, mrclinksdb_transporter=False,
+            gem=False, recon3d=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)
@@ -238,8 +239,9 @@ class TestBuildIntegration:
     def test_build_slc_only(self):
         bundle = build(
             slc={},
-            stitch=False, tcdb=False, brenda=False, mrclinksdb=False,
-            gem=False, recon3d=False,
+            stitch=False, tcdb=False, brenda=False,
+            mrclinksdb=False, mrclinksdb_transporter=False,
+            gem=False, recon3d=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)
@@ -250,8 +252,9 @@ class TestBuildIntegration:
     def test_build_brenda_only(self):
         bundle = build(
             brenda={},
-            stitch=False, tcdb=False, slc=False, mrclinksdb=False,
-            gem=False, recon3d=False,
+            stitch=False, tcdb=False, slc=False,
+            mrclinksdb=False, mrclinksdb_transporter=False,
+            gem=False, recon3d=False, ppi=False, grn=False,
         )
 
         assert isinstance(bundle, CosmosBundle)

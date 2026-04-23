@@ -17,13 +17,14 @@ classifiers = [
 ]
 dependencies = [
     "pandas>=2.0",
-    "pypath-omnipath @ git+https://github.com/saezlab/pypath.git@master",
     "pyyaml>=6.0",
     "pypath-common>=0.2",
     "python-dotenv>=1.2.2",
     "requests>=2.28",
     "omnipath-utils>=0.1.1",
     "omnipath-client>=0.2.3",
+    "pycurl>=7.45.7",
+    "pypath-omnipath",
 ]
 description = "Metabolite, compound, reaction and interaction prior-knowledge for systems biology"
 license = "BSD-3-Clause"
@@ -208,3 +209,6 @@ section-order = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+[tool.uv.sources]
+pypath-omnipath = { git = "https://github.com/saezlab/pypath.git", rev = "master" }
