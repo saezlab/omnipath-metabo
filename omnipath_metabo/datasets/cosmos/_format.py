@@ -57,6 +57,8 @@ __all__ = [
     'format_receptors',
     'format_allosteric',
     'format_enzyme_metabolite',
+    'format_grn',
+    'format_ppi',
 ]
 
 import logging
@@ -802,5 +804,75 @@ def format_enzyme_metabolite(source) -> 'CosmosBundle':
         source = _filter_bundle_network(
             source,
             lambda row: row.resource.startswith('GEM:'),
+        )
+    return format_pkn(source)
+
+
+def format_grn(source) -> 'CosmosBundle':
+    """
+    Format the gene regulatory network (GRN) layer of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters *source*
+    to GRN edges before formatting.  When *source* already comes from
+    :func:`~._build.build_grn`, the filter is a no-op.
+
+    Both source and target are bare UniProt ACs (TF → target gene).  No
+    ``Metab__`` or ``Gene{N}__`` prefix is applied; nodes are formatted by
+    :func:`_format_protein_protein_row`.
+
+    Filter predicate:
+
+    - ``interaction_type == 'gene_regulation'`` — set by
+      :func:`~.resources.omnipath.grn_interactions` for all collectri /
+      DoRothEA edges.
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted GRN edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: row.interaction_type == 'gene_regulation',
+        )
+    return format_pkn(source)
+
+
+def format_ppi(source) -> 'CosmosBundle':
+    """
+    Format the protein-protein interaction (PPI) layer of a COSMOS PKN bundle.
+
+    Convenience wrapper around :func:`format_pkn` that pre-filters *source*
+    to PPI edges before formatting.  When *source* already comes from
+    :func:`~._build.build_ppi`, the filter is a no-op.
+
+    Both source and target are bare UniProt ACs.  No ``Metab__`` or
+    ``Gene{N}__`` prefix is applied; nodes are formatted by
+    :func:`_format_protein_protein_row`.
+
+    Filter predicate:
+
+    - ``interaction_type == 'signaling'`` — set by
+      :func:`~.resources.omnipath.ppi_interactions` for all OmniPath
+      signaling edges.
+
+    Args:
+        source:
+            :class:`~._bundle.CosmosBundle` or translated PKN DataFrame.
+
+    Returns:
+        :class:`~._bundle.CosmosBundle` with COSMOS-formatted PPI edges.
+    """
+    from ._bundle import CosmosBundle
+
+    if isinstance(source, CosmosBundle):
+        source = _filter_bundle_network(
+            source,
+            lambda row: row.interaction_type == 'signaling',
         )
     return format_pkn(source)

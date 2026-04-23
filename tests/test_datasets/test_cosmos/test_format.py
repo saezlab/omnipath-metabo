@@ -15,6 +15,8 @@ from omnipath_metabo.datasets.cosmos._format import (
     format_pkn,
     format_allosteric,
     format_enzyme_metabolite,
+    format_grn,
+    format_ppi,
     format_receptors,
     format_transporters,
 )
@@ -884,3 +886,113 @@ class TestFormatEnzymeMetabolite:
     def test_returns_cosmos_bundle(self):
         from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
         assert isinstance(format_enzyme_metabolite(self._bundle()), CosmosBundle)
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by GRN / PPI tests
+# ---------------------------------------------------------------------------
+
+def _pp_row(interaction_type, resource, source='P00001', target='P00002'):
+    """Minimal protein-protein row (both sides UniProt ACs, no metabolites)."""
+    return _row(
+        source=source,
+        target=target,
+        source_type='protein',
+        target_type='protein',
+        id_type_a='uniprot',
+        id_type_b='uniprot',
+        interaction_type=interaction_type,
+        resource=resource,
+        locations=(),
+        attrs={},
+    )
+
+
+class TestFormatGrn:
+
+    def _bundle(self):
+        return _make_bundle(
+            _pp_row('gene_regulation', 'OmniPath:collectri'),
+            _pp_row('signaling',       'OmniPath:omnipath,ligrecextra'),
+            _row(interaction_type='transport', resource='TCDB', locations=('e',)),
+        )
+
+    def test_gene_regulation_included(self):
+        main = _bundle_main_nodes(format_grn(self._bundle()))
+        assert 'OmniPath:collectri' in set(main['resource'])
+
+    def test_signaling_excluded(self):
+        main = _bundle_main_nodes(format_grn(self._bundle()))
+        assert 'OmniPath:omnipath,ligrecextra' not in set(main['resource'])
+
+    def test_transporter_excluded(self):
+        main = _bundle_main_nodes(format_grn(self._bundle()))
+        assert 'TCDB' not in set(main['resource'])
+
+    def test_bare_uniprot_nodes(self):
+        """GRN nodes must be bare UniProt ACs, no Metab__ or Gene{N}__ prefix."""
+        main = _bundle_main_nodes(format_grn(self._bundle()))
+        grn_rows = main[main['resource'] == 'OmniPath:collectri']
+        for col in ('source', 'target'):
+            assert not grn_rows[col].str.startswith('Metab__').any()
+            assert not grn_rows[col].str.startswith('Gene').any()
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_grn(self._bundle()), CosmosBundle)
+
+    def test_plain_df_passed_through(self):
+        """Plain DataFrame bypasses pre-filtering."""
+        df = _df(_pp_row('gene_regulation', 'OmniPath:collectri'))
+        result = format_grn(df)
+        main = _bundle_main_nodes(result)
+        assert len(main) == 1
+
+    def test_empty_bundle_returns_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_grn(_make_bundle()), CosmosBundle)
+
+
+class TestFormatPpi:
+
+    def _bundle(self):
+        return _make_bundle(
+            _pp_row('signaling',       'OmniPath:omnipath,ligrecextra'),
+            _pp_row('gene_regulation', 'OmniPath:collectri'),
+            _row(interaction_type='transport', resource='TCDB', locations=('e',)),
+        )
+
+    def test_signaling_included(self):
+        main = _bundle_main_nodes(format_ppi(self._bundle()))
+        assert 'OmniPath:omnipath,ligrecextra' in set(main['resource'])
+
+    def test_gene_regulation_excluded(self):
+        main = _bundle_main_nodes(format_ppi(self._bundle()))
+        assert 'OmniPath:collectri' not in set(main['resource'])
+
+    def test_transporter_excluded(self):
+        main = _bundle_main_nodes(format_ppi(self._bundle()))
+        assert 'TCDB' not in set(main['resource'])
+
+    def test_bare_uniprot_nodes(self):
+        """PPI nodes must be bare UniProt ACs, no Metab__ or Gene{N}__ prefix."""
+        main = _bundle_main_nodes(format_ppi(self._bundle()))
+        ppi_rows = main[main['resource'] == 'OmniPath:omnipath,ligrecextra']
+        for col in ('source', 'target'):
+            assert not ppi_rows[col].str.startswith('Metab__').any()
+            assert not ppi_rows[col].str.startswith('Gene').any()
+
+    def test_returns_cosmos_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_ppi(self._bundle()), CosmosBundle)
+
+    def test_plain_df_passed_through(self):
+        """Plain DataFrame bypasses pre-filtering."""
+        df = _df(_pp_row('signaling', 'OmniPath:omnipath,ligrecextra'))
+        result = format_ppi(df)
+        main = _bundle_main_nodes(result)
+        assert len(main) == 1
+
+    def test_empty_bundle_returns_bundle(self):
+        from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
+        assert isinstance(format_ppi(_make_bundle()), CosmosBundle)

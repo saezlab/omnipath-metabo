@@ -76,6 +76,8 @@ __all__ = [
     'format_receptors',
     'format_allosteric',
     'format_enzyme_metabolite',
+    'format_grn',
+    'format_ppi',
     'resources',
     'CosmosBundle',
     'CosmosEdge',
@@ -94,5 +96,7 @@ from ._format import (
     format_receptors,
     format_allosteric,
     format_enzyme_metabolite,
+    format_grn,
+    format_ppi,
 )
 from ._record import CosmosEdge, CosmosMetabolite, CosmosProtein, CosmosReaction
