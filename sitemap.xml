@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/about/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/installation/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/quickstart/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/reference/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/vignettes/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+    <url>
+         <loc>https://saezlab.github.io/omnipath-metabo/vignettes/cosmos-pkn/</loc>
+         <lastmod>2026-04-27</lastmod>
+    </url>
+</urlset>

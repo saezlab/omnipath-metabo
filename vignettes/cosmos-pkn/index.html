@@ -1,0 +1,1380 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://saezlab.github.io/omnipath-metabo/vignettes/cosmos-pkn/">
+      
+      
+        <link rel="prev" href="../">
+      
+      
+        <link rel="next" href="../../reference/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/favicon.ico">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>COSMOS PKN - omnipath-metabo</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.484c7ddc.min.css">
+      
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/palette.ab4e12ef.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Raleway";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+      <link rel="stylesheet" href="../../assets/omnipath-theme.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#cosmos-pkn" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="omnipath-metabo" class="md-header__button md-logo" aria-label="omnipath-metabo" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            omnipath-metabo
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              COSMOS PKN
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: light)" data-md-color-scheme="default" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a4 4 0 0 0-4 4 4 4 0 0 0 4 4 4 4 0 0 0 4-4 4 4 0 0 0-4-4m0 10a6 6 0 0 1-6-6 6 6 0 0 1 6-6 6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="(prefers-color-scheme: dark)" data-md-color-scheme="slate" data-md-color-primary="custom" data-md-color-accent="custom"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 18c-.89 0-1.74-.2-2.5-.55C11.56 16.5 13 14.42 13 12s-1.44-4.5-3.5-5.45C10.26 6.2 11.11 6 12 6a6 6 0 0 1 6 6 6 6 0 0 1-6 6m8-9.31V4h-4.69L12 .69 8.69 4H4v4.69L.69 12 4 15.31V20h4.69L12 23.31 15.31 20H20v-4.69L23.31 12z"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  
+    
+  
+  Home
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../installation/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Installation
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../quickstart/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  Quickstart
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  
+  Vignettes
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../reference/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  API Reference
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../../about/" class="md-tabs__link">
+        
+  
+  
+    
+  
+  About
+
+      </a>
+    </li>
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="omnipath-metabo" class="md-nav__button md-logo" aria-label="omnipath-metabo" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 3C7.58 3 4 4.79 4 7s3.58 4 8 4 8-1.79 8-4-3.58-4-8-4M4 9v3c0 2.21 3.58 4 8 4s8-1.79 8-4V9c0 2.21-3.58 4-8 4s-8-1.79-8-4m0 5v3c0 2.21 3.58 4 8 4s8-1.79 8-4v-3c0 2.21-3.58 4-8 4s-8-1.79-8-4"/></svg>
+
+    </a>
+    omnipath-metabo
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../installation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Installation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../quickstart/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Quickstart
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+      
+        
+        
+      
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Vignettes
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Vignettes
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Overview
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COSMOS PKN
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    COSMOS PKN
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-and-inspect-each-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build and inspect each category
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build and inspect each category">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transporters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transporters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receptors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receptors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allosteric-regulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allosteric regulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enzyme-metabolite-gem-stoichiometric-reactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enzyme-metabolite (GEM stoichiometric reactions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protein-protein-interactions-ppi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protein-protein interactions (PPI)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gene-regulatory-network-grn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gene regulatory network (GRN)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#format-for-cosmosr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Format for cosmosR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customise-the-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customise the build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#multi-organism-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-organism builds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#web-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-client-omnipath-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python client (omnipath-client)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../about/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    About
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#setup" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Setup
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-and-inspect-each-category" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Build and inspect each category
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Build and inspect each category">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#transporters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transporters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#receptors" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Receptors
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allosteric-regulation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allosteric regulation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enzyme-metabolite-gem-stoichiometric-reactions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Enzyme-metabolite (GEM stoichiometric reactions)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protein-protein-interactions-ppi" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Protein-protein interactions (PPI)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#gene-regulatory-network-grn" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Gene regulatory network (GRN)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#format-for-cosmosr" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Format for cosmosR
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI usage
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#customise-the-build" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Customise the build
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#multi-organism-builds" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Multi-organism builds
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#web-service" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Web service
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#python-client-omnipath-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Python client (omnipath-client)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#default-resources" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Default resources
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="cosmos-pkn">COSMOS PKN</h1>
+<p>This tutorial shows how to build and explore the COSMOS prior-knowledge network
+(PKN) using omnipath-metabo. The PKN covers metabolite-protein interactions,
+protein-protein signaling (PPI), and gene regulatory networks (GRN) from nine
+curated databases and is ready to use directly with the
+<a href="https://github.com/saezlab/cosmosR">cosmosR</a> R package or via the
+<a href="https://metabo.omnipathdb.org">metabo.omnipathdb.org</a> web service.</p>
+<h2 id="setup">Setup</h2>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">pandas</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">pd</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_metabo.datasets</span><span class="w"> </span><span class="kn">import</span> <span class="n">cosmos</span>
+</code></pre></div>
+<hr />
+<h2 id="build-and-inspect-each-category">Build and inspect each category</h2>
+<p>Build each PKN category separately and inspect before formatting.
+Each <code>build_*()</code> call returns a <code>CosmosBundle</code> with translated ChEBI / UniProt IDs.</p>
+<h3 id="transporters">Transporters</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Human -- no orphans, cell-surface only</span>
+<span class="n">transporters</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_transporters</span><span class="p">(</span>
+    <span class="n">recon3d</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;include_orphans&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+    <span class="n">gem</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;include_orphans&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">},</span>
+    <span class="n">cell_surface_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">df_t</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">transporters</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_t</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;resource&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">())</span>
+</code></pre></div>
+<div class="highlight"><pre><span></span><code><span class="c1"># Mouse -- include orphans, cell-surface only</span>
+<span class="n">transporters_mouse</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_transporters</span><span class="p">(</span>
+    <span class="n">recon3d</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;include_orphans&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">},</span>
+    <span class="n">gem</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;include_orphans&#39;</span><span class="p">:</span> <span class="kc">True</span><span class="p">,</span> <span class="s1">&#39;gem&#39;</span><span class="p">:</span> <span class="s1">&#39;Mouse-GEM&#39;</span><span class="p">},</span>
+    <span class="n">organism</span><span class="o">=</span><span class="mi">10090</span><span class="p">,</span>
+    <span class="n">cell_surface_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+<span class="p">)</span>
+<span class="n">df_tm</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">transporters_mouse</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="receptors">Receptors</h3>
+<div class="highlight"><pre><span></span><code><span class="n">receptors</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_receptors</span><span class="p">(</span><span class="n">cell_surface_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+<span class="n">df_r</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">receptors</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_r</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;resource&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">())</span>
+</code></pre></div>
+<h3 id="allosteric-regulation">Allosteric regulation</h3>
+<div class="highlight"><pre><span></span><code><span class="c1"># Default: BRENDA + STITCH-other</span>
+<span class="n">allosteric</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_allosteric</span><span class="p">()</span>
+<span class="n">df_a</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">allosteric</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_a</span><span class="o">.</span><span class="n">groupby</span><span class="p">([</span><span class="s1">&#39;resource&#39;</span><span class="p">,</span> <span class="s1">&#39;interaction_type&#39;</span><span class="p">])</span><span class="o">.</span><span class="n">size</span><span class="p">())</span>
+
+<span class="c1"># Higher STITCH confidence threshold</span>
+<span class="n">allosteric_strict</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_allosteric</span><span class="p">(</span><span class="n">stitch</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;score_threshold&#39;</span><span class="p">:</span> <span class="mi">900</span><span class="p">})</span>
+
+<span class="c1"># BRENDA only</span>
+<span class="n">allosteric_brenda</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_allosteric</span><span class="p">(</span><span class="n">stitch</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="enzyme-metabolite-gem-stoichiometric-reactions">Enzyme-metabolite (GEM stoichiometric reactions)</h3>
+<div class="highlight"><pre><span></span><code><span class="n">enzyme_met</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_enzyme_metabolite</span><span class="p">(</span><span class="n">gem</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;include_orphans&#39;</span><span class="p">:</span> <span class="kc">False</span><span class="p">})</span>
+<span class="n">df_e</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">enzyme_met</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">df_e</span><span class="o">.</span><span class="n">groupby</span><span class="p">(</span><span class="s1">&#39;resource&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">size</span><span class="p">())</span>
+</code></pre></div>
+<h3 id="protein-protein-interactions-ppi">Protein-protein interactions (PPI)</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_metabo.datasets.cosmos._build</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_ppi</span>
+
+<span class="n">ppi</span> <span class="o">=</span> <span class="n">build_ppi</span><span class="p">()</span>
+<span class="n">df_ppi</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">ppi</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;PPI edges: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df_ppi</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+</code></pre></div>
+<h3 id="gene-regulatory-network-grn">Gene regulatory network (GRN)</h3>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_metabo.datasets.cosmos._build</span><span class="w"> </span><span class="kn">import</span> <span class="n">build_grn</span>
+
+<span class="n">grn</span> <span class="o">=</span> <span class="n">build_grn</span><span class="p">()</span>
+<span class="n">df_grn</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">grn</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;GRN edges: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df_grn</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1">&#39;</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="format-for-cosmosr">Format for cosmosR</h2>
+<p>Format each bundle with COSMOS node ID conventions:</p>
+<ul>
+<li>Metabolites: <code>Metab__CHEBI:XXXX_&lt;comp1;comp2&gt;</code></li>
+<li>Proteins (forward): <code>Gene&lt;N&gt;__&lt;UniProtAC&gt;</code></li>
+<li>Proteins (reverse): <code>Gene&lt;N&gt;__&lt;UniProtAC&gt;_rev</code></li>
+<li>Orphan reactions: <code>Gene&lt;N&gt;__orphanReac&lt;reaction_id&gt;</code></li>
+<li>Receptor / allosteric proteins: bare <code>&lt;UniProtAC&gt;</code></li>
+</ul>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_metabo.datasets.cosmos</span><span class="w"> </span><span class="kn">import</span> <span class="p">(</span>
+    <span class="n">format_transporters</span><span class="p">,</span>
+    <span class="n">format_receptors</span><span class="p">,</span>
+    <span class="n">format_allosteric</span><span class="p">,</span>
+    <span class="n">format_enzyme_metabolite</span><span class="p">,</span>
+<span class="p">)</span>
+
+<span class="n">fmt_t</span> <span class="o">=</span> <span class="n">format_transporters</span><span class="p">(</span><span class="n">transporters</span><span class="p">)</span>
+<span class="n">fmt_r</span> <span class="o">=</span> <span class="n">format_receptors</span><span class="p">(</span><span class="n">receptors</span><span class="p">)</span>
+<span class="n">fmt_a</span> <span class="o">=</span> <span class="n">format_allosteric</span><span class="p">(</span><span class="n">allosteric</span><span class="p">)</span>
+<span class="n">fmt_e</span> <span class="o">=</span> <span class="n">format_enzyme_metabolite</span><span class="p">(</span><span class="n">enzyme_met</span><span class="p">)</span>
+
+<span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">bundle</span> <span class="ow">in</span> <span class="p">[(</span><span class="s1">&#39;transporters&#39;</span><span class="p">,</span> <span class="n">fmt_t</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;receptors&#39;</span><span class="p">,</span> <span class="n">fmt_r</span><span class="p">),</span>
+                     <span class="p">(</span><span class="s1">&#39;allosteric&#39;</span><span class="p">,</span> <span class="n">fmt_a</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;enzyme_met&#39;</span><span class="p">,</span> <span class="n">fmt_e</span><span class="p">)]:</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">bundle</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+    <span class="n">main</span> <span class="o">=</span> <span class="n">df</span><span class="p">[</span><span class="n">df</span><span class="p">[</span><span class="s1">&#39;interaction_type&#39;</span><span class="p">]</span> <span class="o">!=</span> <span class="s1">&#39;connector&#39;</span><span class="p">]</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">main</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> edges, </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> with connectors&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Export to CSV:</p>
+<div class="highlight"><pre><span></span><code><span class="k">for</span> <span class="n">name</span><span class="p">,</span> <span class="n">bundle</span> <span class="ow">in</span> <span class="p">[(</span><span class="s1">&#39;transporters&#39;</span><span class="p">,</span> <span class="n">fmt_t</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;receptors&#39;</span><span class="p">,</span> <span class="n">fmt_r</span><span class="p">),</span>
+                     <span class="p">(</span><span class="s1">&#39;allosteric&#39;</span><span class="p">,</span> <span class="n">fmt_a</span><span class="p">),</span> <span class="p">(</span><span class="s1">&#39;enzyme_met&#39;</span><span class="p">,</span> <span class="n">fmt_e</span><span class="p">)]:</span>
+    <span class="n">df</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">bundle</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+    <span class="n">df</span><span class="p">[[</span><span class="s1">&#39;source&#39;</span><span class="p">,</span> <span class="s1">&#39;target&#39;</span><span class="p">,</span> <span class="s1">&#39;mor&#39;</span><span class="p">]]</span><span class="o">.</span><span class="n">rename</span><span class="p">(</span><span class="n">columns</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;mor&#39;</span><span class="p">:</span> <span class="s1">&#39;sign&#39;</span><span class="p">})</span><span class="o">.</span><span class="n">to_csv</span><span class="p">(</span>
+        <span class="sa">f</span><span class="s1">&#39;cosmos_pkn_</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s1">.csv&#39;</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+    <span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="cli-usage">CLI usage</h2>
+<div class="highlight"><pre><span></span><code><span class="c1"># Full human PKN (3-column CSV: source, target, sign)</span>
+cosmos-pkn
+
+<span class="c1"># Transporters only, TSV output</span>
+cosmos-pkn<span class="w"> </span>--subset<span class="w"> </span>transporters<span class="w"> </span>--output<span class="w"> </span>cosmos_transporters.tsv
+
+<span class="c1"># Mouse, no STITCH, no connector edges</span>
+cosmos-pkn<span class="w"> </span>--organism<span class="w"> </span><span class="m">10090</span><span class="w"> </span>--no-stitch<span class="w"> </span>--no-connector-edges
+
+<span class="c1"># All columns</span>
+cosmos-pkn<span class="w"> </span>--all-columns<span class="w"> </span>--output<span class="w"> </span>cosmos_pkn_full.csv
+</code></pre></div>
+<p>Available subsets: <code>all</code> (default), <code>transporters</code>, <code>receptors</code>, <code>allosteric</code>,
+<code>enzyme_metabolite</code>, <code>ppi</code>, <code>grn</code>.</p>
+<hr />
+<h2 id="customise-the-build">Customise the build</h2>
+<p><strong>Change organism (mouse):</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">receptors_mouse</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_receptors</span><span class="p">(</span><span class="n">organism</span><span class="o">=</span><span class="mi">10090</span><span class="p">,</span> <span class="n">cell_surface_only</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</code></pre></div>
+<p><strong>Lower the STITCH confidence threshold:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">allosteric_loose</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_allosteric</span><span class="p">(</span><span class="n">stitch</span><span class="o">=</span><span class="p">{</span><span class="s1">&#39;score_threshold&#39;</span><span class="p">:</span> <span class="mi">500</span><span class="p">})</span>
+</code></pre></div>
+<p><strong>Disable GEMs for a faster transporter build:</strong></p>
+<div class="highlight"><pre><span></span><code><span class="n">transporters_fast</span> <span class="o">=</span> <span class="n">cosmos</span><span class="o">.</span><span class="n">build_transporters</span><span class="p">(</span><span class="n">gem</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span> <span class="n">recon3d</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+</code></pre></div>
+<hr />
+<h2 id="multi-organism-builds">Multi-organism builds</h2>
+<p>The <code>build()</code> function and all <code>build_*()</code> category builders accept an <code>organism</code>
+parameter (NCBI taxonomy ID). Resources that natively support the organism
+query it directly; human-only resources (SLC, Recon3D) are translated via
+orthology.</p>
+<div class="highlight"><pre><span></span><code><span class="kn">from</span><span class="w"> </span><span class="nn">omnipath_metabo.datasets.cosmos</span><span class="w"> </span><span class="kn">import</span> <span class="n">build</span>
+
+<span class="n">mouse_pkn</span> <span class="o">=</span> <span class="n">build</span><span class="p">(</span><span class="n">organism</span><span class="o">=</span><span class="mi">10090</span><span class="p">)</span>
+<span class="n">df_mouse</span> <span class="o">=</span> <span class="n">pd</span><span class="o">.</span><span class="n">DataFrame</span><span class="p">(</span><span class="n">mouse_pkn</span><span class="o">.</span><span class="n">network</span><span class="p">)</span>
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s1">&#39;Mouse PKN: </span><span class="si">{</span><span class="nb">len</span><span class="p">(</span><span class="n">df_mouse</span><span class="p">)</span><span class="si">:</span><span class="s1">,</span><span class="si">}</span><span class="s1"> edges&#39;</span><span class="p">)</span>
+</code></pre></div>
+<p>Supported organisms with GEMs: human (9606), mouse (10090), rat (10116),
+zebrafish (7955), fruit fly (7227), worm (6239), yeast (4932), <em>E. coli</em> (562).</p>
+<hr />
+<h2 id="web-service">Web service</h2>
+<p>Pre-built PKNs are available from the
+<a href="https://metabo.omnipathdb.org">metabo.omnipathdb.org</a> web service:</p>
+<div class="highlight"><pre><span></span><code>GET https://metabo.omnipathdb.org/cosmos/pkn?organism=9606&amp;categories=all
+GET https://metabo.omnipathdb.org/cosmos/pkn?organism=10090&amp;categories=transporters,ppi
+GET https://metabo.omnipathdb.org/cosmos/categories
+GET https://metabo.omnipathdb.org/cosmos/organisms
+GET https://metabo.omnipathdb.org/cosmos/resources
+</code></pre></div>
+<hr />
+<h2 id="python-client-omnipath-client">Python client (omnipath-client)</h2>
+<p>The <a href="https://github.com/saezlab/omnipath-client">omnipath-client</a> package
+provides a high-level interface to the web service:</p>
+<div class="highlight"><pre><span></span><code><span class="kn">import</span><span class="w"> </span><span class="nn">omnipath_client</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">oc</span>
+
+<span class="c1"># Full human PKN</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">get_pkn</span><span class="p">(</span><span class="s1">&#39;human&#39;</span><span class="p">)</span>
+
+<span class="c1"># Mouse transporters and PPI only</span>
+<span class="n">df</span> <span class="o">=</span> <span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">get_pkn</span><span class="p">(</span><span class="mi">10090</span><span class="p">,</span> <span class="n">categories</span><span class="o">=</span><span class="p">[</span><span class="s1">&#39;transporters&#39;</span><span class="p">,</span> <span class="s1">&#39;ppi&#39;</span><span class="p">])</span>
+
+<span class="c1"># As an AnnNet graph</span>
+<span class="n">g</span> <span class="o">=</span> <span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">get_pkn</span><span class="p">(</span><span class="s1">&#39;human&#39;</span><span class="p">,</span> <span class="nb">format</span><span class="o">=</span><span class="s1">&#39;annnet&#39;</span><span class="p">)</span>
+
+<span class="c1"># Explore available data</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">categories</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">organisms</span><span class="p">())</span>
+<span class="nb">print</span><span class="p">(</span><span class="n">oc</span><span class="o">.</span><span class="n">cosmos</span><span class="o">.</span><span class="n">resources</span><span class="p">())</span>
+</code></pre></div>
+<hr />
+<h2 id="default-resources">Default resources</h2>
+<table>
+<thead>
+<tr>
+<th>Resource</th>
+<th>Category</th>
+<th>Species</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>TCDB</td>
+<td>Transporters</td>
+<td>Multi-species</td>
+</tr>
+<tr>
+<td>SLC</td>
+<td>Transporters</td>
+<td>Human only</td>
+</tr>
+<tr>
+<td>MRCLinksDB</td>
+<td>Transporters, receptors</td>
+<td>Human, mouse</td>
+</tr>
+<tr>
+<td>STITCH</td>
+<td>Receptors, allosteric</td>
+<td>Multi-species</td>
+</tr>
+<tr>
+<td>BRENDA</td>
+<td>Allosteric regulation</td>
+<td>Multi-species</td>
+</tr>
+<tr>
+<td>Human-GEM</td>
+<td>Transporters, enzyme-metabolite</td>
+<td>Human</td>
+</tr>
+<tr>
+<td>Recon3D</td>
+<td>Transporters</td>
+<td>Human</td>
+</tr>
+<tr>
+<td>OmniPath PPI</td>
+<td>Protein-protein signaling</td>
+<td>Multi-species</td>
+</tr>
+<tr>
+<td>OmniPath GRN</td>
+<td>Gene regulation (CollecTRI/DoRothEA)</td>
+<td>Multi-species</td>
+</tr>
+</tbody>
+</table>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../" class="md-footer__link md-footer__link--prev" aria-label="Previous: Overview">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Overview
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../../reference/" class="md-footer__link md-footer__link--next" aria-label="Next: API Reference">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                API Reference
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M4 11v2h12l-5.5 5.5 1.42 1.42L19.84 12l-7.92-7.92L10.5 5.5 16 11z"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+    <div class="md-copyright__highlight">
+      &copy; 2025-2026 Saez-Rodriguez group, Heidelberg University Hospital
+    </div>
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": ["content.code.copy", "navigation.tabs", "navigation.instant", "navigation.footer"], "search": "../../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
