@@ -118,10 +118,17 @@ def _query_omnipath(
 
 
 def _sign_to_mor(row: dict) -> int:
-    """Convert OmniPath stimulation/inhibition to MOR (mode of regulation)."""
+    """Convert OmniPath stimulation/inhibition to MOR (mode of regulation).
 
-    stim = row.get('is_stimulation', '0') == '1'
-    inhib = row.get('is_inhibition', '0') == '1'
+    Accepts both '1'/'0' and 'True'/'False' string values — the legacy
+    omnipathdb.org API returns 'True'/'False', not '1'/'0'.
+    """
+
+    def _flag(key: str) -> bool:
+        return str(row.get(key, '0')).lower() in ('1', 'true')
+
+    stim = _flag('is_stimulation')
+    inhib = _flag('is_inhibition')
 
     if stim and not inhib:
         return 1

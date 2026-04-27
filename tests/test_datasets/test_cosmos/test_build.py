@@ -10,6 +10,7 @@ import pytest
 
 from omnipath_metabo.datasets.cosmos._build import (
     PROCESSORS,
+    _deduplicate_edges,
     build,
     build_allosteric,
     build_enzyme_metabolite,
@@ -785,3 +786,148 @@ class TestBuildEnzymeMetabolite:
     def test_can_reenable_brenda(self, _mock_build_fn):
         build_enzyme_metabolite(brenda={})
         assert _mock_build_fn.call_args.kwargs.get('brenda') == {}
+
+
+# ---------------------------------------------------------------------------
+# TestDeduplicateEdges
+# ---------------------------------------------------------------------------
+
+def _dedup_df(*rows: dict) -> pd.DataFrame:
+    """Build a minimal translated-style DataFrame for dedup tests."""
+    cols = [
+        'source', 'target', 'source_type', 'target_type',
+        'id_type_a', 'id_type_b', 'interaction_type',
+        'resource', 'mor', 'locations', 'attrs',
+    ]
+    records = []
+    for r in rows:
+        records.append({
+            'source': r.get('source', 'CHEBI:1'),
+            'target': r.get('target', 'P00001'),
+            'source_type': r.get('source_type', 'small_molecule'),
+            'target_type': r.get('target_type', 'protein'),
+            'id_type_a': r.get('id_type_a', 'chebi'),
+            'id_type_b': r.get('id_type_b', 'uniprot'),
+            'interaction_type': r.get('interaction_type', 'transport'),
+            'resource': r.get('resource', 'TCDB'),
+            'mor': r.get('mor', 1),
+            'locations': r.get('locations', ()),
+            'attrs': r.get('attrs', {}),
+        })
+    return pd.DataFrame(records, columns=cols)
+
+
+class TestDeduplicateEdges:
+    """Tests for _deduplicate_edges()."""
+
+    def test_empty_dataframe_returned_unchanged(self):
+        df = pd.DataFrame(columns=[
+            'source', 'target', 'source_type', 'target_type',
+            'id_type_a', 'id_type_b', 'interaction_type',
+            'resource', 'mor', 'locations', 'attrs',
+        ])
+        result = _deduplicate_edges(df)
+        assert len(result) == 0
+
+    def test_unique_edges_unchanged(self):
+        df = _dedup_df(
+            {'source': 'CHEBI:1', 'target': 'P00001'},
+            {'source': 'CHEBI:2', 'target': 'P00002'},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 2
+
+    def test_same_source_target_mor_merged(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor': 1},
+            {'resource': 'SLC',  'mor': 1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert result.iloc[0]['resource'] == 'TCDB;SLC'
+
+    def test_same_source_target_same_locations_merged(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor': 1, 'locations': ('e',)},
+            {'resource': 'SLC',  'mor': 1, 'locations': ('e',)},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert result.iloc[0]['locations'] == ('e',)
+
+    def test_same_source_target_different_locations_unioned(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor': 1, 'locations': ('e',)},
+            {'resource': 'SLC',  'mor': 1, 'locations': ('c',)},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert set(result.iloc[0]['locations']) == {'c', 'e'}
+
+    def test_conflicting_mor_kept_as_separate_rows(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor':  1},
+            {'resource': 'SLC',  'mor': -1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 2
+        mors = set(result['mor'])
+        assert mors == {1, -1}
+
+    def test_conflicting_mor_resources_not_merged(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor':  1},
+            {'resource': 'SLC',  'mor': -1},
+        )
+        result = _deduplicate_edges(df)
+        assert set(result['resource']) == {'TCDB', 'SLC'}
+
+    def test_three_resources_same_key_merged_in_order(self):
+        df = _dedup_df(
+            {'resource': 'A', 'mor': 1},
+            {'resource': 'B', 'mor': 1},
+            {'resource': 'C', 'mor': 1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert result.iloc[0]['resource'] == 'A;B;C'
+
+    def test_duplicate_resource_name_not_repeated(self):
+        df = _dedup_df(
+            {'resource': 'TCDB', 'mor': 1},
+            {'resource': 'TCDB', 'mor': 1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert result.iloc[0]['resource'] == 'TCDB'
+
+    def test_locations_union_sorted(self):
+        df = _dedup_df(
+            {'resource': 'A', 'mor': 1, 'locations': ('m', 'e')},
+            {'resource': 'B', 'mor': 1, 'locations': ('c', 'n')},
+        )
+        result = _deduplicate_edges(df)
+        assert result.iloc[0]['locations'] == ('c', 'e', 'm', 'n')
+
+    def test_frozenset_ids_handled(self):
+        """frozenset source/target (post-translate_pkn) does not raise."""
+        df = _dedup_df(
+            {'source': frozenset({'P00001', 'P00002'}), 'resource': 'A', 'mor': 1},
+            {'source': frozenset({'P00001', 'P00002'}), 'resource': 'B', 'mor': 1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 1
+        assert result.iloc[0]['resource'] == 'A;B'
+
+    def test_different_sources_not_merged(self):
+        df = _dedup_df(
+            {'source': 'CHEBI:1', 'resource': 'A', 'mor': 1},
+            {'source': 'CHEBI:2', 'resource': 'B', 'mor': 1},
+        )
+        result = _deduplicate_edges(df)
+        assert len(result) == 2
+
+    def test_columns_preserved(self):
+        df = _dedup_df({'resource': 'TCDB'})
+        result = _deduplicate_edges(df)
+        assert list(result.columns) == list(df.columns)

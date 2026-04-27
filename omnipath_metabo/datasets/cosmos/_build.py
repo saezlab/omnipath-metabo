@@ -293,6 +293,77 @@ def _report_resource_overlaps(
     _log.info('\n'.join(lines))
 
 
+def _deduplicate_edges(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Deduplicate edges within a translated PKN DataFrame.
+
+    Groups rows by ``(source, target, mor)``.  Within each group the
+    ``locations`` tuples are unioned and ``resource`` names are joined
+    with ``';'``.  All other columns are taken from the first row.
+
+    Conflicting MOR values (+1 and -1 for the same source-target pair)
+    produce *separate* output rows — they are never collapsed to 0.
+
+    Called after ``translate_pkn()`` and orthology translation inside
+    ``build()``, so all IDs are already in canonical form (ChEBI /
+    UniProt).  Because each ``build_*()`` wrapper calls ``build()`` with
+    a category-scoped resource set, deduplication is automatically
+    within-category (transporters only see transporter resources, etc.).
+
+    Args:
+        df: Translated PKN DataFrame with canonical IDs.
+
+    Returns:
+        Deduplicated DataFrame with the same columns.
+    """
+    if df.empty:
+        return df
+
+    # frozensets are hashable so groupby works fine on object-dtype columns.
+    out_rows: list[dict] = []
+
+    for (src, tgt, mor), grp in df.groupby(
+        ['source', 'target', 'mor'], sort=False
+    ):
+        if len(grp) == 1:
+            out_rows.append(grp.iloc[0].to_dict())
+            continue
+
+        row = grp.iloc[0].to_dict()
+
+        # Union of all locations
+        all_locs: set[str] = set()
+        for locs in grp['locations']:
+            if isinstance(locs, tuple):
+                all_locs.update(locs)
+        row['locations'] = tuple(sorted(all_locs))
+
+        # Deduplicated resource names in first-seen order
+        seen: set[str] = set()
+        merged: list[str] = []
+        for r in grp['resource']:
+            if r not in seen:
+                seen.add(r)
+                merged.append(r)
+        row['resource'] = ';'.join(merged)
+
+        out_rows.append(row)
+
+    n_before = len(df)
+    result = pd.DataFrame(out_rows, columns=df.columns).reset_index(drop=True)
+    n_after = len(result)
+
+    if n_before != n_after:
+        _log.info(
+            '[COSMOS] Deduplication: %d → %d edges (%d removed).',
+            n_before,
+            n_after,
+            n_before - n_after,
+        )
+
+    return result
+
+
 def _filter_bundle(bundle: CosmosBundle, predicate) -> CosmosBundle:
     """
     Return a copy of *bundle* keeping only network rows that satisfy *predicate*.
@@ -534,6 +605,8 @@ def build(
                 source_organism=9606,
                 target_organism=organism,
             )
+
+        df = _deduplicate_edges(df)
 
     else:
         if cfg.get('apply_blacklist', True):
