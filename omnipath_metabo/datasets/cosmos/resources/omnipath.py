@@ -117,11 +117,15 @@ def _query_omnipath(
     return rows
 
 
-def _sign_to_mor(row: dict) -> int:
-    """Convert OmniPath stimulation/inhibition to MOR (mode of regulation).
+def _sign_to_mors(row: dict) -> list[int]:
+    """Return MOR values for an OmniPath row.
 
     Accepts both '1'/'0' and 'True'/'False' string values — the legacy
     omnipathdb.org API returns 'True'/'False', not '1'/'0'.
+
+    When both stimulation and inhibition are annotated (contradictory
+    curations across sources), returns ``[1, -1]`` so the caller can
+    yield two separate edges instead of collapsing to an uninformative 0.
     """
 
     def _flag(key: str) -> bool:
@@ -130,12 +134,13 @@ def _sign_to_mor(row: dict) -> int:
     stim = _flag('is_stimulation')
     inhib = _flag('is_inhibition')
 
-    if stim and not inhib:
-        return 1
-    if inhib and not stim:
-        return -1
-
-    return 0  # unknown or contradictory
+    if stim and inhib:
+        return [1, -1]
+    if stim:
+        return [1]
+    if inhib:
+        return [-1]
+    return [0]
 
 
 def ppi_interactions(
@@ -170,23 +175,26 @@ def ppi_interactions(
         if not source or not target:
             continue
 
-        yield Interaction(
-            source=source,
-            target=target,
-            source_type='protein',
-            target_type='protein',
-            id_type_a='genesymbol',
-            id_type_b='genesymbol',
-            interaction_type='signaling',
-            resource=f'OmniPath:{datasets}',
-            mor=_sign_to_mor(row),
-            locations=(),
-            attrs={
-                'sources': row.get('sources', ''),
-                'references': row.get('references', ''),
-                'directed': row.get('is_directed', '0') == '1',
-            },
-        )
+        attrs = {
+            'sources': row.get('sources', ''),
+            'references': row.get('references', ''),
+            'directed': row.get('is_directed', '0') == '1',
+        }
+
+        for mor in _sign_to_mors(row):
+            yield Interaction(
+                source=source,
+                target=target,
+                source_type='protein',
+                target_type='protein',
+                id_type_a='genesymbol',
+                id_type_b='genesymbol',
+                interaction_type='signaling',
+                resource=f'OmniPath:{datasets}',
+                mor=mor,
+                locations=(),
+                attrs=attrs,
+            )
 
 
 def grn_interactions(
@@ -233,20 +241,23 @@ def grn_interactions(
         if not source or not target:
             continue
 
-        yield Interaction(
-            source=source,
-            target=target,
-            source_type='protein',
-            target_type='protein',
-            id_type_a='genesymbol',
-            id_type_b='genesymbol',
-            interaction_type='gene_regulation',
-            resource=f'OmniPath:{datasets}',
-            mor=_sign_to_mor(row),
-            locations=(),
-            attrs={
-                'sources': row.get('sources', ''),
-                'references': row.get('references', ''),
-                'directed': row.get('is_directed', '0') == '1',
-            },
-        )
+        attrs = {
+            'sources': row.get('sources', ''),
+            'references': row.get('references', ''),
+            'directed': row.get('is_directed', '0') == '1',
+        }
+
+        for mor in _sign_to_mors(row):
+            yield Interaction(
+                source=source,
+                target=target,
+                source_type='protein',
+                target_type='protein',
+                id_type_a='genesymbol',
+                id_type_b='genesymbol',
+                interaction_type='gene_regulation',
+                resource=f'OmniPath:{datasets}',
+                mor=mor,
+                locations=(),
+                attrs=attrs,
+            )

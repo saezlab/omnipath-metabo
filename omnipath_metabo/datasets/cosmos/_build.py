@@ -843,7 +843,7 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     return bundle
 
 
-def build_ppi(*args, **kwargs) -> CosmosBundle:
+def build_ppi(*args, filter_unsigned: bool = False, **kwargs) -> CosmosBundle:
     """Build the protein-protein interaction layer from OmniPath.
 
     All PPI datasets (signaling, ligand-receptor, kinase-substrate)
@@ -855,6 +855,11 @@ def build_ppi(*args, **kwargs) -> CosmosBundle:
 
     Args:
         *args: Passed through to :func:`build`.
+        filter_unsigned: If ``True``, drop interactions with ``mor=0``
+            (i.e. no known stimulation or inhibition annotation).
+            Contradictory edges (both flags set) are already expanded
+            into separate ``mor=1`` and ``mor=-1`` rows before this
+            filter is applied, so they are retained.
         **kwargs: Passed through to :func:`build`.  All metabolite
             resources are disabled.
 
@@ -869,10 +874,18 @@ def build_ppi(*args, **kwargs) -> CosmosBundle:
     ):
         kwargs.setdefault(res, False)
 
+    if filter_unsigned:
+        existing = kwargs.get('row_filter')
+        unsigned_filter = lambda row: row.mor != 0
+        kwargs['row_filter'] = (
+            (lambda row, f1=existing, f2=unsigned_filter: f1(row) and f2(row))
+            if existing else unsigned_filter
+        )
+
     return build(*args, **kwargs)
 
 
-def build_grn(*args, **kwargs) -> CosmosBundle:
+def build_grn(*args, filter_unsigned: bool = False, **kwargs) -> CosmosBundle:
     """Build the gene regulatory network from OmniPath.
 
     Uses ``collectri`` by default.  For DoRothEA, set
@@ -882,6 +895,11 @@ def build_grn(*args, **kwargs) -> CosmosBundle:
 
     Args:
         *args: Passed through to :func:`build`.
+        filter_unsigned: If ``True``, drop interactions with ``mor=0``
+            (i.e. no known stimulation or inhibition annotation).
+            Contradictory edges (both flags set) are already expanded
+            into separate ``mor=1`` and ``mor=-1`` rows before this
+            filter is applied, so they are retained.
         **kwargs: Passed through to :func:`build`.  All other
             resources are disabled.
 
@@ -895,5 +913,13 @@ def build_grn(*args, **kwargs) -> CosmosBundle:
         'stitch', 'ppi',
     ):
         kwargs.setdefault(res, False)
+
+    if filter_unsigned:
+        existing = kwargs.get('row_filter')
+        unsigned_filter = lambda row: row.mor != 0
+        kwargs['row_filter'] = (
+            (lambda row, f1=existing, f2=unsigned_filter: f1(row) and f2(row))
+            if existing else unsigned_filter
+        )
 
     return build(*args, **kwargs)

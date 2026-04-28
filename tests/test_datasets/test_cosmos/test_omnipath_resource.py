@@ -12,7 +12,7 @@ import pytest
 from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos.resources.omnipath import (
     _query_omnipath,
-    _sign_to_mor,
+    _sign_to_mors,
     grn_interactions,
     ppi_interactions,
 )
@@ -49,32 +49,32 @@ def _mock_urlopen(tsv_text):
 
 
 # ---------------------------------------------------------------------------
-# _sign_to_mor
+# _sign_to_mors
 # ---------------------------------------------------------------------------
 
-class TestSignToMor:
-    """Tests for the stimulation/inhibition to MOR converter."""
+class TestSignToMors:
+    """Tests for the stimulation/inhibition to MOR list converter."""
 
     def test_stimulation_only(self):
-        assert _sign_to_mor({'is_stimulation': '1', 'is_inhibition': '0'}) == 1
+        assert _sign_to_mors({'is_stimulation': '1', 'is_inhibition': '0'}) == [1]
 
     def test_inhibition_only(self):
-        assert _sign_to_mor({'is_stimulation': '0', 'is_inhibition': '1'}) == -1
+        assert _sign_to_mors({'is_stimulation': '0', 'is_inhibition': '1'}) == [-1]
 
-    def test_both_returns_zero(self):
-        assert _sign_to_mor({'is_stimulation': '1', 'is_inhibition': '1'}) == 0
+    def test_both_returns_two_edges(self):
+        assert _sign_to_mors({'is_stimulation': '1', 'is_inhibition': '1'}) == [1, -1]
 
     def test_neither_returns_zero(self):
-        assert _sign_to_mor({'is_stimulation': '0', 'is_inhibition': '0'}) == 0
+        assert _sign_to_mors({'is_stimulation': '0', 'is_inhibition': '0'}) == [0]
 
     def test_missing_keys_returns_zero(self):
-        assert _sign_to_mor({}) == 0
+        assert _sign_to_mors({}) == [0]
 
     def test_stimulation_missing_inhibition(self):
-        assert _sign_to_mor({'is_stimulation': '1'}) == 1
+        assert _sign_to_mors({'is_stimulation': '1'}) == [1]
 
     def test_inhibition_missing_stimulation(self):
-        assert _sign_to_mor({'is_inhibition': '1'}) == -1
+        assert _sign_to_mors({'is_inhibition': '1'}) == [-1]
 
 
 # ---------------------------------------------------------------------------
@@ -291,6 +291,28 @@ class TestPpiInteractions:
         mock_query.assert_called_once()
         assert mock_query.call_args.kwargs.get('organism') == 10090
 
+    @patch(
+        'omnipath_metabo.datasets.cosmos.resources.omnipath._query_omnipath',
+    )
+    def test_contradictory_expands_to_two_edges(self, mock_query):
+        mock_query.return_value = [
+            {
+                'source_genesymbol': 'A',
+                'target_genesymbol': 'B',
+                'is_stimulation': '1',
+                'is_inhibition': '1',
+                'sources': 'S1',
+                'references': '1',
+                'is_directed': '1',
+            },
+        ]
+
+        records = list(ppi_interactions())
+        assert len(records) == 2
+        mors = {r.mor for r in records}
+        assert mors == {1, -1}
+        assert all(r.source == 'A' and r.target == 'B' for r in records)
+
 
 # ---------------------------------------------------------------------------
 # grn_interactions
@@ -412,3 +434,25 @@ class TestGrnInteractions:
         assert rec.target_type == 'protein'
         assert rec.id_type_a == 'genesymbol'
         assert rec.id_type_b == 'genesymbol'
+
+    @patch(
+        'omnipath_metabo.datasets.cosmos.resources.omnipath._query_omnipath',
+    )
+    def test_contradictory_expands_to_two_edges(self, mock_query):
+        mock_query.return_value = [
+            {
+                'source_genesymbol': 'TP53',
+                'target_genesymbol': 'CDKN1A',
+                'is_stimulation': '1',
+                'is_inhibition': '1',
+                'sources': 'CollecTRI',
+                'references': '1',
+                'is_directed': '1',
+            },
+        ]
+
+        records = list(grn_interactions())
+        assert len(records) == 2
+        mors = {r.mor for r in records}
+        assert mors == {1, -1}
+        assert all(r.source == 'TP53' and r.target == 'CDKN1A' for r in records)
