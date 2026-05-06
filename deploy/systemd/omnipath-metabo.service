@@ -1,0 +1,36 @@
+# Systemd user unit for the omnipath-metabo Litestar API.
+#
+# Install:
+#   mkdir -p ~/.config/systemd/user
+#   ln -sf "$PWD/omnipath-metabo.service" ~/.config/systemd/user/omnipath-metabo.service
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now omnipath-metabo.service
+#
+# Boot persistence (run once as root):
+#   loginctl enable-linger <user>
+#
+# %h expands to the running user's home. The unit assumes the repo is
+# checked out at ~/dev/omnipath-metabo/ with its uv-managed virtualenv at
+# ./.venv. Override host/port via a drop-in or by editing ~/dev/.envrc.
+#
+# ExecStart is wrapped in a login bash so site-specific env from
+# ~/dev/.envrc (e.g. LD_LIBRARY_PATH on NixOS for numpy/pandas C-extensions)
+# and any user-level profile setup are loaded the same way they are in a
+# normal shell session.
+
+[Unit]
+Description=omnipath-metabo Litestar API
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/dev/omnipath-metabo
+Environment=OMNIPATH_METABO_HOST=127.0.0.1
+Environment=OMNIPATH_METABO_PORT=8084
+ExecStart=/bin/bash -lc '[ -f "$HOME/dev/.envrc" ] && . "$HOME/dev/.envrc"; exec "$HOME/dev/omnipath-metabo/.venv/bin/omnipath-metabo" serve --host "$OMNIPATH_METABO_HOST" --port "$OMNIPATH_METABO_PORT"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
