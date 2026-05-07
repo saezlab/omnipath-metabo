@@ -39,6 +39,8 @@ nav:
     -   Overview: vignettes/index.md
     -   COSMOS PKN: vignettes/cosmos-pkn.md
 -   API Reference: reference/index.md
+-   Deployment:
+    -   systemd Service: deployment/systemd.md
 -   About: about.md
 
 markdown_extensions:
