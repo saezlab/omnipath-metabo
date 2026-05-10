@@ -1,0 +1,34 @@
+# Templated systemd user unit for an omnipath-metabo instance.
+#
+# Each instance lives at ~/instances/<name>/ with its own source clone,
+# virtualenv, and (optionally) parquet cache. Enable an instance:
+#
+#   systemctl --user enable --now omnipath-metabo@<name>.service
+#
+# Instance layout:
+#
+#   ~/instances/<name>/
+#     src/                  # git clone of omnipath-metabo
+#     .venv/                # uv-managed virtualenv (pip install -e ./src[server])
+#     .env                  # OMNIPATH_METABO_HOST, _PORT, optionally _CACHE_DIR
+#     .cache/               # parquet cache (often a symlink to a shared cache)
+#
+# See the non-templated `omnipath-metabo.service` for the single-instance
+# (production) deployment.
+
+[Unit]
+Description=omnipath-metabo Litestar API (instance %i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+WorkingDirectory=%h/instances/%i
+EnvironmentFile=-%h/instances/%i/.env
+Environment=OMNIPATH_METABO_HOST=127.0.0.1
+ExecStart=/bin/bash -lc '[ -f "$HOME/dev/.envrc" ] && . "$HOME/dev/.envrc"; exec "$HOME/instances/%i/.venv/bin/omnipath-metabo" serve --host "$OMNIPATH_METABO_HOST" --port "$OMNIPATH_METABO_PORT"'
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

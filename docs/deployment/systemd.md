@@ -90,3 +90,24 @@ account with no login shell), copy the same unit to
 target home directory, add `User=` / `Group=` lines under `[Service]`,
 and run `systemctl daemon-reload && systemctl enable --now
 omnipath-metabo.service` as root. No other changes are required.
+
+## Multiple instances on one host
+
+For shared development hosts where several instances of the service
+need to run side-by-side (e.g. a `staging` deployment alongside a
+production deployment, or a per-feature dev URL), a templated unit is
+shipped at [`deploy/systemd/omnipath-metabo@.service`][template].
+
+Lay each instance out at `~/instances/<name>/` &mdash; with `src/`,
+`.venv/`, `.env`, and a `.cache/` directory (often a symlink to a
+shared parquet cache) &mdash; then enable:
+
+```bash
+systemctl --user enable --now omnipath-metabo@staging.service
+```
+
+Each instance gets its own port and journal stream; cache and code can
+be shared with prod or kept separate per instance. The same
+`loginctl enable-linger` once-per-user setup applies.
+
+[template]: https://github.com/saezlab/omnipath-metabo/blob/main/deploy/systemd/omnipath-metabo@.service
