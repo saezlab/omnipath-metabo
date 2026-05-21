@@ -20,6 +20,7 @@ __all__ = [
     'gem_interactions',
     'imm1415_metabolic_interactions',
     'imm1415_transporter_interactions',
+    'kegg_interactions',
     'mrclinksdb_interactions',
     'mrclinksdb_transporter_protein_interactions',
     'recon3d_metabolic_interactions',
@@ -33,6 +34,7 @@ __all__ = [
 from .brenda import brenda_regulations
 from .gem import gem_interactions
 from .imm1415 import imm1415_metabolic_interactions, imm1415_transporter_interactions
+from .kegg import kegg_interactions
 from .mrclinksdb import mrclinksdb_interactions, mrclinksdb_transporter_protein_interactions
 from .recon3d import recon3d_metabolic_interactions, recon3d_transporter_interactions
 from .rhea import rhea_reactions

@@ -669,7 +669,7 @@ def _build_metab_mapping(
     if id_type == 'chebi':
         return {uid: _normalize_chebi(uid) for uid in unique_ids}
 
-    if id_type in ('pubchem', 'bigg', 'hmdb'):
+    if id_type in ('pubchem', 'bigg', 'hmdb', 'kegg'):
         result = _batch_to_chebi(
             [str(uid) for uid in unique_ids],
             id_type,
