@@ -68,7 +68,7 @@ import pandas as pd
 _log = logging.getLogger(__name__)
 
 # Sources that already emit both forward and reverse rows (pre-expanded).
-_PRE_EXPANDED_EXACT = frozenset({'Recon3D'})
+_PRE_EXPANDED_EXACT = frozenset({'Recon3D', 'KEGG'})
 
 _CONNECTOR_RESOURCE = 'COSMOS_formatter'
 _CONNECTOR_ITYPE = 'connector'
@@ -790,6 +790,7 @@ def format_enzyme_metabolite(source) -> 'CosmosBundle':
     - ``resource.startswith('GEM:')`` — metabolic GEM edges only.
       ``'GEM_transporter:...'`` resources are excluded because
       ``'GEM_transporter:...'.startswith('GEM:')`` is ``False``.
+    - ``resource == 'KEGG'`` — KEGG enzyme-metabolite catalysis edges.
 
     Args:
         source:
@@ -803,7 +804,7 @@ def format_enzyme_metabolite(source) -> 'CosmosBundle':
     if isinstance(source, CosmosBundle):
         source = _filter_bundle_network(
             source,
-            lambda row: row.resource.startswith('GEM:'),
+            lambda row: row.resource.startswith('GEM:') or row.resource == 'KEGG',
         )
     return format_pkn(source)
 
