@@ -209,6 +209,7 @@ class TestProcessorsRegistry:
             'mrclinksdb', 'mrclinksdb_transporter',
             'gem', 'recon3d', 'recon3d_metabolic',
             'imm1415', 'imm1415_metabolic',
+            'kegg',
             'ppi', 'grn',
         }
         assert set(PROCESSORS) == expected
