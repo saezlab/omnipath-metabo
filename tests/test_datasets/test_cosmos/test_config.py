@@ -37,6 +37,7 @@ class TestDefaultConfig:
             'stitch', 'tcdb', 'slc', 'brenda',
             'mrclinksdb', 'mrclinksdb_transporter',
             'gem', 'recon3d', 'recon3d_metabolic',
+            'kegg',
             'imm1415', 'imm1415_metabolic',
             'ppi', 'grn',
         }
