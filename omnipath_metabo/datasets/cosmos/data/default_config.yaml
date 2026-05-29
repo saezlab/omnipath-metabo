@@ -22,6 +22,7 @@ resources:
 
   stitch:
     score_threshold: 700
+    textmining_threshold: 700
     mode:
       - activation
       - inhibition

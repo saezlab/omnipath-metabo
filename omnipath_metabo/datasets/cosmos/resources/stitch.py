@@ -211,6 +211,7 @@ def stitch_interactions(
     score_threshold: int = 700,
     mode: str | Sequence[str] | None = ('activation', 'inhibition'),
     a_is_acting: bool = True,
+    textmining_threshold: int | None = 700,
 ) -> Generator[Interaction, None, None]:
     """
     Yield STITCH chemical-protein interactions as uniform records.
@@ -239,6 +240,13 @@ def stitch_interactions(
             dropped.  Set to ``False`` to include all interactions
             regardless of directionality.  Following the legacy
             Generation-PKN-COSMOS behaviour.
+        textmining_threshold:
+            If set, exclude interactions where the text-mining channel
+            score (``textmining`` field from the STITCH links file) is
+            greater than or equal to this value.  This removes
+            interactions whose evidence relies predominantly on text
+            mining rather than experimental or database sources.
+            Default: 700 (same as ``score_threshold``).
 
     Yields:
         :class:`Interaction` records with *source_type*
@@ -266,6 +274,9 @@ def stitch_interactions(
             continue
 
         if a_is_acting and not rec.directed:
+            continue
+
+        if textmining_threshold is not None and rec.textmining >= textmining_threshold:
             continue
 
         # Normalise orientation: small molecule as source
