@@ -51,11 +51,15 @@ def create_app(cache_dir: Path | str | None = None) -> 'Litestar':
     from omnipath_metabo.datasets.cosmos._cache import DEFAULT_CACHE_DIR
 
     from ._routes_cosmos import CosmosController
+    from ._routes_networks import NetworksController
 
     resolved_cache_dir = Path(
         cache_dir
         or os.environ.get('OMNIPATH_METABO_CACHE_DIR')
         or DEFAULT_CACHE_DIR
+    )
+    omnipath_db_url = (
+        os.environ.get('OMNIPATH_DB_URL') or os.environ.get('DATABASE_URL')
     )
 
     @get('/', media_type='text/html', include_in_schema=False)
@@ -78,10 +82,13 @@ def create_app(cache_dir: Path | str | None = None) -> 'Litestar':
     )
 
     app = Litestar(
-        route_handlers=[landing, health, CosmosController],
+        route_handlers=[landing, health, CosmosController, NetworksController],
         cors_config=cors_config,
         openapi_config=openapi_config,
-        state={'cache_dir': resolved_cache_dir},
+        state={
+            'cache_dir': resolved_cache_dir,
+            'omnipath_db_url': omnipath_db_url,
+        },
     )
 
     return app
