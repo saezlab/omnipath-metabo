@@ -53,6 +53,13 @@ server = [
     "uvicorn[standard]>=0.30",
     "pyarrow>=14.0",
 ]
+# The post-build chemistry layer runs RDKit *in Postgres* (the rdkit cartridge,
+# CREATE EXTENSION rdkit) — no Python RDKit. This group is just the DB driver
+# plus pypath (to fetch RaMP rows for the conflict classifier).
+postbuild = [
+    "psycopg2-binary>=2.9",
+    "pypath-omnipath",
+]
 tests = [
     "pytest>=6.0",
     "pytest-cov",
