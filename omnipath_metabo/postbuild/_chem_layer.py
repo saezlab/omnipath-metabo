@@ -294,8 +294,15 @@ def classify_structural_specificity(
     *,
     schema: str = 'public',
 ) -> SpecificityStats:
-    """Assign one specificity level to every chemical (idempotent full rebuild)."""
+    """Assign one specificity level to every chemical (idempotent full rebuild).
+
+    The per-chemical InChIKey aggregate (over every chemical entity) is the
+    cost here; it is materialised with a parallel ``CREATE TABLE AS`` first so
+    the read parallelises (``INSERT ... SELECT`` would force a serial plan). The
+    cheap per-row CASE classification then runs over the materialised keys.
+    """
     schema_id = sql.Identifier(schema)
+    chem_keys_id = sql.Identifier(schema, 'metabo_specificity_chem_keys')
     params = {
         'chem': CHEMICAL_ENTITY_TYPE,
         'inchikey': INCHIKEY_TYPE,
@@ -307,6 +314,42 @@ def classify_structural_specificity(
         'none': _LEVEL_ID['no_structure'],
     }
     with conn.cursor() as cur:
+        cur.execute('SET LOCAL parallel_setup_cost = 0')
+        cur.execute('SET LOCAL parallel_tuple_cost = 0')
+        if _MAX_PARALLEL_WORKERS_PER_GATHER:
+            cur.execute(
+                'SET LOCAL max_parallel_workers_per_gather = %s',
+                (_MAX_PARALLEL_WORKERS_PER_GATHER,),
+            )
+        # Stage 1: materialise per-chemical InChIKey keys (parallel aggregate).
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(chem_keys_id))
+        cur.execute(
+            sql.SQL(
+                """
+                CREATE UNLOGGED TABLE {chem_keys} AS
+                SELECT
+                  e.entity_id,
+                  bool_or(vit.name = %(inchikey)s) AS has_key,
+                  max(ie.value) FILTER (WHERE vit.name = %(inchikey)s) AS inchikey
+                FROM {schema}.entity e
+                JOIN {schema}.vocab_entity_type et
+                  ON et.entity_type_id = e.entity_type_id
+                 AND et.name = %(chem)s
+                LEFT JOIN {schema}.entity_identifier_lookup eil
+                  ON eil.entity_id = e.entity_id
+                LEFT JOIN {schema}.identifier_evidence ie
+                  ON ie.identifier_id = eil.identifier_id
+                LEFT JOIN {schema}.vocab_identifier_type vit
+                  ON vit.identifier_type_id = ie.identifier_type_id
+                 AND vit.name = %(inchikey)s
+                GROUP BY e.entity_id
+                """
+            ).format(schema=schema_id, chem_keys=chem_keys_id),
+            params,
+        )
+        cur.execute(sql.SQL('ANALYZE {}').format(chem_keys_id))
+        # Stage 2: classify each chemical from its materialised keys + canonical
+        # SMILES, and load.
         cur.execute(
             sql.SQL(
                 'TRUNCATE {}.metabo_entity_structural_specificity'
@@ -317,24 +360,6 @@ def classify_structural_specificity(
                 """
                 INSERT INTO {schema}.metabo_entity_structural_specificity
                   (entity_id, structural_specificity_id, standard_inchikey)
-                WITH chem AS (
-                  SELECT
-                    e.entity_id,
-                    bool_or(vit.name = %(inchikey)s) AS has_key,
-                    max(ie.value) FILTER (WHERE vit.name = %(inchikey)s) AS inchikey
-                  FROM {schema}.entity e
-                  JOIN {schema}.vocab_entity_type et
-                    ON et.entity_type_id = e.entity_type_id
-                   AND et.name = %(chem)s
-                  LEFT JOIN {schema}.entity_identifier_lookup eil
-                    ON eil.entity_id = e.entity_id
-                  LEFT JOIN {schema}.identifier_evidence ie
-                    ON ie.identifier_id = eil.identifier_id
-                  LEFT JOIN {schema}.vocab_identifier_type vit
-                    ON vit.identifier_type_id = ie.identifier_type_id
-                   AND vit.name = %(inchikey)s
-                  GROUP BY e.entity_id
-                )
                 SELECT
                   chem.entity_id,
                   CASE
@@ -347,14 +372,15 @@ def classify_structural_specificity(
                     ELSE %(none)s
                   END,
                   COALESCE(s.standard_inchikey, chem.inchikey)
-                FROM chem
+                FROM {chem_keys} chem
                 LEFT JOIN {schema}.metabo_entity_structure s
                   ON s.entity_id = chem.entity_id
                 """
-            ).format(schema=schema_id),
+            ).format(schema=schema_id, chem_keys=chem_keys_id),
             params,
         )
         chemicals = int(cur.rowcount)
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(chem_keys_id))
         cur.execute(
             sql.SQL(
                 """
