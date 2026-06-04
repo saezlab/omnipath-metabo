@@ -52,8 +52,20 @@ class SpecificityStats:
 
 
 def build_structure_substrate(conn, *, schema: str = 'public') -> int:
-    """(Re)build ``metabo_entity_structure`` from parseable SMILES; return rows."""
+    """(Re)build ``metabo_entity_structure`` from parseable SMILES; return rows.
+
+    Performance: the RDKit cartridge functions (``mol_from_smiles`` /
+    ``morganbv_fp`` / ``mol_to_smiles``) are PARALLEL SAFE + IMMUTABLE, but
+    ``INSERT ... SELECT`` forces a serial plan, so the (expensive) parse ran on
+    a single core. We instead build the parsed structures with a parallel
+    ``CREATE TABLE AS`` into a staging table — a ``LATERAL`` computes the mol
+    once per row (it is referenced three times) — and drop the two GiST indexes
+    first, rebuilding them in bulk afterwards (per-row GiST maintenance during
+    the load is far slower than one bulk build). The session is also given
+    generous parallel/maintenance memory for the duration.
+    """
     schema_id = sql.Identifier(schema)
+    staging_id = sql.Identifier(schema, 'metabo_entity_structure_staging')
     params = {
         'chem': CHEMICAL_ENTITY_TYPE,
         'smiles': SMILES_TYPE,
@@ -63,14 +75,33 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
         # mol_from_smiles emits NOTICE/WARNING for unparseable inputs (it returns
         # NULL, not an error) — quiet those for the bulk build.
         cur.execute('SET LOCAL client_min_messages = error')
+        # Encourage a parallel plan for the RDKit parse and give the bulk GiST
+        # rebuilds room to work in memory.
+        cur.execute('SET LOCAL max_parallel_workers_per_gather = 8')
+        cur.execute('SET LOCAL parallel_setup_cost = 0')
+        cur.execute('SET LOCAL parallel_tuple_cost = 0')
+        cur.execute("SET LOCAL maintenance_work_mem = '2GB'")
+        cur.execute('SET LOCAL max_parallel_maintenance_workers = 4')
+
+        # Drop the expensive GiST indexes; rebuilt in bulk after the load.
         cur.execute(
-            sql.SQL('TRUNCATE {}.metabo_entity_structure').format(schema_id)
+            sql.SQL(
+                'DROP INDEX IF EXISTS {}.metabo_entity_structure_mol_idx'
+            ).format(schema_id)
         )
         cur.execute(
             sql.SQL(
+                'DROP INDEX IF EXISTS {}.metabo_entity_structure_mfp_idx'
+            ).format(schema_id)
+        )
+
+        # Parallel build of the parsed structures. CREATE TABLE AS parallelises
+        # the parse; the LATERAL evaluates mol_from_smiles once per row.
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(staging_id))
+        cur.execute(
+            sql.SQL(
                 """
-                INSERT INTO {schema}.metabo_entity_structure
-                  (entity_id, mol, mfp, canonical_smiles, standard_inchikey)
+                CREATE UNLOGGED TABLE {staging} AS
                 WITH chem AS (
                   SELECT
                     e.entity_id,
@@ -88,25 +119,54 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
                     ON vit.identifier_type_id = ie.identifier_type_id
                    AND vit.name IN (%(smiles)s, %(inchikey)s)
                   GROUP BY e.entity_id
-                ),
-                parsed AS (
-                  SELECT entity_id, mol_from_smiles(smiles) AS mol, inchikey
-                  FROM chem
-                  WHERE smiles IS NOT NULL
                 )
                 SELECT
-                  entity_id,
-                  mol,
-                  morganbv_fp(mol),
-                  mol_to_smiles(mol),
-                  inchikey
-                FROM parsed
-                WHERE mol IS NOT NULL
+                  chem.entity_id,
+                  m.mol AS mol,
+                  morganbv_fp(m.mol) AS mfp,
+                  mol_to_smiles(m.mol) AS canonical_smiles,
+                  chem.inchikey AS standard_inchikey
+                FROM chem
+                CROSS JOIN LATERAL (
+                  SELECT mol_from_smiles(chem.smiles) AS mol
+                ) m
+                WHERE chem.smiles IS NOT NULL
+                  AND m.mol IS NOT NULL
                 """
-            ).format(schema=schema_id),
+            ).format(schema=schema_id, staging=staging_id),
             params,
         )
+
+        # Move the parsed rows into the (now index-free) target, then rebuild
+        # the GiST indexes in one bulk pass.
+        cur.execute(
+            sql.SQL('TRUNCATE {}.metabo_entity_structure').format(schema_id)
+        )
+        cur.execute(
+            sql.SQL(
+                """
+                INSERT INTO {schema}.metabo_entity_structure
+                  (entity_id, mol, mfp, canonical_smiles, standard_inchikey)
+                SELECT entity_id, mol, mfp, canonical_smiles, standard_inchikey
+                FROM {staging}
+                """
+            ).format(schema=schema_id, staging=staging_id)
+        )
         rows = int(cur.rowcount)
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(staging_id))
+
+        cur.execute(
+            sql.SQL(
+                'CREATE INDEX metabo_entity_structure_mol_idx '
+                'ON {}.metabo_entity_structure USING gist (mol)'
+            ).format(schema_id)
+        )
+        cur.execute(
+            sql.SQL(
+                'CREATE INDEX metabo_entity_structure_mfp_idx '
+                'ON {}.metabo_entity_structure USING gist (mfp)'
+            ).format(schema_id)
+        )
     conn.commit()
     return rows
 
