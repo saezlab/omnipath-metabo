@@ -29,11 +29,29 @@ __all__ = [
     'refresh_structural_specificity_facet',
 ]
 
+import os
 from dataclasses import dataclass, field
 
 from psycopg2 import sql
 
 from omnipath_metabo.db import STRUCTURAL_SPECIFICITY_LEVELS
+
+# Build-phase Postgres session tuning for the RDKit parse + bulk GiST rebuilds.
+# Overridable per deployment via these environment variables (shared with
+# omnipath-build); set one to an empty string to leave that GUC at the server
+# default. Defaults assume the build's Postgres has ~10 GB of headroom (the
+# lab's docker.service hard cap is 200 GB shared across all containers). These
+# are applied with SET LOCAL, so they last only for the build transaction and
+# never affect the global config of an instance shared with the web API/app.
+_MAX_PARALLEL_WORKERS_PER_GATHER = os.environ.get(
+    'OMNIPATH_BUILD_MAX_PARALLEL_WORKERS_PER_GATHER', '8'
+)
+_MAINTENANCE_WORK_MEM = os.environ.get(
+    'OMNIPATH_BUILD_MAINTENANCE_WORK_MEM', '2GB'
+)
+_MAX_PARALLEL_MAINTENANCE_WORKERS = os.environ.get(
+    'OMNIPATH_BUILD_MAX_PARALLEL_MAINTENANCE_WORKERS', '4'
+)
 
 CHEMICAL_ENTITY_TYPE = 'Chemical:OM:0037'
 SMILES_TYPE = 'Smiles:MI:0239'
@@ -76,12 +94,24 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
         # NULL, not an error) — quiet those for the bulk build.
         cur.execute('SET LOCAL client_min_messages = error')
         # Encourage a parallel plan for the RDKit parse and give the bulk GiST
-        # rebuilds room to work in memory.
-        cur.execute('SET LOCAL max_parallel_workers_per_gather = 8')
+        # rebuilds room to work in memory (configurable per deployment; see the
+        # module-level OMNIPATH_BUILD_* defaults).
         cur.execute('SET LOCAL parallel_setup_cost = 0')
         cur.execute('SET LOCAL parallel_tuple_cost = 0')
-        cur.execute("SET LOCAL maintenance_work_mem = '2GB'")
-        cur.execute('SET LOCAL max_parallel_maintenance_workers = 4')
+        if _MAX_PARALLEL_WORKERS_PER_GATHER:
+            cur.execute(
+                'SET LOCAL max_parallel_workers_per_gather = %s',
+                (_MAX_PARALLEL_WORKERS_PER_GATHER,),
+            )
+        if _MAINTENANCE_WORK_MEM:
+            cur.execute(
+                'SET LOCAL maintenance_work_mem = %s', (_MAINTENANCE_WORK_MEM,)
+            )
+        if _MAX_PARALLEL_MAINTENANCE_WORKERS:
+            cur.execute(
+                'SET LOCAL max_parallel_maintenance_workers = %s',
+                (_MAX_PARALLEL_MAINTENANCE_WORKERS,),
+            )
 
         # Drop the expensive GiST indexes; rebuilt in bulk after the load.
         cur.execute(
