@@ -83,7 +83,9 @@ def post_build_metabo(
             )
 
         log(f'[post-build-metabo] build_id={build_id} schema={schema}')
-        structures = build_structure_substrate(conn, schema=schema)
+        structures = build_structure_substrate(
+            conn, schema=schema, db_url=db_url,
+        )
         log(f'[post-build-metabo] structure substrate: {structures} molecules')
         spec = classify_structural_specificity(conn, schema=schema)
         log(

@@ -30,11 +30,12 @@ __all__ = [
 ]
 
 import os
+import threading
 from dataclasses import dataclass, field
 
 from psycopg2 import sql
 
-from omnipath_metabo.db import STRUCTURAL_SPECIFICITY_LEVELS
+from omnipath_metabo.db import STRUCTURAL_SPECIFICITY_LEVELS, connect
 
 # Build-phase Postgres session tuning for the RDKit parse + bulk GiST rebuilds.
 # Overridable per deployment via these environment variables (shared with
@@ -69,20 +70,32 @@ class SpecificityStats:
     by_level: dict[str, int] = field(default_factory=dict)
 
 
-def build_structure_substrate(conn, *, schema: str = 'public') -> int:
+def build_structure_substrate(
+    conn, *, schema: str = 'public', db_url: str | None = None,
+) -> int:
     """(Re)build ``metabo_entity_structure`` from parseable SMILES; return rows.
 
     Performance: the RDKit cartridge functions (``mol_from_smiles`` /
     ``morganbv_fp`` / ``mol_to_smiles``) are PARALLEL SAFE + IMMUTABLE, but
     ``INSERT ... SELECT`` forces a serial plan, so the (expensive) parse ran on
-    a single core. We instead build the parsed structures with a parallel
-    ``CREATE TABLE AS`` into a staging table — a ``LATERAL`` computes the mol
-    once per row (it is referenced three times) — and drop the two GiST indexes
-    first, rebuilding them in bulk afterwards (per-row GiST maintenance during
-    the load is far slower than one bulk build). The session is also given
-    generous parallel/maintenance memory for the duration.
+    a single core. This is a two-stage ``CREATE TABLE AS``:
+
+    1. materialise the chemical SMILES source (the entity ↔ identifier join +
+       group-by) into a plain table, keeping only rows that have a SMILES;
+    2. parse it in a second ``CREATE TABLE AS`` whose **parallel sequential
+       scan** distributes ``mol_from_smiles`` across workers — a ``LATERAL``
+       evaluates the mol once per row (it is referenced three times). Doing the
+       parse in one statement on top of the join's group-by put it *above* the
+       Gather (serial on the leader); splitting the stages keeps it in the
+       workers.
+
+    The two GiST indexes are dropped first and rebuilt in bulk afterwards
+    (per-row GiST maintenance during the load is far slower than one bulk
+    build). The session gets generous parallel/maintenance memory for the
+    duration.
     """
     schema_id = sql.Identifier(schema)
+    chem_src_id = sql.Identifier(schema, 'metabo_entity_structure_chem_src')
     staging_id = sql.Identifier(schema, 'metabo_entity_structure_staging')
     params = {
         'chem': CHEMICAL_ENTITY_TYPE,
@@ -125,14 +138,17 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
             ).format(schema_id)
         )
 
-        # Parallel build of the parsed structures. CREATE TABLE AS parallelises
-        # the parse; the LATERAL evaluates mol_from_smiles once per row.
-        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(staging_id))
+        # Stage 1: materialise the SMILES source (join + group-by) into a plain
+        # table, keeping only chemicals that have a SMILES. Done as its own
+        # statement so the expensive parse in stage 2 is NOT stacked on top of
+        # this group-by (which would push it above the Gather = serial).
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(chem_src_id))
         cur.execute(
             sql.SQL(
                 """
-                CREATE UNLOGGED TABLE {staging} AS
-                WITH chem AS (
+                CREATE UNLOGGED TABLE {chem_src} AS
+                SELECT entity_id, smiles, inchikey
+                FROM (
                   SELECT
                     e.entity_id,
                     max(ie.value) FILTER (WHERE vit.name = %(smiles)s) AS smiles,
@@ -149,23 +165,40 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
                     ON vit.identifier_type_id = ie.identifier_type_id
                    AND vit.name IN (%(smiles)s, %(inchikey)s)
                   GROUP BY e.entity_id
-                )
+                ) g
+                WHERE g.smiles IS NOT NULL
+                """
+            ).format(schema=schema_id, chem_src=chem_src_id),
+            params,
+        )
+        # Stats so the planner sizes chem_src and picks a parallel seq scan.
+        cur.execute(sql.SQL('ANALYZE {}').format(chem_src_id))
+
+        # Stage 2: parse. A parallel sequential scan of chem_src distributes
+        # mol_from_smiles across workers; the LATERAL evaluates the mol once per
+        # row (referenced three times below).
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(staging_id))
+        cur.execute(
+            sql.SQL(
+                """
+                CREATE UNLOGGED TABLE {staging} AS
                 SELECT
                   chem.entity_id,
                   m.mol AS mol,
                   morganbv_fp(m.mol) AS mfp,
-                  mol_to_smiles(m.mol) AS canonical_smiles,
+                  -- mol_to_smiles returns cstring (a pseudo-type); cast to text
+                  -- so CREATE TABLE AS can give the column a real type.
+                  mol_to_smiles(m.mol)::text AS canonical_smiles,
                   chem.inchikey AS standard_inchikey
-                FROM chem
+                FROM {chem_src} chem
                 CROSS JOIN LATERAL (
                   SELECT mol_from_smiles(chem.smiles) AS mol
                 ) m
-                WHERE chem.smiles IS NOT NULL
-                  AND m.mol IS NOT NULL
+                WHERE m.mol IS NOT NULL
                 """
-            ).format(schema=schema_id, staging=staging_id),
-            params,
+            ).format(staging=staging_id, chem_src=chem_src_id)
         )
+        cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(chem_src_id))
 
         # Move the parsed rows into the (now index-free) target, then rebuild
         # the GiST indexes in one bulk pass.
@@ -184,21 +217,76 @@ def build_structure_substrate(conn, *, schema: str = 'public') -> int:
         )
         rows = int(cur.rowcount)
         cur.execute(sql.SQL('DROP TABLE IF EXISTS {}').format(staging_id))
-
-        cur.execute(
-            sql.SQL(
-                'CREATE INDEX metabo_entity_structure_mol_idx '
-                'ON {}.metabo_entity_structure USING gist (mol)'
-            ).format(schema_id)
-        )
-        cur.execute(
-            sql.SQL(
-                'CREATE INDEX metabo_entity_structure_mfp_idx '
-                'ON {}.metabo_entity_structure USING gist (mfp)'
-            ).format(schema_id)
-        )
+    # Commit the parsed rows + dropped indexes so the concurrent index builders
+    # (separate connections) can see the data.
     conn.commit()
+
+    _rebuild_structure_gist_indexes(conn, schema=schema, db_url=db_url)
     return rows
+
+
+def _rebuild_structure_gist_indexes(
+    conn, *, schema: str, db_url: str | None,
+) -> None:
+    """Rebuild the two ``metabo_entity_structure`` GiST indexes.
+
+    Postgres has no parallel GiST index build, so a single ``CREATE INDEX`` is
+    stuck on one core. When a ``db_url`` is available the two indexes are built
+    CONCURRENTLY on their own connections — two ``CREATE INDEX`` on the same
+    table take compatible ShareLocks, so this uses two cores instead of one.
+    Falls back to a sequential build on the passed connection otherwise.
+    """
+    schema_id = sql.Identifier(schema)
+    specs = (
+        ('metabo_entity_structure_mol_idx', 'mol'),
+        ('metabo_entity_structure_mfp_idx', 'mfp'),
+    )
+
+    def _stmt(index_name: str, column: str):
+        return sql.SQL(
+            'CREATE INDEX {idx} ON {schema}.metabo_entity_structure '
+            'USING gist ({col})'
+        ).format(
+            idx=sql.Identifier(index_name),
+            schema=schema_id,
+            col=sql.Identifier(column),
+        )
+
+    if not db_url:
+        with conn.cursor() as cur:
+            for index_name, column in specs:
+                cur.execute(_stmt(index_name, column))
+        conn.commit()
+        return
+
+    errors: list[Exception] = []
+
+    def _worker(index_name: str, column: str) -> None:
+        try:
+            index_conn = connect(db_url)
+            index_conn.autocommit = True
+            try:
+                with index_conn.cursor() as cur:
+                    if _MAINTENANCE_WORK_MEM:
+                        cur.execute(
+                            'SET maintenance_work_mem = %s',
+                            (_MAINTENANCE_WORK_MEM,),
+                        )
+                    cur.execute(_stmt(index_name, column))
+            finally:
+                index_conn.close()
+        except Exception as exc:  # noqa: BLE001 — surfaced after join
+            errors.append(exc)
+
+    threads = [
+        threading.Thread(target=_worker, args=spec) for spec in specs
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    if errors:
+        raise errors[0]
 
 
 def classify_structural_specificity(
