@@ -39,6 +39,7 @@ from omnipath_metabo.postbuild._chem_layer import (
     classify_structural_specificity,
     refresh_structural_specificity_facet,
 )
+from omnipath_metabo.postbuild._lipid_layer import resolve_lipid_labels
 from omnipath_metabo.postbuild._ramp_conflicts import populate_ramp_conflicts
 
 
@@ -49,6 +50,8 @@ class PostBuildStats:
     chemicals: int = 0
     specificity_by_level: dict[str, int] = field(default_factory=dict)
     facet_rows: int = 0
+    lipids_labelled: int = 0
+    lipid_names_resolved: int = 0
     ramp_conflicts: int = 0
 
 
@@ -95,6 +98,15 @@ def post_build_metabo(
         facet_rows = refresh_structural_specificity_facet(conn, schema=schema)
         log(f'[post-build-metabo] structural_specificity facet rows: {facet_rows}')
 
+        lipid = resolve_lipid_labels(conn, schema=schema)
+        log(
+            '[post-build-metabo] goslin lipid labels: '
+            f'{lipid.lipids_labelled} entities '
+            f'(names resolved={lipid.names_resolved} '
+            f'unresolved={lipid.names_unresolved}); '
+            + ' '.join(f'{k}={v}' for k, v in sorted(lipid.by_level.items()))
+        )
+
         ramp_conflicts = 0
         if conflicts:
             stats = populate_ramp_conflicts(
@@ -114,6 +126,8 @@ def post_build_metabo(
             chemicals=spec.chemicals,
             specificity_by_level=spec.by_level,
             facet_rows=facet_rows,
+            lipids_labelled=lipid.lipids_labelled,
+            lipid_names_resolved=lipid.names_resolved,
             ramp_conflicts=ramp_conflicts,
         )
     finally:

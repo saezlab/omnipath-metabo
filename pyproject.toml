@@ -54,11 +54,13 @@ server = [
     "pyarrow>=14.0",
 ]
 # The post-build chemistry layer runs RDKit *in Postgres* (the rdkit cartridge,
-# CREATE EXTENSION rdkit) — no Python RDKit. This group is just the DB driver
-# plus pypath (to fetch RaMP rows for the conflict classifier).
+# CREATE EXTENSION rdkit) — no Python RDKit. The DB driver, pypath (to fetch
+# RaMP rows for the conflict classifier), plus pygoslin (pure-Python lipid-name
+# grammar) for the Goslin lipid label cascade (Principle II — Goslin in metabo).
 postbuild = [
     "psycopg2-binary>=2.9",
     "pypath-omnipath",
+    "pygoslin>=2.2",
 ]
 tests = [
     "pytest>=6.0",

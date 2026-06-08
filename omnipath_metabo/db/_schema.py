@@ -160,6 +160,31 @@ def ensure_metabo_schema(conn, *, schema: str = 'public') -> None:
                 """
             ).format(schema_id)
         )
+        # Goslin lipid-name cache (data-model D), keyed on the verbatim source
+        # name so rebuilds never re-parse. ``normalised_name`` is the Goslin
+        # canonical form at the name's own (highest available) level — the lipid
+        # label source; ``species_name`` is the summed-species form for
+        # reference. ``resolver`` is 'goslin' (parsed) or 'unresolved'.
+        cur.execute(
+            sql.SQL(
+                """
+                CREATE TABLE IF NOT EXISTS {}.metabo_lipid_name_resolution (
+                  raw_name text PRIMARY KEY,
+                  normalised_name text,
+                  species_name text,
+                  lipid_level text,
+                  lipid_category text,
+                  lipid_class text,
+                  total_carbon smallint,
+                  total_db smallint,
+                  sum_formula text,
+                  resolver text NOT NULL,
+                  goslin_version text,
+                  computed_at timestamptz NOT NULL DEFAULT now()
+                )
+                """
+            ).format(schema_id)
+        )
     conn.commit()
 
 
