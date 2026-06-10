@@ -52,6 +52,9 @@ server = [
     "litestar[standard]>=2.0",
     "uvicorn[standard]>=0.30",
     "pyarrow>=14.0",
+    # the /networks API queries the OmniPath Postgres via psycopg2; a server-only
+    # deploy must not need the heavier `postbuild` extra just to serve it.
+    "psycopg2-binary>=2.9",
 ]
 # The post-build chemistry layer runs RDKit *in Postgres* (the rdkit cartridge,
 # CREATE EXTENSION rdkit) — no Python RDKit. The DB driver, pypath (to fetch
