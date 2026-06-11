@@ -162,6 +162,28 @@ def parse_lipid(name: str) -> dict | None:
     }
 
 
+def _parse_many(names: list[str]) -> list[dict | None]:
+    """Goslin-parse many names, parallel across cores for large batches.
+
+    At full scale the candidate set is ~1.9M chain-bearing names; serial Goslin
+    parsing took hours. ``parse_lipid`` is a module-level function with a
+    per-process lazy ``LipidParser`` singleton, so a process pool parallelises
+    cleanly — each worker builds its own parser once and results stay in input
+    order. Small batches stay serial (pool setup isn't worth it).
+    """
+    if not names:
+        return []
+    import os
+
+    workers = min(16, max(1, (os.cpu_count() or 2) - 2))
+    if workers == 1 or len(names) < 2000:
+        return [parse_lipid(n) for n in names]
+    from multiprocessing import Pool
+
+    with Pool(processes=workers) as pool:
+        return list(pool.imap(parse_lipid, names, chunksize=1000))
+
+
 @dataclass(frozen=True)
 class LipidLabelStats:
     names_parsed: int = 0
@@ -226,11 +248,13 @@ def resolve_lipid_labels(
         )
         raw_names = [row[0] for row in cur.fetchall()]
 
-        # 2) Parse in Python (Goslin), accumulate cache rows.
+        # 2) Parse in Python (Goslin) — parallel across cores, then accumulate
+        #    cache rows. (Serial parsing of the full-scale ~1.9M candidate set
+        #    took hours; the NOT-EXISTS cache filter keeps re-runs incremental.)
         rows = []
         resolved = 0
-        for raw_name in raw_names:
-            parsed = parse_lipid(raw_name)
+        parsed_results = _parse_many(raw_names)
+        for raw_name, parsed in zip(raw_names, parsed_results):
             if parsed is None:
                 rows.append((raw_name, None, None, None, None, None,
                              None, None, None, 'unresolved', version))
