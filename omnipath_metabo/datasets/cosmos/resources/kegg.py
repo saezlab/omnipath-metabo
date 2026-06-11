@@ -205,7 +205,14 @@ def kegg_interactions(
         :class:`~.._record.Interaction` records with
         ``interaction_type='catalysis'``, ``resource='KEGG'``, ``mor=1``.
     """
-    from pypath.inputs_v2.kegg_metabolic import kegg_organism_code, make_kegg_resource
+    try:
+        from pypath.inputs_v2.kegg_metabolic import kegg_organism_code, make_kegg_resource
+    except ImportError:
+        _log.warning(
+            "[COSMOS] KEGG: pypath.inputs_v2.kegg_metabolic is not available in "
+            "the installed pypath version — skipping KEGG catalysis interactions."
+        )
+        return
 
     org_code = kegg_organism_code(organism)
 

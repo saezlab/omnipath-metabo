@@ -80,7 +80,14 @@ def imm1415_transporter_interactions(
     if organism != 10090:
         return
 
-    from pypath.inputs.imm1415._gem import imm1415_transporter_network
+    try:
+        from pypath.inputs.imm1415._gem import imm1415_transporter_network
+    except ImportError:
+        _log.warning(
+            "[COSMOS] IMM1415: pypath.inputs.imm1415 is not available in "
+            "the installed pypath version — skipping IMM1415 transporter interactions."
+        )
+        return
 
     groups: defaultdict[str, list] = defaultdict(list)
 
@@ -192,7 +199,14 @@ def imm1415_metabolic_interactions(
     if organism != 10090:
         return
 
-    from pypath.inputs.imm1415._gem import imm1415_network
+    try:
+        from pypath.inputs.imm1415._gem import imm1415_network
+    except ImportError:
+        _log.warning(
+            "[COSMOS] IMM1415: pypath.inputs.imm1415 is not available in "
+            "the installed pypath version — skipping IMM1415 metabolic interactions."
+        )
+        return
 
     for rec in imm1415_network(include_reverse=include_reverse):
 
