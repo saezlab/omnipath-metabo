@@ -33,6 +33,9 @@ from collections.abc import Generator
 
 from .._record import Interaction
 
+import logging
+_log = logging.getLogger(__name__)
+
 
 def imm1415_transporter_interactions(
     organism: int = 9606,
