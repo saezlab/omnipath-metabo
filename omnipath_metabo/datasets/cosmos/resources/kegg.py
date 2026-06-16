@@ -23,28 +23,32 @@ This module is responsible only for converting the flat reaction dicts
 produced by the KEGG parser into COSMOS :class:`~.._record.Interaction`
 records.
 
-Each KEGG reaction record carries:
+Each KEGG reaction record (flat format from ``reactions.raw()``) carries:
 
-- ``'Reaction'``:  bare KEGG reaction ID (e.g. ``'R00001'``)
-- ``'UniProt'``:   semicolon-joined UniProt ACs for all catalysing genes
-- ``'Substrate'``: list of ``{name, kegg_id, chebi}`` dicts
-- ``'Product'``:   list of ``{name, kegg_id, chebi}`` dicts
+- ``reaction_id``:       bare KEGG reaction ID (e.g. ``"R00001"``)
+- ``uniprot_ids``:       semicolon-joined UniProt ACs for all catalysing genes
+- ``reactant_kegg_id``:  ``||``-separated KEGG compound IDs for substrates
+- ``reactant_chebi``:    ``||``-separated ChEBI IDs for substrates
+- ``reactant_name``:     ``||``-separated compound names for substrates
+- ``product_kegg_id``:   ``||``-separated KEGG compound IDs for products
+- ``product_chebi``:     ``||``-separated ChEBI IDs for products
+- ``product_name``:      ``||``-separated compound names for products
 
 Two directed edges are emitted per (compound, enzyme) pair:
 
-- substrate → enzyme  (``source_type='small_molecule'``)
-- enzyme → product    (``source_type='protein'``)
+- substrate → enzyme  (``source_type="small_molecule"``)
+- enzyme → product    (``source_type="protein"``)
 
-Metabolite ID priority (per compound dict):
+Metabolite ID priority (per compound):
 
-1. ``chebi`` present  → ``id_type='chebi'`` (pass-through in translation)
-2. ``kegg_id`` present → ``id_type='kegg'`` (resolved via omnipath-utils)
-3. name only          → ``id_type='synonym'`` (name lookup fallback)
+1. ``chebi`` present  → ``id_type="chebi"`` (pass-through in translation)
+2. ``kegg_id`` present → ``id_type="kegg"`` (resolved via omnipath-utils)
+3. name only          → ``id_type="synonym"`` (name lookup fallback)
 """
 
 from __future__ import annotations
 
-__all__ = ['kegg_interactions']
+__all__ = ["kegg_interactions"]
 
 import logging
 from collections.abc import Generator
@@ -53,38 +57,46 @@ from .._record import Interaction
 
 _log = logging.getLogger(__name__)
 
+_SEP = "||"
+
 
 # ---------------------------------------------------------------------------
-# Metabolite ID helpers
+# Compound parsing helpers
 # ---------------------------------------------------------------------------
+
+def _parse_compounds(kegg_ids: str, chebis: str, names: str) -> list[dict]:
+    """Parse ``||``-separated compound fields into compound dicts."""
+    k_list = kegg_ids.split(_SEP) if kegg_ids else []
+    n = len(k_list)
+    c_list = chebis.split(_SEP) if chebis else [""] * n
+    n_list = names.split(_SEP) if names else [""] * n
+    return [
+        {"kegg_id": k.strip(), "chebi": c.strip(), "name": nm.strip()}
+        for k, c, nm in zip(k_list, c_list, n_list)
+    ]
+
 
 def _compound_id(compound: dict) -> tuple[str, str]:
     """
     Return ``(id_value, id_type)`` for a compound dict.
 
     Priority: direct ChEBI annotation > KEGG compound ID > compound name.
-
-    Args:
-        compound: Dict with keys ``'chebi'``, ``'kegg_id'``, ``'name'``.
-
-    Returns:
-        Tuple of ``(identifier_string, id_type_string)``.
     """
-    chebi = compound.get('chebi') or ''
-    kegg_id = compound.get('kegg_id') or ''
-    name = compound.get('name') or ''
+    chebi = compound.get("chebi") or ""
+    kegg_id = compound.get("kegg_id") or ""
+    name = compound.get("name") or ""
 
     if chebi:
-        # Normalise to 'CHEBI:xxxxx'; parser emits 'chebi:xxxxx' (lowercase).
-        numeric = chebi.split(':', 1)[-1]
-        return f'CHEBI:{numeric}', 'chebi'
+        # Normalise to "CHEBI:xxxxx"; parser emits "chebi:xxxxx" (lowercase).
+        numeric = chebi.split(":", 1)[-1]
+        return f"CHEBI:{numeric}", "chebi"
 
     if kegg_id:
-        # Strip 'cpd:' prefix to bare compound ID (e.g. 'C00002').
-        bare = kegg_id.split(':', 1)[-1] if ':' in kegg_id else kegg_id
-        return bare, 'kegg'
+        # Strip "cpd:" prefix to bare compound ID (e.g. "C00002").
+        bare = kegg_id.split(":", 1)[-1] if ":" in kegg_id else kegg_id
+        return bare, "kegg"
 
-    return name, 'synonym'
+    return name, "synonym"
 
 
 # ---------------------------------------------------------------------------
@@ -95,70 +107,67 @@ def _record_to_interactions(record: dict) -> Generator[Interaction, None, None]:
     """
     Yield COSMOS Interaction records from one KEGG reaction dict.
 
-    Args:
-        record: Flat dict from the KEGG parser with keys ``'Reaction'``,
-            ``'UniProt'``, ``'Substrate'``, ``'Product'``.
-
-    Yields:
-        :class:`~.._record.Interaction` records with
-        ``interaction_type='catalysis'``, ``resource='KEGG'``, ``mor=1``.
+    Parses the flat format returned by ``reactions.raw()``:
+    ``uniprot_ids`` (semicolon-separated), ``reactant_*`` / ``product_*``
+    fields (``||``-separated).
     """
-    rxn_id = record.get('Reaction', '')
-    uniprot_raw = record.get('UniProt', '')
-    substrates = record.get('Substrate') or []
-    products = record.get('Product') or []
+    rxn_id = record.get("reaction_id", "")
+    uniprot_raw = record.get("uniprot_ids", "")
 
     if not uniprot_raw:
         return
 
-    uniprots = [u.strip() for u in uniprot_raw.split(';') if u.strip()]
+    uniprots = [u.strip() for u in uniprot_raw.split(";") if u.strip()]
 
     if not uniprots:
         return
 
-    attrs = {'reaction_id': rxn_id}
+    substrates = _parse_compounds(
+        record.get("reactant_kegg_id", ""),
+        record.get("reactant_chebi", ""),
+        record.get("reactant_name", ""),
+    )
+    products = _parse_compounds(
+        record.get("product_kegg_id", ""),
+        record.get("product_chebi", ""),
+        record.get("product_name", ""),
+    )
+
+    attrs = {"reaction_id": rxn_id}
 
     for compound in substrates:
-
         cid, cid_type = _compound_id(compound)
-
         if not cid:
             continue
-
         for uniprot in uniprots:
-
             yield Interaction(
                 source=cid,
                 target=uniprot,
-                source_type='small_molecule',
-                target_type='protein',
+                source_type="small_molecule",
+                target_type="protein",
                 id_type_a=cid_type,
-                id_type_b='uniprot',
-                interaction_type='catalysis',
-                resource='KEGG',
+                id_type_b="uniprot",
+                interaction_type="catalysis",
+                resource="KEGG",
                 mor=1,
                 locations=(),
                 attrs=attrs,
             )
 
     for compound in products:
-
         cid, cid_type = _compound_id(compound)
-
         if not cid:
             continue
-
         for uniprot in uniprots:
-
             yield Interaction(
                 source=uniprot,
                 target=cid,
-                source_type='protein',
-                target_type='small_molecule',
-                id_type_a='uniprot',
+                source_type="protein",
+                target_type="small_molecule",
+                id_type_a="uniprot",
                 id_type_b=cid_type,
-                interaction_type='catalysis',
-                resource='KEGG',
+                interaction_type="catalysis",
+                resource="KEGG",
                 mor=1,
                 locations=(),
                 attrs=attrs,
@@ -179,31 +188,14 @@ def kegg_interactions(
     Data acquisition is delegated to
     :func:`pypath.inputs_v2.kegg_metabolic.make_kegg_resource`, which
     downloads and caches the KEGG REST endpoints via the inputs_v2
-    infrastructure.  The raw reaction dicts are then converted to
-    :class:`~.._record.Interaction` records by :func:`_record_to_interactions`.
-
-    Supported organisms: human (9606), mouse (10090), rat (10116), and
-    others defined in :data:`pypath.inputs_v2.kegg_metabolic._KEGG_ORGANISM_CODES`.
-
-    Two directed edges are emitted per (compound, enzyme) pair:
-
-    - ``substrate → enzyme`` (``source_type='small_molecule'``)
-    - ``enzyme → product``   (``source_type='protein'``)
-
-    Protein IDs come out of the KEGG parser as UniProt ACs (already resolved
-    via the gene→EC→reaction→UniProt chain) so no protein translation is
-    needed downstream.  Metabolite IDs use ChEBI when available in the KEGG
-    annotation, KEGG compound ID otherwise, compound name as last resort.
+    infrastructure.
 
     Args:
-        organism:
-            NCBI taxonomy ID.  Mapped to a KEGG organism code via
-            :func:`pypath.inputs_v2.kegg_metabolic.kegg_organism_code`.
-            Yields nothing and logs a warning for unmapped organisms.
+        organism: NCBI taxonomy ID.
 
     Yields:
         :class:`~.._record.Interaction` records with
-        ``interaction_type='catalysis'``, ``resource='KEGG'``, ``mor=1``.
+        ``interaction_type="catalysis"``, ``resource="KEGG"``, ``mor=1``.
     """
     try:
         from pypath.inputs_v2.kegg_metabolic import kegg_organism_code, make_kegg_resource
@@ -218,26 +210,25 @@ def kegg_interactions(
 
     if org_code is None:
         _log.warning(
-            '[COSMOS] KEGG: no organism code for taxon %d — skipping. '
-            'Supported organisms: %s',
+            "[COSMOS] KEGG: no organism code for taxon %d — skipping.",
             organism,
-            ', '.join(
-                f'{name} ({taxon})'
-                for taxon, name in {
-                    9606: 'hsa', 10090: 'mmu', 10116: 'rno',
-                    7955: 'dre', 6239: 'cel', 7227: 'dme', 4932: 'sce',
-                }.items()
-            ),
         )
         return
 
-    _log.info('[COSMOS] KEGG: loading reactions for %s (taxon %d)...', org_code, organism)
+    _log.info("[COSMOS] KEGG: loading reactions for %s (taxon %d)...", org_code, organism)
     kegg_resource = make_kegg_resource(org_code)
     n_records = 0
+    n_interactions = 0
 
     for record in kegg_resource.reactions.raw():
-
         n_records += 1
-        yield from _record_to_interactions(record)
+        for interaction in _record_to_interactions(record):
+            n_interactions += 1
+            yield interaction
 
-    _log.info('[COSMOS] KEGG: processed %d reaction records for %s.', n_records, org_code)
+    _log.info(
+        "[COSMOS] KEGG: %d reaction records → %d interactions for %s.",
+        n_records,
+        n_interactions,
+        org_code,
+    )
