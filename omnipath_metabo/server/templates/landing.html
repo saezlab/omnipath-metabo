@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniPath Metabo: integrated prior knowledge and tools for metabolomics</title>
+    <link href="https://fonts.googleapis.com/css?family=Raleway:400,300,600" rel="stylesheet">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/normalize.css">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/barebones.css">
+    <link rel="stylesheet" href="https://omnipathdb.org/css/omnipath.css">
+    <link rel="icon" type="image/vnd.microsoft.icon" href="https://omnipathdb.org/favicon.ico">
+    <style>
+        h5 { font-weight: 600; margin-bottom: 0.4rem; }
+        .box code, .box a.code { font-size: 85%; }
+        pre code { font-size: 85%; }
+
+        /* Subtitle under the nav bar */
+        .subtitle { font-size: medium; color: #454447; margin: 0.5rem 0 1.5rem 0; }
+
+        /* Shorter variant of the glowing #browse-button, several side by side */
+        .btn-row { margin: 0.5rem 0 1.5rem 0; }
+        .glow-button {
+            padding: 9px 16px 7px 16px;
+            color: #FFFFFF;
+            background-color: #6EA945;
+            cursor: pointer;
+            margin: 6px 8px 6px 0;
+            display: inline-block;
+            font-weight: 600;
+            text-align: center;
+            font-size: large;
+            text-decoration: none;
+            border-width: 0;
+            border-bottom: none !important;
+            animation: yellow-sweep 5s linear infinite;
+            background-size: 500% 100%;
+            background-position: -100vw;
+            background-image: linear-gradient(90deg, #6EA945 0%, #FCCC06 10%, #FCCC06 13%, #6EA945 23%);
+        }
+        /* Keep the label white in every state (the global a:link / a:hover
+           rules would otherwise turn it dark, then green-on-hover). */
+        .glow-button:link, .glow-button:visited, .glow-button:active, .glow-button:hover {
+            color: #FFFFFF !important;
+            border-bottom: none !important;
+        }
+        /* Stagger the sweeps so the buttons don't flash in unison */
+        .btn-row a.glow-button:nth-of-type(2) { animation-delay: 1.6s; }
+        .btn-row a.glow-button:nth-of-type(3) { animation-delay: 3.2s; }
+
+        /* Product boxes: logo above a large, light, one-line title.
+           h1 gives the light (300-weight) look; size is capped so the
+           titles stay on a single row in the 3-column layout. */
+        .product-logo { height: 40px; width: auto; margin-bottom: 6px; }
+        .content-box h1 {
+            font-size: 2.6rem;
+            font-weight: 300;
+            line-height: 1.15;
+            letter-spacing: -.04rem;
+            margin-bottom: 1rem;
+        }
+        .content-box .small { color: #646567; }
+
+        /* Modest preview notice under the highlight buttons */
+        .preview-note { font-size: small; margin: 0.5rem 2em 2.5rem 2em; }
+
+        /* Footer institute logos — vertically centre logos of differing heights */
+        .footer-logos { align-items: center; }
+        .footer-logos img.logo { width: auto; max-height: 60px; }
+        .footer-note { font-size: medium; margin-top: 1rem; }
+
+        .contrib p { line-height: 1.9; }
+    </style>
+</head>
+<body>
+    <!-- Header: logo + title -->
+    <div class="grid-container u-align-left thirds">
+        <div>
+            <a class="no-uline" href="https://metabo.omnipathdb.org/">
+                <img src="/static/img/omnipath_logo.png"
+                     title="OmniPath Metabo" class="full-width" />
+            </a>
+        </div>
+        <div class="span2 u-align-right">
+            <h2>Integrated prior knowledge and tools for metabolomics</h2>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="grid-container u-align-left full">
+        <nav>
+            <a class="topmenu" href="#tools"><span class="nav">tools</span></a>
+            <a class="topmenu" href="#figures"><span class="nav">overview</span></a>
+            <a class="topmenu" href="/schema/swagger"><span class="nav">API docs</span></a>
+            <a class="topmenu" href="#papers"><span class="nav">publications</span></a>
+            <a class="topmenu" href="#faq"><span class="nav">FAQ</span></a>
+            <a class="topmenu" href="#contrib"><span class="nav">contributors</span></a>
+            <a class="topmenu" href="https://saezlab.github.io/omnipath-client/"><span class="nav">documentation</span></a>
+            <a class="topmenu" href="https://github.com/saezlab/omnipath-metabo"><span class="nav">GitHub</span></a>
+            <a class="topmenu" href="https://omnipathdb.org"><span class="nav">OmniPath</span></a>
+        </nav>
+    </div>
+
+    <!-- Subtitle -->
+    <div class="grid-container u-align-left full">
+        <p class="subtitle">
+            Metabolomics tools from the
+            <a href="https://saezlab.org/">Saez Lab</a> and
+            <a href="https://www.korcsmaroslab.org/">Korcsmaros Lab</a>.
+        </p>
+    </div>
+
+    <!-- Highlighted buttons -->
+    <div class="grid-container u-align-left full">
+        <div class="btn-row">
+            <a class="glow-button" href="https://static.omnipathdb.org/omnipath-metabo-preprint-June2026.pdf">Read the OmniPath Metabo preprint</a>
+            <a class="glow-button" href="https://dev.omnipathdb.org">Browse OmniPath data</a>
+            <a class="glow-button" href="https://explore.omnipathdb.org">The old OmniPath</a>
+        </div>
+    </div>
+
+    <!-- Preview notice (short; details in the FAQ) -->
+    <div class="grid-container u-align-left full">
+        <div class="box yellowbox preview-note">
+            <strong>Preview.</strong> The new OmniPath and its Metabo extension are under active
+            development: contents are updated frequently and may be incomplete, and versioning,
+            archiving and stable hosting are not in place yet. Please use it for exploration only,
+            not for reproducible analysis. See the <a href="#faq">FAQ</a> for details.
+        </div>
+    </div>
+
+    <!-- Intro -->
+    <div class="grid-container u-align-left full">
+        <div>
+            <p>
+                OmniPath Metabo brings together chemical structures, metabolite&ndash;protein
+                interactions, annotations, cheminformatics and chemical ontologies into a single,
+                harmonized prior-knowledge resource for metabolomics. It powers pre-built
+                prior-knowledge networks for multi-omics causal reasoning (the
+                <a href="https://saezlab.github.io/cosmosR/">COSMOS</a> PKN), and is accessible
+                through the <a href="https://dev.omnipathdb.org">web app</a>, the
+                <a href="https://dev.omnipathdb.org/api/docs/">HTTP web service</a>, and the
+                Python (<a href="https://saezlab.github.io/omnipath-client/">omnipath-client</a>)
+                and R (<a href="https://r.omnipathdb.org/">OmnipathR</a>,
+                <a href="https://saezlab.github.io/MetaProViz/">MetaProViz</a>) packages.
+            </p>
+        </div>
+    </div>
+
+    <!-- Tools -->
+    <div class="grid-container u-align-left thirds" id="tools">
+
+        <div class="content-box">
+            <h1>OmniPath web app</h1>
+            <p>
+                Browse the OmniPath database in an interactive web app at
+                <a href="https://dev.omnipathdb.org">dev.omnipathdb.org</a>.
+            </p>
+        </div>
+
+        <div class="content-box">
+            <h1>Web service</h1>
+            <p>
+                Access OmniPath data through our new web service at
+                <a href="https://dev.omnipathdb.org/api/docs/">dev.omnipathdb.org/api/docs/</a>.
+            </p>
+        </div>
+
+        <div class="content-box">
+            <h1>OmniPath Utils</h1>
+            <p>
+                Translate between dozens of chemical and gene product identifiers, and handle
+                taxonomy and orthology seamlessly with
+                <a href="https://utils.omnipathdb.org">OmniPath Utils</a>.
+            </p>
+        </div>
+
+        <div class="content-box">
+            <h1>
+                <a class="no-uline" href="https://saezlab.github.io/omnipath-client/">
+                    <img class="product-logo" src="/static/img/python-logo.svg" alt="Python logo"/>
+                </a><br/>
+                python-client
+            </h1>
+            <p>
+                Access the OmniPath web service directly from Python with
+                <a href="https://saezlab.github.io/omnipath-client/">omnipath-client</a>.
+                Available on
+                <a href="https://pypi.org/project/omnipath-client/">PyPI</a> and
+                <a href="https://github.com/saezlab/omnipath-client">GitHub</a>.
+            </p>
+        </div>
+
+        <div class="content-box">
+            <h1>
+                <a class="no-uline" href="https://r.omnipathdb.org/">
+                    <img class="product-logo" src="/static/img/r-bioc-logo.svg" alt="R / Bioconductor logo"/>
+                </a><br/>
+                OmnipathR
+            </h1>
+            <p>
+                Direct, easy access to several metabolite databases from R with
+                <a href="https://r.omnipathdb.org/">OmnipathR</a>.
+                Available on
+                <a href="https://bioconductor.org/packages/release/bioc/html/OmnipathR.html">Bioconductor</a> and
+                <a href="https://github.com/saezlab/OmnipathR">GitHub</a>.
+            </p>
+        </div>
+
+        <div class="content-box">
+            <h1>
+                <a class="no-uline" href="https://saezlab.github.io/MetaProViz/">
+                    <img class="product-logo" src="/static/img/r-bioc-logo.svg" alt="R / Bioconductor logo"/>
+                </a><br/>
+                MetaProViz
+            </h1>
+            <p>
+                Metabolomics data processing, differential and functional analysis and
+                visualization in the R/Bioconductor package
+                <a href="https://saezlab.github.io/MetaProViz/">MetaProViz</a>.
+                Available on
+                <a href="https://bioconductor.org/packages/release/bioc/html/MetaProViz.html">Bioconductor</a> and
+                <a href="https://github.com/saezlab/MetaProViz">GitHub</a>.
+            </p>
+        </div>
+
+    </div>
+
+    <!-- Display figures -->
+    <div class="grid-container u-align-left full">
+        <h4 id="figures" class="target">What is OmniPath?</h4>
+    </div>
+    <div class="grid-container u-align-left quarters">
+        <div class="span3">
+            <p id="fig-overview" class="picture target">
+                <a class="no-uline" href="/static/fig/omnipath-metabo-overview.pdf">
+                    <img src="/static/fig/omnipath-metabo-overview.png" class="full-width"
+                         title="OmniPath Metabo overview"
+                         alt="OmniPath Metabo integrates diverse interactions, annotations, structures, cheminformatics and chemical ontologies"/>
+                </a>
+            </p>
+        </div>
+        <div>
+            <p class="caption">
+                OmniPath Metabo integrates diverse interactions, annotations, structures,
+                cheminformatics, chemical ontologies and more. For the high-resolution PDF
+                <a href="/static/fig/omnipath-metabo-overview.pdf">click here</a>.
+            </p>
+        </div>
+
+        <div class="span3">
+            <p id="fig-architecture" class="picture target">
+                <a class="no-uline" href="/static/fig/omnipath-architecture.pdf">
+                    <img src="/static/fig/omnipath-architecture.png" class="full-width"
+                         title="OmniPath workflow and design"
+                         alt="OmniPath workflow and design"/>
+                </a>
+            </p>
+        </div>
+        <div>
+            <p class="caption">
+                Workflow and design. OmniPath directly accesses original resources and harmonizes
+                them to a common database schema. OmniPath data is available through 3 web APIs:
+                the <a href="https://dev.omnipathdb.org/api/docs/">main OmniPath</a> service,
+                <a href="https://utils.omnipathdb.org/schema/swagger/">OmniPath Utils</a> and
+                <a href="https://metabo.omnipathdb.org/schema/swagger">OmniPath Metabo</a>,
+                all accessible through
+                <a href="https://saezlab.github.io/omnipath-client/">omnipath-client</a>.
+                For the high-resolution PDF
+                <a href="/static/fig/omnipath-architecture.pdf">click here</a>.
+            </p>
+        </div>
+    </div>
+
+    <!-- Publications -->
+    <div class="grid-container u-align-left full">
+        <h4 id="papers" class="target">OmniPath publications</h4>
+
+        <strong>OmniPath Metabo (preprint, 2026)</strong>
+        <p>
+            J Schaul, Y Bai, D Bottazzi, J Franken, T Lawrence, N Palacio-Escat, E Carreño,
+            M Daley, L Gul, A Sahin, D Mañanes, B Bohar, A Dugourd, T Korcsmaros, D Turei,
+            C Schmidt and J Saez-Rodriguez (2026) OmniPath Metabo: chemical structures,
+            interactions and mechanisms to study the metabolome.
+            <em>Preprint</em><br/>
+            <a href="https://static.omnipathdb.org/omnipath-metabo-preprint-June2026.pdf">PDF</a>
+        </p>
+
+        <strong>2026 update presenting OmniPath Explorer</strong>
+        <p>
+            D Türei, J Schaul, N Palacio-Escat, B Bohár, Y Bai, F Ceccarelli, E Çevrim, M Daley,
+            M Darcan, D Dimitrov, T Doğan, D Domingo-Fernández, A Dugourd, A Gábor, L Gul, BA Hall,
+            CT Hoyt, O Ivanova, M Klein, T Lawrence, D Mañanes, D Módos, S Müller-Dott, M Ölbei,
+            C Schmidt, B Şen, FJ Theis, A Ünlü, E Ulusoy, A Valdeolivas, T Korcsmáros and
+            J Saez-Rodriguez (2026) OmniPath: integrated knowledgebase for multi-omics analysis.
+            <em>
+                <a href="https://academic.oup.com/nar/article/54/D1/D652/8326458">Nucleic Acids Res</a>
+            </em>
+            54(D1): D652-D660<br/>
+            <a href="https://pubmed.ncbi.nlm.nih.gov/41251164/">PMID: 41251164</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://academic.oup.com/nar/article-pdf/54/D1/D652/8326458/gkaf1126.pdf">PDF</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://doi.org/10.1093/nar/gkaf1126">DOI: 10.1093/nar/gkaf1126</a>
+        </p>
+
+        <strong>2021 update focusing on intercellular signaling knowledge</strong>
+        <p>
+            D Turei, A Valdeolivas, L Gul, N Palacio-Escat, M Klein, O Ivanova, M Olbei, A Gabor,
+            F Theis, D Modos, T Korcsmaros and J Saez-Rodriguez (2021) Integrated intra- and
+            intercellular signaling knowledge for multicellular omics analysis.
+            <em>
+                <a href="https://www.embopress.org/doi/full/10.15252/msb.20209923">Mol Syst Biol</a>
+            </em>
+            17: e9923<br/>
+            <a href="https://pubmed.ncbi.nlm.nih.gov/33749993/">PMID: 33749993</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://www.embopress.org/doi/pdfdirect/10.15252/msb.20209923?download=true">PDF</a>
+        </p>
+
+        <strong>The OmniPath paper with the original objectives and design</strong>
+        <p>
+            D Turei, T Korcsmaros and J Saez-Rodriguez (2016) OmniPath: guidelines and gateway
+            for literature-curated signaling pathway resources.
+            <em>Nature Methods</em> 13 (12)<br/>
+            <a href="https://www.ncbi.nlm.nih.gov/pubmed/27898060">PMID: 27898060</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://rdcu.be/m53B" title="Access the paper via readcube">Full text</a>&nbsp;&nbsp;|&nbsp;&nbsp;
+            <a href="https://static-content.springer.com/esm/art%3A10.1038%2Fnmeth.4077/MediaObjects/41592_2016_BFnmeth4077_MOESM495_ESM.pdf">Supplementary</a>
+        </p>
+    </div>
+
+    <!-- FAQ -->
+    <div class="grid-container u-align-left full">
+        <h4 id="faq" class="target">Frequently asked questions</h4>
+
+        <strong>Is this ready for production use?</strong>
+        <div class="box yellowbox">
+            <p>
+                <strong>Not yet &mdash; please treat this as a preview.</strong>
+                The new OmniPath database and its Metabo extension are still under active
+                development. The contents are updated frequently and currently lack completeness
+                and thorough quality control. Versioning and archiving are not implemented yet,
+                and the hosting is not reliable. For these reasons, please use it for
+                <strong>exploratory purposes only</strong> &mdash; it is not suitable for
+                reproducible analysis. We expect it to become ready for that by autumn 2026.
+                We welcome feedback and are happy to include new design ideas and resources &mdash;
+                <a href="https://github.com/saezlab/omnipath-metabo/issues">let us know</a>!
+            </p>
+        </div>
+
+        <strong>What is the COSMOS PKN?</strong>
+        <p>
+            The COSMOS prior-knowledge network (PKN) is a pre-built network of
+            metabolite&ndash;protein interactions for multi-omics causal reasoning with
+            <a href="https://saezlab.github.io/cosmosR/">cosmosR</a>
+            (<a href="https://www.biorxiv.org/content/10.1101/2024.07.15.603538v3">preprint</a>).
+            An easy-to-use and much more powerful Python implementation is coming soon. The PKN
+            combines transporters, receptors, allosteric regulators and enzyme&ndash;metabolite
+            interactions, and can be filtered by category, resource and organism.
+        </p>
+
+        <strong>Which identifiers do you use?</strong>
+        <p>
+            Metabolites are identified primarily by InChIKey, and also mapped to ChEBI. Gene
+            products (including proteins) are identified primarily by NCBI Entrez Gene ID and
+            UniProt. Records from different resources can therefore be combined directly. For
+            translation between dozens of further chemical and gene product identifiers use
+            <a href="https://utils.omnipathdb.org">OmniPath Utils</a>.
+        </p>
+
+        <strong>Which organisms are supported?</strong>
+        <p>
+            The main OmniPath database and OmniPath Utils cover a wide range of organisms. The
+            specialized networks in the OmniPath Metabo web service are currently limited to human
+            and mouse. Every query takes an <code>organism</code> parameter (NCBI Taxonomy ID,
+            e.g. <code>9606</code> for human).
+        </p>
+
+        <strong>How can I access the data?</strong>
+        <p>
+            Through this HTTP web service with
+            <a href="/schema/swagger">interactive documentation</a>, from Python with
+            <a href="https://saezlab.github.io/omnipath-client/">omnipath-client</a>, from R with
+            <a href="https://r.omnipathdb.org/">OmnipathR</a>, or via the
+            <code>omnipath-metabo</code> Python package.
+        </p>
+
+        <strong>Is there a license?</strong>
+        <p>
+            Our software is fully open source: the server-side components are licensed under
+            GPLv3, while all client-side software is under the permissive, business-friendly
+            BSD-3-Clause license, so it can be used freely in commercial projects. The OmniPath
+            <strong>data</strong> itself carries no license of its own; instead, the database
+            records the licenses of every integrated resource, and will soon support filtering its
+            contents for for-profit (commercial) use. Please consult and cite the original
+            resources when you use the data.
+        </p>
+    </div>
+
+    <!-- Contributors -->
+    <div class="grid-container u-align-left full contrib" id="contrib">
+        <h4 class="target">Contributors</h4>
+        <p>
+            <a href="https://saezlab.org/person/jonathan-schaul">Jonathan Schaul</a>,
+            <a href="https://saezlab.org/person/yunfan-bai">Yunfan Bai</a>,
+            Daniele Bottazzi,
+            Jannik Franken,
+            <a href="https://www.korcsmaroslab.org/tobylawrence">Toby Lawrence</a>,
+            <a href="https://saezlab.org/person/nicol%C3%A0s-palacio-escat">Nicol&agrave;s Palacio-Escat</a>,
+            Edwin Carre&ntilde;o,
+            Macabe Daley,
+            <a href="https://www.korcsmaroslab.org/leilagul">Lejla Gul</a>,
+            Ardic Sahin,
+            Diego Ma&ntilde;anes,
+            <a href="https://www.korcsmaroslab.org/balazsbohar">Balazs Bohar</a>,
+            <a href="https://saezlab.org/person/aur%C3%A9lien-dugourd">Aurelien Dugourd</a>,
+            <a href="https://www.korcsmaroslab.org/tamaskorcsmaros">Tamas Korcsmaros</a>,
+            <a href="https://saezlab.org/person/denes-turei">Denes Turei</a>,
+            <a href="https://saezlab.org/person/christina-schmidt">Christina Schmidt</a> and
+            <a href="https://saezlab.org/person/julio-saez-rodriguez">Julio Saez-Rodriguez</a>.
+        </p>
+    </div>
+
+    <!-- Institute logos -->
+    <div class="grid-container u-align-left thirds footer-logos" id="institutes">
+        <div class="font-medium">
+            <a class="no-uline" href="https://www.uni-heidelberg.de/en">
+                <img alt="Heidelberg University and University Hospital" class="logo align-middle"
+                     style="max-width: 232px;" src="/static/img/uniklinik_hd_logo.png"/>
+            </a>
+        </div>
+        <div class="font-medium">
+            <a class="no-uline" href="https://www.imperial.ac.uk/">
+                <img alt="Imperial College London" class="logo align-middle"
+                     style="max-width: 200px;" src="/static/img/imperial_logo.png"/>
+            </a>
+        </div>
+        <div class="font-medium">
+            <a class="no-uline" href="https://www.ebi.ac.uk/">
+                <img alt="EMBL-EBI, Hinxton" class="logo align-middle"
+                     style="max-width: 190px;" src="/static/img/embl_ebi_logo.png"/>
+            </a>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <div class="grid-container u-align-left full">
+        <p class="footer-note small">
+            OmniPath Metabo is developed by the
+            <a href="https://saezlab.org/">Saez Lab</a>
+            (Heidelberg University &amp; EMBL-EBI) and the
+            <a href="https://www.korcsmaroslab.org/">Korcsmaros Lab</a>
+            (Imperial College London).
+            Source code on
+            <a href="https://github.com/saezlab/omnipath-metabo">GitHub</a>.
+            Questions:
+            <a href="https://github.com/saezlab/omnipath-metabo/issues">open an issue</a>
+            or write to omnipathdb@gmail.com.
+        </p>
+    </div>
+
+    <script src="/static/js/anchor-offset.js"></script>
+</body>
+</html>
