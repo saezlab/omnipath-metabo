@@ -69,6 +69,20 @@
         .footer-note { font-size: medium; margin-top: 1rem; }
 
         .contrib p { line-height: 1.9; }
+
+        /* Software package table */
+        .pkg-table { width: 100%; font-size: 90%; border-collapse: collapse; margin: 0.5rem 0 1.5rem 0; }
+        .pkg-table th, .pkg-table td { text-align: left; vertical-align: top; padding: 6px 10px; }
+        .pkg-table thead th { border-bottom: 2px solid #6EA945; }
+        .pkg-table tbody tr { border-bottom: 1px solid #e6e6e6; }
+        .pkg-table .pkg-name { font-weight: 600; white-space: nowrap; }
+        .pkg-table .pkg-name .alt { font-weight: 400; color: #646567; }
+        .pkg-table tr.pkg-group td {
+            background: #f4f6f1; font-weight: 600; color: #44524b;
+            border-bottom: none; padding-top: 12px; letter-spacing: .02rem;
+        }
+        .pkg-table td a { white-space: nowrap; }
+        .pkg-table td .none { color: #b0b0b0; }
     </style>
 </head>
 <body>
@@ -93,6 +107,7 @@
             <a class="topmenu" href="/schema/swagger"><span class="nav">API docs</span></a>
             <a class="topmenu" href="#papers"><span class="nav">publications</span></a>
             <a class="topmenu" href="#faq"><span class="nav">FAQ</span></a>
+            <a class="topmenu" href="#packages"><span class="nav">packages</span></a>
             <a class="topmenu" href="#contrib"><span class="nav">contributors</span></a>
             <a class="topmenu" href="https://saezlab.github.io/omnipath-client/"><span class="nav">documentation</span></a>
             <a class="topmenu" href="https://github.com/saezlab/omnipath-metabo"><span class="nav">GitHub</span></a>
@@ -223,6 +238,14 @@
             </p>
         </div>
 
+    </div>
+
+    <!-- Pointer to the full package table at the bottom of the page -->
+    <div class="grid-container u-align-left full">
+        <p>
+            These are the recommended entry points. For the full family of OmniPath and
+            infrastructure packages, see <a href="#packages">More packages</a> below.
+        </p>
     </div>
 
     <!-- Display figures -->
@@ -391,6 +414,127 @@
             contents for for-profit (commercial) use. Please consult and cite the original
             resources when you use the data.
         </p>
+    </div>
+
+    <!-- Packages -->
+    <div class="grid-container u-align-left full">
+        <h4 id="packages" class="target">Packages</h4>
+        <p>
+            OmniPath Metabo is built and accessed through a family of open-source packages.
+            The client packages are the recommended entry points; the others build the
+            databases and web services or provide shared infrastructure.
+        </p>
+        <table class="pkg-table">
+            <thead>
+                <tr>
+                    <th>Package</th>
+                    <th>Description</th>
+                    <th>Docs</th>
+                    <th>Code</th>
+                    <th>Package</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr class="pkg-group"><td colspan="5">Client packages</td></tr>
+                <tr>
+                    <td class="pkg-name">omnipath-client</td>
+                    <td>Python client for all OmniPath web services (main, Utils and Metabo).</td>
+                    <td><a href="https://saezlab.github.io/omnipath-client/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/omnipath-client">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/omnipath-client/">PyPI</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">OmnipathR</td>
+                    <td>R/Bioconductor client for OmniPath: interactions, annotations and metabolite databases.</td>
+                    <td><a href="https://r.omnipathdb.org/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/OmnipathR">GitHub</a></td>
+                    <td><a href="https://bioconductor.org/packages/release/bioc/html/OmnipathR.html">Bioconductor</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">MetaProViz</td>
+                    <td>R/Bioconductor toolkit for metabolomics data processing, differential and functional analysis, and visualization.</td>
+                    <td><a href="https://saezlab.github.io/MetaProViz/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/MetaProViz">GitHub</a></td>
+                    <td><a href="https://bioconductor.org/packages/release/bioc/html/MetaProViz.html">Bioconductor</a></td>
+                </tr>
+
+                <tr class="pkg-group"><td colspan="5">OmniPath software</td></tr>
+                <tr>
+                    <td class="pkg-name">omnipath-resources <span class="alt">(pypath)</span></td>
+                    <td>Access and parsing of the original resources &mdash; the data-acquisition layer behind OmniPath.</td>
+                    <td><a href="https://pypath.omnipathdb.org/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/pypath">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/pypath-omnipath/">PyPI</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">omnipath-build</td>
+                    <td>Builds the main OmniPath database from the integrated resources, on top of pypath.</td>
+                    <td><span class="none">&mdash;</span></td>
+                    <td><a href="https://github.com/saezlab/omnipath-build">GitHub</a></td>
+                    <td><span class="none">&mdash;</span></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">omnipath-present</td>
+                    <td>The OmniPath web application: interactive database browser and HTTP API service.</td>
+                    <td><span class="none">&mdash;</span></td>
+                    <td><a href="https://github.com/saezlab/omnipath-present">GitHub</a></td>
+                    <td><span class="none">&mdash;</span></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">omnipath-utils</td>
+                    <td>Identifier translation, taxonomy, orthology and reference lists for molecular biology.</td>
+                    <td><a href="https://saezlab.github.io/omnipath-utils/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/omnipath-utils">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/omnipath-utils/">PyPI</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">omnipath-metabo</td>
+                    <td>OmniPath Metabo build extension and metabolomics web API (COSMOS PKN, cheminformatics, chemical ontologies).</td>
+                    <td><a href="https://saezlab.github.io/omnipath-metabo/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/omnipath-metabo">GitHub</a></td>
+                    <td><span class="none">&mdash;</span></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">ontosparse <span class="alt">(ontograph)</span></td>
+                    <td>Sparse ontology engine running inside the web service: loads, represents and efficiently queries biological ontologies as graph structures.</td>
+                    <td><a href="https://saezlab.github.io/ontograph/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/ontograph">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/ontograph/">PyPI</a></td>
+                </tr>
+
+                <tr class="pkg-group"><td colspan="5">Infrastructure</td></tr>
+                <tr>
+                    <td class="pkg-name">dlmachine</td>
+                    <td>Download manager: robust, resumable downloads of remote resources.</td>
+                    <td><span class="none">&mdash;</span></td>
+                    <td><a href="https://github.com/saezlab/dlmachine">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/dlmachine/">PyPI</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">cachedir</td>
+                    <td>Cache manager: organizes on-disk caches of downloaded and processed data.</td>
+                    <td><a href="https://saezlab.github.io/cachedir/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/cachedir">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/cachedir/">PyPI</a></td>
+                </tr>
+                <tr>
+                    <td class="pkg-name">pkg-infra</td>
+                    <td>Shared session, configuration and logging infrastructure for Saez Lab packages.</td>
+                    <td><a href="https://saezlab.github.io/pkg-infra/">docs</a></td>
+                    <td><a href="https://github.com/saezlab/pkg-infra">GitHub</a></td>
+                    <td><a href="https://pypi.org/project/pkg-infra/">PyPI</a></td>
+                </tr>
+
+                <tr class="pkg-group"><td colspan="5">Reproducibility</td></tr>
+                <tr>
+                    <td class="pkg-name">metabo-usecases</td>
+                    <td>Integrated pipeline reproducing the figures, tables and case studies of the OmniPath Metabo paper.</td>
+                    <td><span class="none">&mdash;</span></td>
+                    <td><a href="https://github.com/saezlab/metabo-usecases">GitHub</a></td>
+                    <td><span class="none">&mdash;</span></td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 
     <!-- Contributors -->
