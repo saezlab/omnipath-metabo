@@ -40,6 +40,7 @@ class TestDefaultConfig:
             'kegg',
             'imm1415', 'imm1415_metabolic',
             'ppi', 'grn',
+            'cellphonedb_ligrec_sm', 'cellphonedb_ligrec_ppi',
         }
         assert set(cfg['resources']) == expected
 

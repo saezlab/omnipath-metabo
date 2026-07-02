@@ -17,6 +17,8 @@
 
 __all__ = [
     'brenda_regulations',
+    'cellphonedb_nonpeptidic_interactions',
+    'cellphonedb_ppi_interactions',
     'gem_interactions',
     'imm1415_metabolic_interactions',
     'imm1415_transporter_interactions',
@@ -32,6 +34,7 @@ __all__ = [
 ]
 
 from .brenda import brenda_regulations
+from .cellphonedb import cellphonedb_nonpeptidic_interactions, cellphonedb_ppi_interactions
 from .gem import gem_interactions
 from .imm1415 import imm1415_metabolic_interactions, imm1415_transporter_interactions
 from .kegg import kegg_interactions

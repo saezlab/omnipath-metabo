@@ -61,6 +61,8 @@ def _progress(iterable, desc: str, **kwargs):
     return iterable
 from .resources import (
     brenda_regulations,
+    cellphonedb_nonpeptidic_interactions,
+    cellphonedb_ppi_interactions,
     gem_interactions,
     imm1415_metabolic_interactions,
     imm1415_transporter_interactions,
@@ -97,6 +99,8 @@ PROCESSORS = {
     'kegg': kegg_interactions,
     'ppi': ppi_interactions,
     'grn': grn_interactions,
+    'cellphonedb_ligrec_sm': cellphonedb_nonpeptidic_interactions,
+    'cellphonedb_ligrec_ppi': cellphonedb_ppi_interactions,
 }
 
 
@@ -679,6 +683,7 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
     kwargs.setdefault('kegg', False)
     kwargs.setdefault('recon3d_metabolic', False)
     kwargs.setdefault('imm1415_metabolic', False)
+    kwargs.setdefault('cellphonedb_ligrec_ppi', False)
     bundle = build(*args, row_filter=_is_transport, **kwargs)
     _report_resource_overlaps(bundle, 'transporter', kwargs.get('translate_ids', True))
     return bundle
@@ -744,6 +749,7 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
     kwargs.setdefault('imm1415_metabolic', False)
     kwargs.setdefault('kegg', False)
     kwargs.setdefault('mrclinksdb_transporter', False)
+    kwargs.setdefault('cellphonedb_ligrec_ppi', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, _is_receptor)
     _report_resource_overlaps(bundle, 'receptor', kwargs.get('translate_ids', True))
@@ -787,6 +793,8 @@ def build_allosteric(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('imm1415', False)
     kwargs.setdefault('imm1415_metabolic', False)
     kwargs.setdefault('kegg', False)
+    kwargs.setdefault('cellphonedb_ligrec_sm', False)
+    kwargs.setdefault('cellphonedb_ligrec_ppi', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, lambda row: (
         row.interaction_type == 'allosteric_regulation' or
@@ -841,6 +849,8 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('recon3d', False)
     kwargs.setdefault('imm1415', False)
     kwargs.setdefault('stitch', False)
+    kwargs.setdefault('cellphonedb_ligrec_sm', False)
+    kwargs.setdefault('cellphonedb_ligrec_ppi', False)
     # recon3d_metabolic, imm1415_metabolic, and kegg are enabled by default from config.
     # GEM metabolic resources use 'GEM:' prefix; KEGG uses 'KEGG' — both pass the filter.
     bundle = build(
@@ -879,7 +889,7 @@ def build_ppi(*args, filter_unsigned: bool = False, **kwargs) -> CosmosBundle:
     for res in (
         'tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter',
         'gem', 'recon3d', 'recon3d_metabolic', 'imm1415', 'imm1415_metabolic',
-        'kegg', 'stitch', 'grn',
+        'kegg', 'stitch', 'grn', 'cellphonedb_ligrec_sm',
     ):
         kwargs.setdefault(res, False)
 
@@ -919,7 +929,7 @@ def build_grn(*args, filter_unsigned: bool = False, **kwargs) -> CosmosBundle:
     for res in (
         'tcdb', 'slc', 'brenda', 'mrclinksdb', 'mrclinksdb_transporter',
         'gem', 'recon3d', 'recon3d_metabolic', 'imm1415', 'imm1415_metabolic',
-        'kegg', 'stitch', 'ppi',
+        'kegg', 'stitch', 'ppi', 'cellphonedb_ligrec_sm', 'cellphonedb_ligrec_ppi',
     ):
         kwargs.setdefault(res, False)
 

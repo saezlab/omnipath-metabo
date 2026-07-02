@@ -683,6 +683,34 @@ def _build_metab_mapping(
         )
         return {k: _normalize_chebi(v) for k, v in result.items()}
 
+    if id_type == 'name':
+        # US6 (FR-023, R4): CellPhoneDB free-text metabolite names -> ChEBI via
+        # the OmniPath web service, querying a union of tiers (first hit wins
+        # per name; later tiers only queried for names still unresolved).
+        import omnipath_client.utils as oc_utils
+
+        result: dict[str, str | None] = {uid: None for uid in unique_ids}
+        remaining = list(unique_ids)
+
+        for tier in ('name', 'synonym', 'iupac', 'traditional_iupac'):
+            if not remaining:
+                break
+            name_df = pd.DataFrame({'name': remaining})
+            translated = oc_utils.translate_column(
+                name_df, 'name', tier, 'chebi', new_column='chebi', expand=False,
+            )
+            for _, row in translated.iterrows():
+                if pd.notna(row['chebi']) and result[row['name']] is None:
+                    result[row['name']] = row['chebi']
+            remaining = [uid for uid in remaining if result[uid] is None]
+
+        n_resolved = sum(1 for v in result.values() if v is not None)
+        _log.info(
+            '[COSMOS] name->ChEBI: %d/%d resolved (tiers: name/synonym/iupac/traditional_iupac)',
+            n_resolved, len(unique_ids),
+        )
+        return {k: _normalize_chebi(v) for k, v in result.items()}
+
     if id_type == 'metatlas':
         # Each row may come from a different GEM -- build per-GEM mappings.
         gem_names = _gem_name_series(resource_series)

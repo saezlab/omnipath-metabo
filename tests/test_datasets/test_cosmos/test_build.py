@@ -211,6 +211,7 @@ class TestProcessorsRegistry:
             'imm1415', 'imm1415_metabolic',
             'kegg',
             'ppi', 'grn',
+            'cellphonedb_ligrec_sm', 'cellphonedb_ligrec_ppi',
         }
         assert set(PROCESSORS) == expected
 

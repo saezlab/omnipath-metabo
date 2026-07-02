@@ -953,3 +953,113 @@ class TestNormalizeChebi:
 
     def test_none_returns_none(self):
         assert _normalize_chebi(None) is None
+
+
+# ---------------------------------------------------------------------------
+# _build_metab_mapping -- 'name' branch (US6/FR-023, multi-tier translate_column, R4)
+# ---------------------------------------------------------------------------
+
+class TestBuildMetabMappingName:
+    """New 'name' branch: multi-tier translate_column (R4).
+
+    Tiers are queried in order (name, synonym, iupac, traditional_iupac);
+    a name resolved by an earlier tier is not re-queried in later tiers.
+    """
+
+    def test_tiers_queried_in_order(self):
+        calls = []
+
+        def fake_translate_column(df, column, id_type, target_id_type, **kwargs):
+            calls.append(id_type)
+            out = df.copy()
+            out['chebi'] = None
+            return out
+
+        ids = pd.Series(['Adenosine', 'Glutamate'])
+        resource = pd.Series(['CellPhoneDB', 'CellPhoneDB'])
+
+        with patch(
+            'omnipath_client.utils.translate_column',
+            side_effect=fake_translate_column,
+        ):
+            _build_metab_mapping('name', ids, resource)
+
+        assert calls == ['name', 'synonym', 'iupac', 'traditional_iupac']
+
+    def test_earlier_tier_hit_not_requeried_in_later_tiers(self):
+        seen_per_tier = {}
+
+        def fake_translate_column(df, column, id_type, target_id_type, **kwargs):
+            seen_per_tier[id_type] = list(df['name'])
+            out = df.copy()
+            out['chebi'] = 'CHEBI:1' if id_type == 'name' else None
+            return out
+
+        ids = pd.Series(['Adenosine'])
+        resource = pd.Series(['CellPhoneDB'])
+
+        with patch(
+            'omnipath_client.utils.translate_column',
+            side_effect=fake_translate_column,
+        ):
+            result = _build_metab_mapping('name', ids, resource)
+
+        assert result['Adenosine'] == 'CHEBI:1'
+        assert seen_per_tier['name'] == ['Adenosine']
+        # Loop breaks once nothing remains unresolved -- later tiers never queried.
+        assert 'synonym' not in seen_per_tier
+
+    def test_unresolved_across_all_tiers_maps_to_none(self):
+        def fake_translate_column(df, column, id_type, target_id_type, **kwargs):
+            out = df.copy()
+            out['chebi'] = None
+            return out
+
+        ids = pd.Series(['Mystery'])
+        resource = pd.Series(['CellPhoneDB'])
+
+        with patch(
+            'omnipath_client.utils.translate_column',
+            side_effect=fake_translate_column,
+        ):
+            result = _build_metab_mapping('name', ids, resource)
+
+        assert result['Mystery'] is None
+
+    def test_expand_false_and_new_column_chebi_passed_through(self):
+        captured = {}
+
+        def fake_translate_column(df, column, id_type, target_id_type, **kwargs):
+            captured.update(kwargs)
+            out = df.copy()
+            out['chebi'] = 'CHEBI:2'
+            return out
+
+        ids = pd.Series(['ATP'])
+        resource = pd.Series(['CellPhoneDB'])
+
+        with patch(
+            'omnipath_client.utils.translate_column',
+            side_effect=fake_translate_column,
+        ):
+            _build_metab_mapping('name', ids, resource)
+
+        assert captured['expand'] is False
+        assert captured['new_column'] == 'chebi'
+
+    def test_result_is_normalized_chebi(self):
+        def fake_translate_column(df, column, id_type, target_id_type, **kwargs):
+            out = df.copy()
+            out['chebi'] = '15422' if id_type == 'name' else None
+            return out
+
+        ids = pd.Series(['ATP'])
+        resource = pd.Series(['CellPhoneDB'])
+
+        with patch(
+            'omnipath_client.utils.translate_column',
+            side_effect=fake_translate_column,
+        ):
+            result = _build_metab_mapping('name', ids, resource)
+
+        assert result['ATP'] == 'CHEBI:15422'

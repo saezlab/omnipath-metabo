@@ -66,3 +66,9 @@ resources:
   # Gene regulatory network (TF-gene)
   grn:
     datasets: collectri
+
+  # CellPhoneDB v5.0 non-peptidic ligand interactions (metabolite -> receptor/transporter)
+  cellphonedb_ligrec_sm: {}
+
+  # CellPhoneDB v5.0 protein-protein (ligand-receptor) interactions
+  cellphonedb_ligrec_ppi: {}
