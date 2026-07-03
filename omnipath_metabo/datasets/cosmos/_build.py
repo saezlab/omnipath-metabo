@@ -646,6 +646,16 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
     Recon3D) provide direct, mechanistically-annotated transport interactions
     and are actively maintained. See ADR 0002 in saezverse.
 
+    CellPhoneDB's non-peptidic slice (``cellphonedb_ligrec_sm``) is excluded
+    for a related but distinct reason: verified against live data (2026-07-03,
+    research.md R2), none of CellPhoneDB's own ``'Transporter'``-tagged
+    proteins (25 of 1,355 in its ``protein_input.csv``) overlap with this
+    dataset's 156 distinct non-peptidic targets, so every one of its edges
+    already classifies as ``'ligand_receptor'`` and none would survive
+    ``_is_transport`` here. Excluded to skip a fetch (interactions + complexes
+    + proteins) that can only ever produce zero rows for this subset; can be
+    explicitly re-enabled if CellPhoneDB's own curation changes.
+
     The filter is applied *before* ID translation so that metabolic GEM edges
     (``resource='GEM:<gem>'``) are discarded early and never translated,
     avoiding redundant computation.
@@ -656,8 +666,9 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
 
     Args:
         *args: Passed through to :func:`build`.
-        **kwargs: Passed through to :func:`build`.  ``brenda`` and
-            ``stitch`` are disabled unless explicitly re-enabled.
+        **kwargs: Passed through to :func:`build`.  ``brenda``, ``stitch``,
+            and ``cellphonedb_ligrec_sm`` are disabled unless explicitly
+            re-enabled.
             ``mrclinksdb`` is enabled: its transport-classified records
             (``interaction_type='transport'``) are included.
             ``mrclinksdb_transporter`` is enabled: the dedicated transporter
@@ -683,6 +694,7 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
     kwargs.setdefault('kegg', False)
     kwargs.setdefault('recon3d_metabolic', False)
     kwargs.setdefault('imm1415_metabolic', False)
+    kwargs.setdefault('cellphonedb_ligrec_sm', False)
     kwargs.setdefault('cellphonedb_ligrec_ppi', False)
     kwargs.setdefault('ppi', False)
     kwargs.setdefault('grn', False)

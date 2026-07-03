@@ -417,6 +417,22 @@ class TestBuildTransporters:
         build_transporters()
         assert _mock_build_fn.call_args.kwargs.get('grn') is False
 
+    def test_disables_cellphonedb_ligrec_sm_by_default(self, _mock_build_fn):
+        """cellphonedb_ligrec_sm never produces a 'transport'-classified row:
+        CellPhoneDB's own protein_input.csv curation has zero overlap between
+        its 25 'Transporter'-tagged proteins and this dataset's 156 distinct
+        non-peptidic targets (verified 2026-07-03, research.md R2) -- every
+        edge lands in 'ligand_receptor' instead. Querying it here fetches
+        interactions + complexes + proteins for edges _is_transport always
+        discards; excluded the same way STITCH/BRENDA/KEGG are, for a
+        documented category-mismatch reason rather than a generic default."""
+        build_transporters()
+        assert _mock_build_fn.call_args.kwargs.get('cellphonedb_ligrec_sm') is False
+
+    def test_can_reenable_cellphonedb_ligrec_sm(self, _mock_build_fn):
+        build_transporters(cellphonedb_ligrec_sm={})
+        assert _mock_build_fn.call_args.kwargs.get('cellphonedb_ligrec_sm') == {}
+
 
 # ---------------------------------------------------------------------------
 # TestBuildReceptors
