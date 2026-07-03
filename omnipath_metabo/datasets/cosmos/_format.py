@@ -84,8 +84,28 @@ def _is_pre_expanded(resource: str) -> bool:
     return resource.startswith('GEM') or resource in _PRE_EXPANDED_EXACT
 
 
-def _row_category(itype: str, resource: str) -> str:
-    """Classify an interaction row into a formatting category."""
+def _row_category(
+    itype: str,
+    resource: str,
+    source_type: str | None = None,
+    target_type: str | None = None,
+) -> str:
+    """Classify an interaction row into a formatting category.
+
+    Checked ahead of the ``itype``-based rules: a row where both sides
+    are proteins is always ``'protein_protein'``, regardless of its
+    ``interaction_type`` label. This matters because ``'ligand_receptor'``
+    is not unique to metabolite->protein edges (MRCLinksDB, STITCH,
+    CellPhoneDB's non-peptidic slice) -- CellPhoneDB's PPI slice (FR-025)
+    also uses it for protein->protein edges. Routing those to the
+    ``'receptor'`` category would corrupt a bare UniProt AC into a fake
+    ``'Metab__<AC>'`` node, since ``_format_receptor_row`` assumes one
+    side is always a metabolite. ``source_type``/``target_type`` are
+    optional (default ``None``) so existing two-argument callers keep
+    working unchanged.
+    """
+    if source_type == 'protein' and target_type == 'protein':
+        return 'protein_protein'
     if (
         itype == 'transport'
         or resource.startswith('GEM_transporter')
@@ -507,7 +527,9 @@ def format_pkn(
 
     df = df.copy()
     df['_category'] = df.apply(
-        lambda r: _row_category(r['interaction_type'], r['resource']),
+        lambda r: _row_category(
+            r['interaction_type'], r['resource'], r['source_type'], r['target_type'],
+        ),
         axis=1,
     )
     df['_n'] = _assign_n(df)
@@ -714,7 +736,9 @@ def format_transporters(source) -> 'CosmosBundle':
     if isinstance(source, CosmosBundle):
         source = _filter_bundle_network(
             source,
-            lambda row: _row_category(row.interaction_type, row.resource) == 'transporter',
+            lambda row: _row_category(
+                row.interaction_type, row.resource, row.source_type, row.target_type,
+            ) == 'transporter',
         )
     return format_pkn(source)
 
@@ -739,7 +763,9 @@ def format_receptors(source) -> 'CosmosBundle':
     if isinstance(source, CosmosBundle):
         source = _filter_bundle_network(
             source,
-            lambda row: _row_category(row.interaction_type, row.resource) == 'receptor',
+            lambda row: _row_category(
+                row.interaction_type, row.resource, row.source_type, row.target_type,
+            ) == 'receptor',
         )
     return format_pkn(source)
 
@@ -861,6 +887,11 @@ def format_ppi(source) -> 'CosmosBundle':
     - ``interaction_type == 'signaling'`` — set by
       :func:`~.resources.omnipath.ppi_interactions` for all OmniPath
       signaling edges.
+    - Protein->protein rows with any other ``interaction_type`` except
+      ``'gene_regulation'`` (which belongs to :func:`format_grn`) — e.g.
+      CellPhoneDB's PPI slice (FR-025), which is protein->protein but
+      labelled ``'ligand_receptor'`` since that's the biologically
+      accurate description, not ``'signaling'``.
 
     Args:
         source:
@@ -874,6 +905,10 @@ def format_ppi(source) -> 'CosmosBundle':
     if isinstance(source, CosmosBundle):
         source = _filter_bundle_network(
             source,
-            lambda row: row.interaction_type == 'signaling',
+            lambda row: (
+                row.source_type == 'protein'
+                and row.target_type == 'protein'
+                and row.interaction_type != 'gene_regulation'
+            ),
         )
     return format_pkn(source)

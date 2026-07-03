@@ -184,6 +184,22 @@ class TestRowCategory:
     def test_stitch_other(self):
         assert _row_category('other', 'STITCH') == 'other'
 
+    def test_cellphonedb_ppi_ligand_receptor_is_protein_protein(self):
+        """Protein-protein 'ligand_receptor' rows (CellPhoneDB PPI slice) must
+        route to 'protein_protein', not 'receptor' -- the latter's formatter
+        assumes one side is a metabolite and would corrupt a bare UniProt AC
+        into a fake 'Metab__<AC>' node."""
+        assert _row_category(
+            'ligand_receptor', 'CellPhoneDB', 'protein', 'protein',
+        ) == 'protein_protein'
+
+    def test_mrclinksdb_ligand_receptor_still_receptor_with_entity_types(self):
+        """Met->protein 'ligand_receptor' rows are unaffected by the new
+        entity-type check."""
+        assert _row_category(
+            'ligand_receptor', 'MRCLinksDB', 'small_molecule', 'protein',
+        ) == 'receptor'
+
 
 # ---------------------------------------------------------------------------
 # N assignment
@@ -818,6 +834,20 @@ class TestFormatReceptors:
         from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
         assert isinstance(format_receptors(self._bundle()), CosmosBundle)
 
+    def test_cellphonedb_ppi_protein_protein_excluded(self):
+        """A protein-protein 'ligand_receptor' row (CellPhoneDB PPI slice)
+        must NOT be picked up by format_receptors -- it belongs in
+        format_ppi, and _format_receptor_row would corrupt its bare UniProt
+        AC into a fake 'Metab__<AC>' node if it leaked through."""
+        bundle = _make_bundle(
+            _row(interaction_type='ligand_receptor', resource='MRCLinksDB', locations=()),
+            _pp_row('ligand_receptor', 'CellPhoneDB'),
+        )
+        main = _bundle_main_nodes(format_receptors(bundle))
+        assert 'CellPhoneDB' not in set(main['resource'])
+        assert not main['source'].astype(str).str.startswith('Metab__P').any()
+        assert not main['target'].astype(str).str.startswith('Metab__P').any()
+
 
 class TestFormatAllosteric:
     def _bundle(self):
@@ -996,3 +1026,22 @@ class TestFormatPpi:
     def test_empty_bundle_returns_bundle(self):
         from omnipath_metabo.datasets.cosmos._bundle import CosmosBundle
         assert isinstance(format_ppi(_make_bundle()), CosmosBundle)
+
+    def test_cellphonedb_ppi_ligand_receptor_included(self):
+        """CellPhoneDB's PPI slice uses interaction_type='ligand_receptor'
+        (FR-025) even though it's protein-protein, not metabolite->protein
+        like MRCLinksDB/STITCH's use of the same label. format_ppi must
+        still pick it up and format it as bare UniProt, not drop it or
+        route it through the metabolite-side formatter."""
+        bundle = _make_bundle(
+            _pp_row('ligand_receptor', 'CellPhoneDB'),
+            _pp_row('signaling', 'OmniPath:omnipath,ligrecextra'),
+        )
+        main = _bundle_main_nodes(format_ppi(bundle))
+        cpdb_rows = main[main['resource'] == 'CellPhoneDB']
+        assert len(cpdb_rows) == 1
+        assert cpdb_rows.iloc[0]['source'] == 'P00001'
+        assert cpdb_rows.iloc[0]['target'] == 'P00002'
+        for col in ('source', 'target'):
+            assert not cpdb_rows[col].str.startswith('Metab__').any()
+            assert not cpdb_rows[col].str.startswith('Gene').any()
