@@ -3,9 +3,10 @@
 """Unit tests for the CellPhoneDB v5.0 COSMOS resource (US6).
 
 All tests are fast (no network I/O). ``pypath.inputs_v2.cellphonedb`` is
-mocked via ``patch.dict(sys.modules, ...)`` (KEGG test pattern);
-``_multidb_uniprot_types`` (from ``resources.stitch``) is mocked directly
-since it is expensive to build for real (Intercell DB).
+mocked via ``patch.dict(sys.modules, ...)`` (KEGG test pattern), including
+``download_proteins``/``iter_csv`` for the protein-type source (CellPhoneDB's
+own ``protein_input.csv`` curation -- ``receptor`` column, ``'Transporter'``
+tag -- not a generic cross-database classifier).
 """
 
 import sys
@@ -17,7 +18,9 @@ from omnipath_metabo.datasets.cosmos._record import Interaction
 from omnipath_metabo.datasets.cosmos.resources.cellphonedb import (
     SYNTH_RE,
     _build_complex_map,
+    _build_protein_type_map,
     _load_cellphonedb_data,
+    _load_cellphonedb_protein_types,
     _mor_from_modulatory_effect,
     _parse_synthetic_metabolite,
     _resolve_entity,
@@ -58,25 +61,24 @@ def _complex_row(name='integrin_a2b1_complex', members=('P05556', 'P17301')):
     return row
 
 
-def _mock_cellphonedb_module(interaction_rows, complex_rows):
+def _protein_row(uniprot='P11229', receptor='FALSE', tags=''):
+    return {'uniprot': uniprot, 'receptor': receptor, 'tags': tags}
+
+
+def _mock_cellphonedb_module(interaction_rows, complex_rows, protein_rows=()):
     mock_resource = MagicMock()
     mock_resource.interactions.raw.return_value = iter(interaction_rows)
     mock_resource.complexes.raw.return_value = iter(complex_rows)
 
     mock_module = MagicMock()
     mock_module.resource = mock_resource
+    mock_module.iter_csv.return_value = iter(protein_rows)
     return mock_module
 
 
-def _run_nonpeptidic(interaction_rows, complex_rows=(), organism=9606, protein_types=None):
-    mock_module = _mock_cellphonedb_module(interaction_rows, complex_rows)
-    with (
-        patch.dict(sys.modules, {'pypath.inputs_v2.cellphonedb': mock_module}),
-        patch(
-            'omnipath_metabo.datasets.cosmos.resources.stitch._multidb_uniprot_types',
-            return_value=protein_types or {},
-        ),
-    ):
+def _run_nonpeptidic(interaction_rows, complex_rows=(), organism=9606, protein_rows=()):
+    mock_module = _mock_cellphonedb_module(interaction_rows, complex_rows, protein_rows)
+    with patch.dict(sys.modules, {'pypath.inputs_v2.cellphonedb': mock_module}):
         return list(cellphonedb_nonpeptidic_interactions(organism=organism))
 
 
@@ -166,6 +168,60 @@ class TestBuildComplexMap:
 
 
 # ---------------------------------------------------------------------------
+# _load_cellphonedb_protein_types / _build_protein_type_map
+#
+# CellPhoneDB's own protein_input.csv curation (receptor column,
+# 'Transporter' tag) -- replaces the generic OmniPath Intercell/TCDB/G2P
+# classifier previously reused from stitch.py's _multidb_uniprot_types.
+# ---------------------------------------------------------------------------
+
+class TestLoadCellphonedbProteinTypes:
+
+    def test_loads_protein_rows(self):
+        protein_rows = [_protein_row('P03372', receptor='TRUE')]
+        mock_module = _mock_cellphonedb_module([], [], protein_rows)
+
+        with patch.dict(sys.modules, {'pypath.inputs_v2.cellphonedb': mock_module}):
+            loaded = _load_cellphonedb_protein_types()
+
+        assert loaded == protein_rows
+
+
+class TestBuildProteinTypeMap:
+
+    def test_receptor_true_maps_to_receptor(self):
+        rows = [_protein_row('P03372', receptor='TRUE')]
+        assert _build_protein_type_map(rows) == {'P03372': 'receptor'}
+
+    def test_transporter_tag_maps_to_transporter(self):
+        rows = [_protein_row('P43003', receptor='FALSE', tags='Transporter')]
+        assert _build_protein_type_map(rows) == {'P43003': 'transporter'}
+
+    def test_compound_tag_containing_transporter_still_matches(self):
+        rows = [_protein_row('P43003', receptor='FALSE', tags='Transporter|To_comment')]
+        assert _build_protein_type_map(rows) == {'P43003': 'transporter'}
+
+    def test_neither_flag_absent_from_map(self):
+        rows = [_protein_row('O00341', receptor='FALSE', tags='')]
+        assert _build_protein_type_map(rows) == {}
+
+    def test_unrelated_tag_absent_from_map(self):
+        rows = [_protein_row('P12345', receptor='FALSE', tags='Glycoprotein')]
+        assert _build_protein_type_map(rows) == {}
+
+    def test_multiple_rows(self):
+        rows = [
+            _protein_row('P03372', receptor='TRUE'),
+            _protein_row('P43003', receptor='FALSE', tags='Transporter'),
+            _protein_row('O00341', receptor='FALSE', tags=''),
+        ]
+        assert _build_protein_type_map(rows) == {
+            'P03372': 'receptor',
+            'P43003': 'transporter',
+        }
+
+
+# ---------------------------------------------------------------------------
 # T004 -- SYNTH_RE / _parse_synthetic_metabolite
 # ---------------------------------------------------------------------------
 
@@ -245,17 +301,17 @@ class TestNonpeptidicInteractions:
 
     def test_transporter_routing(self):
         rows = [_interaction_row(partner_a='Adenosine_byNT5E_and_SLC29A1', partner_b='P11229')]
-        recs = _run_nonpeptidic(rows, protein_types={'P11229': 'transporter'})
+        recs = _run_nonpeptidic(rows, protein_rows=[_protein_row('P11229', tags='Transporter')])
         assert recs[0].interaction_type == 'transport'
 
     def test_receptor_routing(self):
         rows = [_interaction_row(partner_a='Adenosine_byNT5E_and_SLC29A1', partner_b='P11229')]
-        recs = _run_nonpeptidic(rows, protein_types={'P11229': 'receptor'})
+        recs = _run_nonpeptidic(rows, protein_rows=[_protein_row('P11229', receptor='TRUE')])
         assert recs[0].interaction_type == 'ligand_receptor'
 
     def test_unclassified_defaults_to_ligand_receptor(self):
         rows = [_interaction_row(partner_a='Adenosine_byNT5E_and_SLC29A1', partner_b='P11229')]
-        recs = _run_nonpeptidic(rows, protein_types={})
+        recs = _run_nonpeptidic(rows, protein_rows=[])
         assert recs[0].interaction_type == 'ligand_receptor'
 
     def test_organism_scoping_nonhuman_yields_nothing(self):

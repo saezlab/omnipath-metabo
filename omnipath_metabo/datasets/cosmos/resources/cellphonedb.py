@@ -34,9 +34,11 @@ the ``is_ppi`` column and the shape of ``partner_a``:
   ``attrs['producing_machinery']`` for reference only -- no
   enzyme->metabolite edges are yielded (GEM and KEGG already cover that
   layer). ``partner_b`` (the receiving-cell protein or complex) is routed
-  to ``'transport'`` or ``'ligand_receptor'`` via the existing
-  :func:`~.stitch._multidb_uniprot_types` classifier, matching
-  ``mrclinksdb.py``'s precedent.
+  to ``'transport'`` or ``'ligand_receptor'`` via CellPhoneDB's own
+  ``protein_input.csv`` curation (:func:`_build_protein_type_map`) --
+  not the generic cross-database classifier other resources
+  (``mrclinksdb.py``) reuse from ``stitch.py``, since CellPhoneDB curates
+  its own receptor/transporter roles for exactly these proteins.
 - **PPI** (1,878 rows, ``is_ppi=True``): protein->protein, with MOR derived
   from ``modulatory_effect``.
 - **Out-of-scope** (4 rows, ``is_ppi=False`` but ``partner_a`` does NOT
@@ -89,6 +91,45 @@ def _load_cellphonedb_data() -> tuple[list[dict], list[dict]]:
     interaction_rows = list(resource.interactions.raw())
     complex_rows = list(resource.complexes.raw())
     return interaction_rows, complex_rows
+
+
+def _load_cellphonedb_protein_types() -> list[dict]:
+    """
+    Load raw CellPhoneDB ``protein_input.csv`` rows.
+
+    Not yet wired into ``resource.proteins`` (only ``.interactions``/
+    ``.complexes`` are registered `Dataset`s in the pinned pypath version),
+    so this fetches and parses it directly via the same ``Download`` +
+    CSV-parsing primitives the registered datasets use internally.
+    """
+    from pypath.inputs_v2 import cellphonedb
+
+    opener = cellphonedb.download_proteins.open()
+    return list(cellphonedb.iter_csv(opener))
+
+
+def _build_protein_type_map(protein_rows: list[dict]) -> dict[str, str]:
+    """
+    Build a ``{uniprot: 'receptor' | 'transporter'}`` map from CellPhoneDB's
+    own ``protein_input.csv`` curation (R2, revised 2026-07-03).
+
+    Uses CellPhoneDB's own ``receptor`` column and ``'Transporter'`` tag --
+    curated specifically for these proteins in this dataset -- rather than
+    a generic cross-database classifier (OmniPath Intercell + TCDB + Guide
+    to Pharmacology, as reused from ``stitch.py`` in the original R2
+    decision). Proteins flagged as neither are absent from the map (caller
+    defaults to ``'other'``).
+    """
+    result: dict[str, str] = {}
+    for row in protein_rows:
+        uniprot = row.get('uniprot', '')
+        if not uniprot:
+            continue
+        if row.get('receptor') == 'TRUE':
+            result[uniprot] = 'receptor'
+        elif 'Transporter' in (row.get('tags') or ''):
+            result[uniprot] = 'transporter'
+    return result
 
 
 def _build_complex_map(complex_rows: list[dict]) -> dict[str, list[str]]:
@@ -177,7 +218,8 @@ def cellphonedb_nonpeptidic_interactions(
         :class:`~.._record.Interaction` records with
         ``source_type='small_molecule'``, ``id_type_a='name'``,
         ``interaction_type`` routed to ``'transport'`` or
-        ``'ligand_receptor'`` via :func:`~.stitch._multidb_uniprot_types`,
+        ``'ligand_receptor'`` via CellPhoneDB's own ``protein_input.csv``
+        curation (:func:`_build_protein_type_map`, R2 revised 2026-07-03),
         ``resource='CellPhoneDB'``, ``mor=1``.
     """
     if organism != 9606:
@@ -187,11 +229,9 @@ def cellphonedb_nonpeptidic_interactions(
         )
         return
 
-    from .stitch import _multidb_uniprot_types
-
     interaction_rows, complex_rows = _load_cellphonedb_data()
     complex_map = _build_complex_map(complex_rows)
-    protein_types = _multidb_uniprot_types(organism)
+    protein_types = _build_protein_type_map(_load_cellphonedb_protein_types())
 
     n_yielded = 0
     n_skipped_nonmatch = 0
