@@ -684,6 +684,8 @@ def build_transporters(*args, cell_surface_only: bool = False, **kwargs) -> Cosm
     kwargs.setdefault('recon3d_metabolic', False)
     kwargs.setdefault('imm1415_metabolic', False)
     kwargs.setdefault('cellphonedb_ligrec_ppi', False)
+    kwargs.setdefault('ppi', False)
+    kwargs.setdefault('grn', False)
     bundle = build(*args, row_filter=_is_transport, **kwargs)
     _report_resource_overlaps(bundle, 'transporter', kwargs.get('translate_ids', True))
     return bundle
@@ -750,6 +752,8 @@ def build_receptors(*args, cell_surface_only: bool = False, **kwargs) -> CosmosB
     kwargs.setdefault('kegg', False)
     kwargs.setdefault('mrclinksdb_transporter', False)
     kwargs.setdefault('cellphonedb_ligrec_ppi', False)
+    kwargs.setdefault('ppi', False)
+    kwargs.setdefault('grn', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, _is_receptor)
     _report_resource_overlaps(bundle, 'receptor', kwargs.get('translate_ids', True))
@@ -795,6 +799,8 @@ def build_allosteric(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('kegg', False)
     kwargs.setdefault('cellphonedb_ligrec_sm', False)
     kwargs.setdefault('cellphonedb_ligrec_ppi', False)
+    kwargs.setdefault('ppi', False)
+    kwargs.setdefault('grn', False)
     bundle = build(*args, **kwargs)
     bundle = _filter_bundle(bundle, lambda row: (
         row.interaction_type == 'allosteric_regulation' or
@@ -851,6 +857,8 @@ def build_enzyme_metabolite(*args, **kwargs) -> CosmosBundle:
     kwargs.setdefault('stitch', False)
     kwargs.setdefault('cellphonedb_ligrec_sm', False)
     kwargs.setdefault('cellphonedb_ligrec_ppi', False)
+    kwargs.setdefault('ppi', False)
+    kwargs.setdefault('grn', False)
     # recon3d_metabolic, imm1415_metabolic, and kegg are enabled by default from config.
     # GEM metabolic resources use 'GEM:' prefix; KEGG uses 'KEGG' — both pass the filter.
     bundle = build(

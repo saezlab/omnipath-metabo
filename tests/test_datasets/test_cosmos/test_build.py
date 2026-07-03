@@ -406,6 +406,17 @@ class TestBuildTransporters:
         build_transporters(brenda={})
         assert _mock_build_fn.call_args.kwargs.get('brenda') == {}
 
+    def test_disables_ppi_by_default(self, _mock_build_fn):
+        """ppi_interactions() hits the live OmniPath web API; transporters
+        never keep protein-protein rows (_is_transport filters them out), so
+        querying it here is pure wasted network I/O."""
+        build_transporters()
+        assert _mock_build_fn.call_args.kwargs.get('ppi') is False
+
+    def test_disables_grn_by_default(self, _mock_build_fn):
+        build_transporters()
+        assert _mock_build_fn.call_args.kwargs.get('grn') is False
+
 
 # ---------------------------------------------------------------------------
 # TestBuildReceptors
@@ -464,6 +475,17 @@ class TestBuildReceptors:
     def test_disables_recon3d_by_default(self, _mock_build_fn):
         build_receptors()
         assert _mock_build_fn.call_args.kwargs.get('recon3d') is False
+
+    def test_disables_ppi_by_default(self, _mock_build_fn):
+        """ppi_interactions() hits the live OmniPath web API; receptors
+        never keep those rows (post-translation filter excludes them), so
+        querying it here is pure wasted network I/O."""
+        build_receptors()
+        assert _mock_build_fn.call_args.kwargs.get('ppi') is False
+
+    def test_disables_grn_by_default(self, _mock_build_fn):
+        build_receptors()
+        assert _mock_build_fn.call_args.kwargs.get('grn') is False
 
     def test_can_reenable_tcdb(self, _mock_build_fn):
         build_receptors(tcdb={})
@@ -712,6 +734,16 @@ class TestBuildAllosteric:
         build_allosteric()
         assert _mock_build_fn.call_args.kwargs.get('recon3d') is False
 
+    def test_disables_ppi_by_default(self, _mock_build_fn):
+        """ppi_interactions() hits the live OmniPath web API; allosteric
+        edges never keep those rows, so querying it is wasted network I/O."""
+        build_allosteric()
+        assert _mock_build_fn.call_args.kwargs.get('ppi') is False
+
+    def test_disables_grn_by_default(self, _mock_build_fn):
+        build_allosteric()
+        assert _mock_build_fn.call_args.kwargs.get('grn') is False
+
     def test_can_reenable_gem(self, _mock_build_fn):
         build_allosteric(gem={})
         assert _mock_build_fn.call_args.kwargs.get('gem') == {}
@@ -784,6 +816,16 @@ class TestBuildEnzymeMetabolite:
     def test_disables_recon3d_by_default(self, _mock_build_fn):
         build_enzyme_metabolite()
         assert _mock_build_fn.call_args.kwargs.get('recon3d') is False
+
+    def test_disables_ppi_by_default(self, _mock_build_fn):
+        """ppi_interactions() hits the live OmniPath web API; enzyme-metabolite
+        edges never keep those rows, so querying it is wasted network I/O."""
+        build_enzyme_metabolite()
+        assert _mock_build_fn.call_args.kwargs.get('ppi') is False
+
+    def test_disables_grn_by_default(self, _mock_build_fn):
+        build_enzyme_metabolite()
+        assert _mock_build_fn.call_args.kwargs.get('grn') is False
 
     def test_can_reenable_brenda(self, _mock_build_fn):
         build_enzyme_metabolite(brenda={})
