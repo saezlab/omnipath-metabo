@@ -86,13 +86,17 @@ def _query_omnipath(
     _log.info('[COSMOS] Querying OmniPath: %s', url)
 
     try:
-        from dlmachine import Download
+        from dlmachine import DownloadManager
 
-        dl = Download(url)
-        dl.download()
-        text = dl.result.text
+        dm = DownloadManager(pkg='omnipath_metabo')
+        result = dm.download(url, dest=False)
+        text = (
+            result.getvalue().decode('utf-8')
+            if isinstance(result, io.BytesIO)
+            else open(result, encoding='utf-8').read()
+        )
 
-    except (ImportError, Exception):
+    except Exception:
         import ssl
         import urllib.request
 
