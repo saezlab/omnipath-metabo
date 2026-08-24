@@ -66,6 +66,34 @@ def _connect(request: Request):
         ) from exc
 
 
+# Temporary compatibility guard, and meant to be deleted whole.
+#
+# A registry row that names no combined relation is a preset: a dataset served
+# by filtering the main service's interaction fact table, with no matview of its
+# own anywhere. These routes resolve everything through the schema/relation pair,
+# so without this guard a preset would probe the relation `"None"."None"` — the
+# status route would then report a live, queryable dataset as absent, which is
+# the worst of the available failures because it is silent. The routes below say
+# what a preset is instead, and send the caller to the main service for its rows.
+# This whole shim goes when the bespoke matviews retire and these routes with
+# them; nothing here should grow into serving presets from this service.
+def _is_preset(entry: dict[str, Any]) -> bool:
+    """Whether the registry row describes a preset rather than a matview."""
+    return entry.get('combined_relation') is None
+
+
+def _preset_elsewhere(name: str) -> HTTPException:
+    """The 'not served here' answer, naming the service that does serve it."""
+    return HTTPException(
+        status_code=501,
+        detail=(
+            f'{name} is a preset over the interaction fact table and is not '
+            f'served by this service; request it from the main OmniPath API '
+            f'at /interactions/{name}.'
+        ),
+    )
+
+
 def _registry_row(conn, name: str) -> dict[str, Any]:
     from psycopg2.extras import RealDictCursor
 
@@ -116,21 +144,24 @@ class NetworksController(Controller):
         try:
             entry = _registry_row(conn, name)
             schema, relation = entry['schema_name'], entry['combined_relation']
+            preset = _is_preset(entry)
             with conn.cursor() as cur:
-                cur.execute(
-                    'SELECT to_regclass(%s)', [f'{schema}.{relation}']
-                )
-                present = cur.fetchone()[0] is not None
-                row_count = None
-                if present:
+                present, row_count = True, None
+                if not preset:
                     cur.execute(
-                        f'SELECT count(*) FROM "{schema}"."{relation}"'
+                        'SELECT to_regclass(%s)', [f'{schema}.{relation}']
                     )
-                    row_count = int(cur.fetchone()[0])
+                    present = cur.fetchone()[0] is not None
+                    if present:
+                        cur.execute(
+                            f'SELECT count(*) FROM "{schema}"."{relation}"'
+                        )
+                        row_count = int(cur.fetchone()[0])
                 cur.execute('SELECT build_id FROM public.build_manifest')
                 manifest = cur.fetchone()
             return {
                 'name': name,
+                'kind': 'preset' if preset else entry['kind'],
                 'present': present,
                 'row_count': row_count,
                 'build_id': manifest[0] if manifest else None,
@@ -169,6 +200,8 @@ class NetworksController(Controller):
         conn = _connect(request)
         try:
             entry = _registry_row(conn, name)
+            if _is_preset(entry):
+                raise _preset_elsewhere(name)
             schema, relation = entry['schema_name'], entry['combined_relation']
             where, params = '', {'limit': limit, 'offset': offset}
             if source:

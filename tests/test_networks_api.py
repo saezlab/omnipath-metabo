@@ -64,13 +64,50 @@ def test_network_status_reports_rows_and_build_id(client):
 
 
 def test_interactions_consistent_with_combined_contract(client):
-    """API row count (unfiltered) matches the combined contract's row count."""
-    status = client.get('/networks/liana/status').json()
-    resp = client.get('/networks/liana/interactions', params={'limit': 100000})
+    """The rows served are the combined contract's own rows.
+
+    MetaLinksDB holds more rows than one request may return, so the total is
+    pinned from both ends instead of in one call: a first page is full, and the
+    page starting three rows from the end holds exactly those three. Both agree
+    with the row count the status route reports.
+    """
+    status = client.get('/networks/metalinksdb/status').json()
+    total = status['row_count']
+    assert total > 3
+
+    limit = 1000
+    resp = client.get('/networks/metalinksdb/interactions', params={'limit': limit})
     assert resp.status_code == 200
     body = resp.json()
-    assert body['count'] == status['row_count']
+    assert body['count'] == min(total, limit)
     assert body['rows']
+
+    tail = client.get(
+        '/networks/metalinksdb/interactions',
+        params={'limit': limit, 'offset': total - 3},
+    ).json()
+    assert tail['count'] == 3
+
+
+def test_preset_is_reported_present_and_served_elsewhere(client):
+    """A dataset with no matview is a preset, and the status route says so.
+
+    Its registry row names no schema and no combined relation, which used to
+    make the presence probe report a live dataset as absent. Now the row count
+    is unknown rather than zero, presence is not in doubt, and asking this
+    service for the rows points at the service that has them.
+    """
+    resp = client.get('/networks/liana/status')
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body['kind'] == 'preset'
+    assert body['present'] is True
+    assert body['row_count'] is None
+    assert body['build_id']
+
+    rows = client.get('/networks/liana/interactions', params={'limit': 10})
+    assert rows.status_code == 501
+    assert '/interactions/liana' in rows.json()['detail']
 
 
 def test_interactions_parquet_format(client):
