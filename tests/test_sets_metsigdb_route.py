@@ -104,6 +104,26 @@ def test_a_filter_takes_several_values(client):
     assert {row['resource'] for row in rows} <= {'KEGG', 'Reactome'}
 
 
+def test_an_unsupported_filter_name_is_rejected(client):
+    """Silently ignoring a filter answers the wrong question with a 200.
+
+    `?hmdb=HMDB00077` reads as "the memberships of this metabolite". Ignored,
+    it returns the unfiltered first page, which looks like an answer and is
+    not one. The identifier columns are published but not filterable in v1, so
+    naming one has to fail loudly.
+    """
+    for param in ('hmdb', 'inchikey', 'chebi', 'metabolite_label', 'nonsense'):
+        response = client.get(PATH, params={param: 'x'})
+        assert response.status_code == 400, param
+        assert param in response.text
+
+
+def test_a_rejected_filter_names_what_is_supported(client):
+    body = client.get(PATH, params={'hmdb': 'HMDB00077'}).text
+    for supported in ('resource', 'set_type', 'organism', 'set_source_id'):
+        assert supported in body
+
+
 def test_an_unsupported_filter_value_is_rejected(client):
     assert client.get(PATH, params={'resource': 'SMPDB'}).status_code == 400
     assert client.get(PATH, params={'set_type': 'protein_association'}).status_code == 400
