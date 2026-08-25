@@ -83,7 +83,12 @@ def test_scalar_filters_use_equality():
 
 
 def test_only_shared_columns_are_filterable():
-    """v1 publishes five filters, and the query layer offers no others."""
+    """The query layer offers the published filters and no others.
+
+    `set_sub_type` joined them when MACdb's trait type and KEGG's overview maps
+    became columns. The six identifier columns are still published and still
+    not filterable.
+    """
     filterable = {
         field
         for field in MetSigDBQuery.__dataclass_fields__
@@ -92,10 +97,38 @@ def test_only_shared_columns_are_filterable():
     assert filterable == {
         'resource',
         'set_type',
+        'set_sub_type',
         'organism',
         'set_source_id',
         'metabolite_entity_id',
     }
+
+
+def test_the_sub_type_filter_narrows_rows(conn):
+    """MACdb calls every trait a disease; 116 of its 269 are not."""
+    rows = fetch(conn, MetSigDBQuery(set_sub_type=('cancer',), limit=50))
+    assert rows
+    assert {row['resource'] for row in rows} == {'MACdb'}
+    assert {row['set_sub_type'] for row in rows} == {'cancer'}
+
+
+def test_a_page_knows_whether_more_follows(conn):
+    from omnipath_metabo.server.sets._metsigdb_query import fetch_page
+
+    rows, has_more = fetch_page(conn, MetSigDBQuery(resource=('KEGG',), limit=10))
+    assert len(rows) == 10 and has_more
+
+    rows, has_more = fetch_page(
+        conn, MetSigDBQuery(set_source_id='rn00270', limit=1000)
+    )
+    assert len(rows) == 16 and not has_more
+
+
+def test_the_count_ignores_the_page(conn):
+    from omnipath_metabo.server.sets._metsigdb_query import count
+
+    spec = MetSigDBQuery(resource=('KEGG',), limit=10)
+    assert count(conn, spec) == 4969
 
 
 # -------------------------------------------------------------------- semantics

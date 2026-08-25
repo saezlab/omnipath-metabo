@@ -52,8 +52,39 @@ def test_the_route_family_is_registered(client):
 
 def test_the_response_carries_its_rows_and_a_count(client):
     body = client.get(PATH, params={'limit': 5}).json()
-    assert set(body) == {'count', 'rows'}
+    assert set(body) == {'count', 'has_more', 'rows', 'total'}
     assert body['count'] == len(body['rows']) == 5
+    assert body['has_more'] is True
+
+
+def test_the_total_is_absent_unless_asked_for(client):
+    """Counting a filter that matches three million rows is opt-in."""
+    assert client.get(PATH, params={'limit': 1}).json()['total'] is None
+    body = client.get(PATH, params={'resource': 'KEGG', 'limit': 1, 'total': True}).json()
+    assert body['total'] == 4969
+    assert body['count'] == 1
+
+
+def test_has_more_ends_a_page_walk(client):
+    body = client.get(PATH, params={'set_source_id': 'rn00270'}).json()
+    assert body['count'] == 16
+    assert body['has_more'] is False
+
+
+def test_the_sub_type_filter_separates_real_diseases(client):
+    rows = _rows(client, set_sub_type='cancer', limit=50)
+    assert {row['resource'] for row in rows} == {'MACdb'}
+    assert {row['set_sub_type'] for row in rows} == {'cancer'}
+
+    rows = _rows(client, resource='KEGG', set_sub_type='overview_map', limit=50)
+    assert {row['set_source_id'] for row in rows} <= {
+        'rn01100', 'rn01110', 'rn01120', 'rn01200', 'rn01210', 'rn01212',
+        'rn01220', 'rn01230', 'rn01232', 'rn01240', 'rn01250',
+    }
+
+
+def test_an_unsupported_sub_type_is_rejected(client):
+    assert client.get(PATH, params={'set_sub_type': 'tumour'}).status_code == 400
 
 
 def test_a_row_satisfies_the_contract(client):
@@ -145,7 +176,7 @@ def test_an_empty_result_keeps_the_response_schema(client):
     body = client.get(
         PATH, params={'resource': 'KEGG', 'set_type': 'disease'}
     ).json()
-    assert body == {'count': 0, 'rows': []}
+    assert body == {'count': 0, 'has_more': False, 'rows': [], 'total': None}
 
 
 def test_a_set_reports_its_own_size(client):

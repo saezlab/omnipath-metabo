@@ -20,10 +20,16 @@ row and nothing about which rows come back.
 
 from __future__ import annotations
 
-__all__ = ['ROW_FIELDS', 'project_row', 'project_rows']
+__all__ = [
+    'ROW_FIELDS',
+    'MetSigDBPage',
+    'MetSigDBRow',
+    'project_row',
+    'project_rows',
+]
 
 from collections.abc import Iterable, Mapping
-from typing import Any
+from typing import Any, TypedDict
 from uuid import UUID
 
 # The published row, in the order the row contract lists it. The metabolite
@@ -55,6 +61,7 @@ ROW_FIELDS: tuple[str, ...] = (
     'set_entity_id',
     'set_label',
     'set_type',
+    'set_sub_type',
     'organism',
     'set_size',
     'set_context',
@@ -86,3 +93,55 @@ def project_row(row: Mapping[str, Any]) -> dict[str, Any]:
 def project_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Project a result set, keeping the query layer's order."""
     return [project_row(row) for row in rows]
+
+
+class MetSigDBRow(TypedDict):
+    """The published row, as a type.
+
+    Declared so the OpenAPI document describes the response instead of calling
+    it an object with unspecified properties. A client generator reads this and
+    produces a row type; without it, every consumer hand-writes these fields
+    again.
+
+    A TypedDict rather than a dataclass on purpose: the runtime value stays a
+    plain dict, so a page of 100,000 rows costs no object construction.
+    """
+
+    metabolite_entity_id: str
+    metabolite_label: str
+    metabolite_entity_type: str
+    metabolite_structure_key: str | None
+    inchikey: str | None
+    smiles: str | None
+    hmdb: str | None
+    pubchem: str | None
+    chebi: str | None
+    kegg: str | None
+    resource: str
+    set_source_id: str
+    set_entity_id: str
+    set_label: str | None
+    set_type: str
+    set_sub_type: str | None
+    organism: int | None
+    set_size: int
+    set_context: dict[str, Any] | None
+    provenance_source: str
+    provenance_record: dict[str, Any] | None
+    build_id: str
+
+
+class MetSigDBPage(TypedDict):
+    """One page of membership rows.
+
+    ``count`` is the number of rows in *this* page, never the size of the whole
+    result. ``has_more`` answers the only question a paging client really has,
+    and costs one extra row rather than a count. ``total`` is present only when
+    the request asks for it, because counting a filter that matches three
+    million rows is work nobody should pay for by default.
+    """
+
+    count: int
+    has_more: bool
+    rows: list[MetSigDBRow]
+    total: int | None

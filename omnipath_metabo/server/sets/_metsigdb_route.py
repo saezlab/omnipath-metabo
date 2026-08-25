@@ -32,18 +32,36 @@ from litestar import Controller, Request, get
 from litestar.exceptions import HTTPException
 from litestar.params import Parameter
 
-from omnipath_metabo.server.sets._metsigdb_projection import project_rows
+from omnipath_metabo.server.sets._metsigdb_projection import (
+    MetSigDBPage,
+    project_rows,
+)
 from omnipath_metabo.server.sets._metsigdb_query import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     MetSigDBQuery,
-    fetch,
+    count,
+    fetch_page,
 )
 
 # The v1 enums, rejected at the edge rather than answered with an empty page. A
 # caller asking for SMPDB has made a mistake, and an empty result would hide it.
 RESOURCES = ('KEGG', 'Reactome', 'WikiPathways', 'MACdb', 'ClassyFire')
 SET_TYPES = ('disease', 'pathway', 'chemical_class')
+
+# The finer semantic, where a resource publishes one. MACdb's five trait types
+# come from the source; KEGG marks its whole-metabolism overview maps. The
+# other three resources leave it null, and filtering on it returns nothing for
+# them, which is the honest answer.
+SET_SUB_TYPES = (
+    'cancer',
+    'phenotype',
+    'medical intervention',
+    'gene abnormality',
+    'genotype',
+    'overview_map',
+    'metabolic_map',
+)
 
 # Everything the route accepts. Litestar ignores a query parameter it does not
 # know, which would answer the wrong question with a 200: `?hmdb=HMDB00077`
@@ -53,11 +71,13 @@ SET_TYPES = ('disease', 'pathway', 'chemical_class')
 QUERY_PARAMS = (
     'resource',
     'set_type',
+    'set_sub_type',
     'organism',
     'set_source_id',
     'metabolite_entity_id',
     'limit',
     'offset',
+    'total',
 )
 
 
@@ -131,12 +151,14 @@ class MetSigDBController(Controller):
         request: Request,
         resource: list[str] | None = Parameter(default=None),
         set_type: list[str] | None = Parameter(default=None),
+        set_sub_type: list[str] | None = Parameter(default=None),
         organism: int | None = Parameter(default=None),
         set_source_id: str | None = Parameter(default=None),
         metabolite_entity_id: str | None = Parameter(default=None),
         limit: int = Parameter(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
         offset: int = Parameter(default=0, ge=0),
-    ) -> dict[str, Any]:
+        total: bool = Parameter(default=False),
+    ) -> MetSigDBPage:
         """Membership rows in the published default projection.
 
         Every response is paged. No filter combination returns the whole
@@ -145,12 +167,18 @@ class MetSigDBController(Controller):
 
         An ``organism`` filter matches explicit values only. Null-organism rows
         stay in the dataset and out of an organism-filtered response.
+
+        ``has_more`` says whether another page follows, and costs one extra
+        row. ``total`` is the size of the whole result set and is computed only
+        when the request asks for it, because counting a filter that matches
+        three million rows is work nobody should pay for by default.
         """
         _reject_unknown_parameters(request)
 
         spec = MetSigDBQuery(
             resource=_checked(resource, RESOURCES, 'resource'),
             set_type=_checked(set_type, SET_TYPES, 'set_type'),
+            set_sub_type=_checked(set_sub_type, SET_SUB_TYPES, 'set_sub_type'),
             organism=organism,
             set_source_id=set_source_id,
             metabolite_entity_id=metabolite_entity_id,
@@ -161,7 +189,8 @@ class MetSigDBController(Controller):
         conn = _connect(request)
         try:
             try:
-                rows = fetch(conn, spec)
+                rows, has_more = fetch_page(conn, spec)
+                matched = count(conn, spec) if total else None
             except Exception as exc:
                 raise HTTPException(
                     status_code=503,
@@ -174,4 +203,9 @@ class MetSigDBController(Controller):
             conn.close()
 
         projected = project_rows(rows)
-        return {'count': len(projected), 'rows': projected}
+        return {
+            'count': len(projected),
+            'has_more': has_more,
+            'rows': projected,
+            'total': matched,
+        }

@@ -26,7 +26,10 @@ __all__ = [
     'MAX_LIMIT',
     'MetSigDBQuery',
     'build_query',
+    'count_query',
     'fetch',
+    'fetch_page',
+    'count',
 ]
 
 from dataclasses import dataclass
@@ -57,6 +60,7 @@ COLUMNS: tuple[str, ...] = (
     'set_entity_id',
     'set_label',
     'set_type',
+    'set_sub_type',
     'organism',
     'set_size',
     'set_context',
@@ -80,6 +84,7 @@ class MetSigDBQuery:
 
     resource: tuple[str, ...] = ()
     set_type: tuple[str, ...] = ()
+    set_sub_type: tuple[str, ...] = ()
     organism: int | None = None
     set_source_id: str | None = None
     metabolite_entity_id: str | None = None
@@ -98,7 +103,7 @@ def build_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
 
     # Multi-valued filters. ANY over an array keeps one bind parameter whatever
     # the caller asks for, so the plan does not change with the value count.
-    for field in ('resource', 'set_type'):
+    for field in ('resource', 'set_type', 'set_sub_type'):
         values = getattr(spec, field)
         if values:
             where.append(f'{field} = ANY(%({field})s)')
@@ -134,3 +139,43 @@ def fetch(conn, spec: MetSigDBQuery) -> list[dict[str, Any]]:
     with conn.cursor(cursor_factory=RealDictCursor) as cur:
         cur.execute(sql, params)
         return [dict(row) for row in cur.fetchall()]
+
+
+def count_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
+    """How many rows the filters match, ignoring the page.
+
+    Separate from `build_query` because a caller pays for this only when it
+    asks: counting a filter that matches three million rows is real work.
+    """
+    sql, params = build_query(spec)
+    where = sql.partition(f'FROM {TABLE} ')[2].partition('ORDER BY')[0]
+    return (
+        f'SELECT count(*) FROM {TABLE} {where}',
+        {k: v for k, v in params.items() if k not in ('limit', 'offset')},
+    )
+
+
+def fetch_page(conn, spec: MetSigDBQuery) -> tuple[list[dict[str, Any]], bool]:
+    """One page, and whether another one follows.
+
+    Asks for one row beyond the page and drops it. That answers "is there
+    more" for the cost of a single row, where a count would re-run the filter
+    over the whole substrate.
+    """
+    probe = MetSigDBQuery(
+        **{
+            **{f: getattr(spec, f) for f in spec.__dataclass_fields__},
+            'limit': spec.limit + 1,
+        }
+    )
+    rows = fetch(conn, probe)
+    has_more = len(rows) > spec.limit
+    return rows[: spec.limit], has_more
+
+
+def count(conn, spec: MetSigDBQuery) -> int:
+    """The size of the whole result set."""
+    sql, params = count_query(spec)
+    with conn.cursor() as cur:
+        cur.execute(sql, params)
+        return int(cur.fetchone()[0])
