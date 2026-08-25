@@ -163,5 +163,12 @@ def test_no_stats_or_discovery_endpoints_exist(client):
         assert client.get(path).status_code in (404, 405)
 
 
-def test_set_label_is_null_throughout_v1(client):
-    assert all(row['set_label'] is None for row in _rows(client, limit=200))
+def test_named_and_unnamed_resources_both_serve(client):
+    """ClassyFire names every set; KEGG names none. Both are contract-valid."""
+    assert all(row['set_label'] for row in _rows(client, resource='ClassyFire', limit=50))
+    assert all(row['set_label'] is None for row in _rows(client, resource='KEGG', limit=50))
+
+
+def test_wikipathways_serves_many_species(client):
+    rows = _rows(client, resource='WikiPathways', limit=5000)
+    assert len({row['organism'] for row in rows} - {None}) > 10

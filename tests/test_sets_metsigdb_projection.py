@@ -21,13 +21,15 @@ SUBSTRATE_ROW = {
     'metabolite_entity_id': '971c119b-313f-f9f6-ce2e-5c7f0cec27ca',
     'metabolite_label': 'ATP',
     'metabolite_entity_type': 'Chemical:OM:0037',
+    'metabolite_structure_key': 'ZKHQWZAMYRWXGA',
     'inchikey': None,
     'smiles': None,
     'hmdb': None,
     'pubchem': None,
     'chebi': '30616',
     'kegg': None,
-    'set_label': None,
+    'set_entity_id': '8d61798c-34b5-ff31-734d-d65b8b1b0889',
+    'set_label': 'Interleukin-6 signaling',
     'set_type': 'pathway',
     'organism': 9606,
     'set_size': 2,
@@ -74,9 +76,26 @@ def test_absent_identifiers_stay_present_and_null():
     assert 'inchikey' in row
 
 
-def test_null_set_label_is_published_as_null():
-    """ontology_terms is empty, so no set carries a readable name in v1."""
-    assert project_row(SUBSTRATE_ROW)['set_label'] is None
+def test_a_named_set_publishes_its_name():
+    """Reactome, MACdb and ClassyFire name every set they publish."""
+    assert project_row(SUBSTRATE_ROW)['set_label'] == 'Interleukin-6 signaling'
+
+
+def test_an_unnamed_set_publishes_null():
+    """KEGG and WikiPathways carry no name in this build."""
+    assert project_row(SUBSTRATE_ROW | {'set_label': None})['set_label'] is None
+
+
+def test_both_entity_ids_are_strings():
+    """A uuid must not reach the response as an object the encoder guesses at."""
+    row = project_row(SUBSTRATE_ROW)
+    assert isinstance(row['metabolite_entity_id'], str)
+    assert isinstance(row['set_entity_id'], str)
+
+
+def test_the_structure_key_is_published():
+    """It is what makes a cross-resource join on one molecule possible."""
+    assert project_row(SUBSTRATE_ROW)['metabolite_structure_key'] == 'ZKHQWZAMYRWXGA'
 
 
 def test_the_entity_id_is_a_string():

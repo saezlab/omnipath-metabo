@@ -36,6 +36,11 @@ ROW_FIELDS: tuple[str, ...] = (
     'metabolite_entity_id',
     'metabolite_label',
     'metabolite_entity_type',
+    # Charge, stereo and tautomer variants of one molecule share this key. The
+    # anchor is still the entity, so identity is unchanged; the key is what
+    # lets a consumer join a membership from one resource to the same molecule
+    # in another when the two picked different protonation states.
+    'metabolite_structure_key',
     'inchikey',
     'smiles',
     'hmdb',
@@ -44,6 +49,10 @@ ROW_FIELDS: tuple[str, ...] = (
     'kegg',
     'resource',
     'set_source_id',
+    # The canonical entity behind the set. Names and cross-references join on
+    # this, never on `set_source_id`: MACdb trait ids are bare integers that
+    # collide with ChEBI ids in `entity.canonical_identifier`.
+    'set_entity_id',
     'set_label',
     'set_type',
     'organism',
@@ -66,9 +75,10 @@ def project_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
     # A uuid must reach the response as a string. Left as an object it depends
     # on whatever the encoder decides, which is not a contract.
-    entity_id = projected['metabolite_entity_id']
-    if isinstance(entity_id, UUID):
-        projected['metabolite_entity_id'] = str(entity_id)
+    for field in ('metabolite_entity_id', 'set_entity_id'):
+        value = projected[field]
+        if isinstance(value, UUID):
+            projected[field] = str(value)
 
     return projected
 
