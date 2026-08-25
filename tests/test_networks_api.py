@@ -54,50 +54,36 @@ def test_list_networks(client):
     assert {'metalinksdb', 'liana'} <= names
 
 
-def test_network_status_reports_rows_and_build_id(client):
-    resp = client.get('/networks/metalinksdb/status')
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body['present'] is True
-    assert body['row_count'] > 0
-    assert body['build_id']
+def _matview_backed(client):
+    """The registered datasets this service can still serve rows for.
 
-
-def test_interactions_consistent_with_combined_contract(client):
-    """The rows served are the combined contract's own rows.
-
-    MetaLinksDB holds more rows than one request may return, so the total is
-    pinned from both ends instead of in one call: a first page is full, and the
-    page starting three rows from the end holds exactly those three. Both agree
-    with the row count the status route reports.
+    A dataset whose registry row names a combined relation has a view here; a
+    dataset that names none is a preset and its rows live in the main service.
+    Both cycle-008 datasets are presets now, so this returns nothing and the
+    row-serving tests skip rather than fail. They stay in the file because the
+    route still exists and a dataset onboarded with a view would use it.
     """
-    status = client.get('/networks/metalinksdb/status').json()
-    total = status['row_count']
-    assert total > 3
-
-    limit = 1000
-    resp = client.get('/networks/metalinksdb/interactions', params={'limit': limit})
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body['count'] == min(total, limit)
-    assert body['rows']
-
-    tail = client.get(
-        '/networks/metalinksdb/interactions',
-        params={'limit': limit, 'offset': total - 3},
-    ).json()
-    assert tail['count'] == 3
+    return [
+        row['name'] for row in client.get('/networks/').json()
+        if row.get('combined_relation')
+    ]
 
 
-def test_preset_is_reported_present_and_served_elsewhere(client):
+@pytest.mark.parametrize('name', ['metalinksdb', 'liana'])
+def test_preset_is_reported_present_and_served_elsewhere(client, name):
     """A dataset with no matview is a preset, and the status route says so.
 
     Its registry row names no schema and no combined relation, which used to
     make the presence probe report a live dataset as absent. Now the row count
     is unknown rather than zero, presence is not in doubt, and asking this
     service for the rows points at the service that has them.
+
+    Both datasets answer this way since MetaLinksDB became a preset. Its views
+    are still on disk and this service no longer reaches them: the registry row
+    stopped naming them, which is the point — one dataset, one place it is
+    served from, and no second copy on a different refresh schedule.
     """
-    resp = client.get('/networks/liana/status')
+    resp = client.get(f'/networks/{name}/status')
     assert resp.status_code == 200
     body = resp.json()
     assert body['kind'] == 'preset'
@@ -105,14 +91,38 @@ def test_preset_is_reported_present_and_served_elsewhere(client):
     assert body['row_count'] is None
     assert body['build_id']
 
-    rows = client.get('/networks/liana/interactions', params={'limit': 10})
+    rows = client.get(f'/networks/{name}/interactions', params={'limit': 10})
     assert rows.status_code == 501
-    assert '/interactions/liana' in rows.json()['detail']
+    assert f'/interactions/{name}' in rows.json()['detail']
+
+
+def test_matview_backed_dataset_serves_its_own_rows(client):
+    """A dataset that does own a relation is still served from it."""
+    names = _matview_backed(client)
+    if not names:
+        pytest.skip('every registered dataset is a preset; no rows are served here')
+    name = names[0]
+    total = client.get(f'/networks/{name}/status').json()['row_count']
+    assert total > 3
+    limit = 1000
+    body = client.get(
+        f'/networks/{name}/interactions', params={'limit': limit},
+    ).json()
+    assert body['count'] == min(total, limit)
+    assert body['rows']
+    tail = client.get(
+        f'/networks/{name}/interactions',
+        params={'limit': limit, 'offset': total - 3},
+    ).json()
+    assert tail['count'] == 3
 
 
 def test_interactions_parquet_format(client):
+    names = _matview_backed(client)
+    if not names:
+        pytest.skip('every registered dataset is a preset; no rows are served here')
     resp = client.get(
-        '/networks/metalinksdb/interactions',
+        f'/networks/{names[0]}/interactions',
         params={'limit': 10, 'format': 'parquet'},
     )
     assert resp.status_code == 200
@@ -121,9 +131,21 @@ def test_interactions_parquet_format(client):
 
 
 def test_resources_lists_sources(client):
+    """The resource list is whatever the registry holds, not a fixed number.
+
+    It was pinned at seven and the dataset has carried twelve since the
+    resource expansion, so the number was wrong rather than protective. What
+    the route has to do is report the registry faithfully.
+    """
     resp = client.get('/networks/metalinksdb/resources')
     assert resp.status_code == 200
-    assert len(resp.json()['included_sources']) == 7
+    served = resp.json()['included_sources']
+    assert served, 'the dataset is reported as contributing from no source'
+    registered = next(
+        row for row in client.get('/networks/').json()
+        if row['name'] == 'metalinksdb'
+    )['included_sources']
+    assert served == registered
 
 
 def test_unknown_network_is_not_found(client):
