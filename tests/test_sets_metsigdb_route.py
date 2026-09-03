@@ -390,3 +390,22 @@ def test_identifier_values_keep_their_case(client):
     assert client.get(PATH, params={'entity': 'hmdb0011757', 'limit': 5}).json()[
         'rows'
     ] == []
+
+
+def test_the_old_filter_names_are_marked_deprecated(client):
+    """A consumer should see the rename coming, not meet a 400 one day."""
+    schema = client.get('/schema/openapi.json').json()
+    params = {
+        p['name']: p
+        for path, item in schema['paths'].items()
+        if 'metsigdb' in path
+        for p in item.get('get', {}).get('parameters', [])
+    }
+    for old, new in (('set_source_id', 'set'), ('metabolite_entity_id', 'entity')):
+        # Litestar's `Parameter` has no `deprecated` argument in this version,
+        # so the flag reaches the schema object rather than the parameter
+        # object. Both are valid OpenAPI and a generator reads either; the
+        # description carries the replacement for a human reading the page.
+        assert params[old]['schema'].get('deprecated') is True, old
+        assert new in params[old].get('description', ''), old
+        assert params[new]['schema'].get('deprecated') is not True, new

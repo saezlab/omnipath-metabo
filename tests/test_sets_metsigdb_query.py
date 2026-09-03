@@ -376,3 +376,63 @@ def test_the_query_reads_one_table_and_no_other():
         assert qualified <= {'public.metsigdb_membership'}, sql
         for table in forbidden:
             assert table not in sql, f'{table} reached from the serving layer'
+
+
+# ------------------------------------------------------- no full scans (T050)
+
+
+@pytest.mark.parametrize(
+    ('label', 'spec'),
+    [
+        ('entity by hmdb', MetSigDBQuery(entity=('HMDB0011757',))),
+        ('entity by inchikey', MetSigDBQuery(entity=('IHYJTAOFMMMOPX-LURJTMIESA-N',))),
+        ('entity by kegg', MetSigDBQuery(entity=('C00001',))),
+        ('entity by chebi prefixed', MetSigDBQuery(entity=('CHEBI:21565',))),
+        ('entity by bare integer', MetSigDBQuery(entity=('21565',))),
+        ('entity by uuid', MetSigDBQuery(
+            entity=('f0745119-5530-f7f4-a3df-77cf1d52f2fb',))),
+        ('entity mixed list', MetSigDBQuery(entity=('HMDB0011757', '21565'))),
+        ('set', MetSigDBQuery(set=('R-HSA-1059683',))),
+        ('set with resource', MetSigDBQuery(resource=('MACdb',), set=('1',))),
+        ('resource, canonical', MetSigDBQuery(resource=('WikiPathways',))),
+        ('resource, other case', MetSigDBQuery(resource=('wikipathways',))),
+        ('set_type', MetSigDBQuery(set_type=('disease',))),
+        ('set_sub_type', MetSigDBQuery(set_sub_type=('cancer',))),
+        ('organism', MetSigDBQuery(organism=9606)),
+        ('sub_type and resource', MetSigDBQuery(
+            resource=('KEGG',), set_sub_type=('overview_map',))),
+    ],
+)
+def test_no_accepted_filter_scans_the_whole_substrate(conn, label, spec):
+    """FR-011 and SC-006, held by a test rather than by a one-off EXPLAIN.
+
+    Every shape here is one a request can produce, and every one is paged: the
+    route never issues an unbounded select.
+
+    **A sequential scan is not the only way to read the whole table.** The
+    `lower()` predicates this cycle briefly shipped planned as an *Index Only
+    Scan* — and then discarded 3,503,370 rows in a filter to return five. Only
+    the suite's runtime caught it. So the assertion is on rows discarded, not on
+    the scan node: an index that the planner uses for ordering while filtering
+    everything out is a full scan wearing a better name.
+
+    `count(*)` is deliberately not covered. A caller asking `total=true` for a
+    filter matching most of the substrate has asked for work no index can avoid,
+    and the contract already says that costs.
+    """
+    sql, params = build_query(spec)
+    with conn.cursor() as cur:
+        cur.execute(f'EXPLAIN (ANALYZE, TIMING OFF, FORMAT TEXT) {sql}', params)
+        plan = '\n'.join(row[0] for row in cur.fetchall())
+
+    assert 'Seq Scan on metsigdb_membership' not in plan, (
+        f'{label} scans the whole substrate:\n{plan}'
+    )
+
+    discarded = sum(
+        int(match) for match in re.findall(r'Rows Removed by Filter: (\d+)', plan)
+    )
+    assert discarded < 100_000, (
+        f'{label} discarded {discarded:,} rows to fill one page. The plan uses '
+        f'an index for order and filters the rest, which reads the table:\n{plan}'
+    )
