@@ -268,3 +268,50 @@ def test_a_column_name_is_not_a_response_name(client):
 def test_fields_is_a_known_parameter(client):
     """It has to be in the allow-list, or the route refuses its own parameter."""
     assert client.get(PATH, params={'limit': 1, 'fields': 'smiles'}).status_code == 200
+
+
+# ---------------------------------------------------------- grouping (US2)
+
+
+def test_the_flat_shape_is_still_the_default(client):
+    """Cycle 010 consumers are unaffected: grouping is asked for, not imposed."""
+    body = client.get(PATH, params={'limit': 2}).json()
+    assert set(body) == {'count', 'has_more', 'rows', 'total'}
+
+
+def test_a_grouped_response_carries_groups_not_rows(client):
+    body = client.get(PATH, params={'resource': 'MACdb', 'group': True, 'limit': 3}).json()
+    assert set(body) == {'count', 'has_more', 'groups', 'total'}
+    assert body['groups'][0]['resource'] == 'MACdb'
+    assert body['groups'][0]['sets'][0]['members']
+
+
+def test_the_grouped_page_counts_sets(client):
+    """`limit` means sets here, and `total` counts the sets that matched."""
+    body = client.get(
+        PATH,
+        params={'resource': 'MACdb', 'group': True, 'limit': 4, 'total': True},
+    ).json()
+    sets = [one for g in body['groups'] for one in g['sets']]
+    assert body['count'] == len(sets) <= 4
+    assert body['total'] == 269, 'MACdb publishes 269 sets, not 20,291 rows'
+
+
+def test_a_grouped_set_reports_population_and_returned(client):
+    body = client.get(
+        PATH, params={'resource': 'KEGG', 'group': True, 'limit': 2}
+    ).json()
+    for one_set in [one for g in body['groups'] for one in g['sets']]:
+        assert one_set['returned'] == len(one_set['members'])
+        assert one_set['returned'] == one_set['set_size']
+
+
+def test_a_grouped_member_does_not_repeat_the_set(client):
+    """The set side is written once per set, never on each member."""
+    body = client.get(
+        PATH, params={'resource': 'KEGG', 'group': True, 'limit': 1}
+    ).json()
+    member = body['groups'][0]['sets'][0]['members'][0]
+    for field in ('resource', 'set', 'set_label', 'set_size'):
+        assert field not in member
+    assert 'entity' in member

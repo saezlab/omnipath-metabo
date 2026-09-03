@@ -22,13 +22,19 @@ from __future__ import annotations
 
 __all__ = [
     'ALL_FIELDS',
+    'MEMBER_FIELDS',
+    'SET_FIELDS',
     'COLUMN_NAMES',
     'DEFAULT_FIELDS',
     'OPTIONAL_FIELDS',
     'RESPONSE_NAMES',
     'ROW_FIELDS',
+    'MetSigDBGroupedPage',
     'MetSigDBPage',
     'MetSigDBRow',
+    'ResourceGroup',
+    'SetGroup',
+    'SetGroupMember',
     'columns_for',
     'project_row',
     'project_rows',
@@ -122,6 +128,27 @@ OPTIONAL_FIELDS: tuple[str, ...] = tuple(
 
 # `fields=all` is the cycle 010 response, for a consumer that wants it back.
 ALL_KEYWORD = 'all'
+
+# A grouped response splits the row in two. The set side describes the set and
+# is written once per set; the metabolite side describes one member and is
+# written once per member. Repeating six set-level fields on each of a set's
+# members would undo the projection work in the same response that does it —
+# ClassyFire's root class alone has 145,937 of them.
+SET_FIELDS: tuple[str, ...] = (
+    'resource',
+    'set',
+    'set_entity_id',
+    'set_label',
+    'set_type',
+    'set_sub_type',
+    'organism',
+    'set_size',
+    'set_context',
+)
+
+MEMBER_FIELDS: tuple[str, ...] = tuple(
+    field for field in ALL_FIELDS if field not in SET_FIELDS
+)
 
 # Fields whose stored value is a uuid. They must reach the response as strings:
 # left as objects the shape depends on whatever the encoder decides, which is
@@ -257,4 +284,69 @@ class MetSigDBPage(TypedDict):
     count: int
     has_more: bool
     rows: list[MetSigDBRow]
+    total: int | None
+
+
+class SetGroupMember(TypedDict):
+    """One metabolite inside a grouped set.
+
+    The metabolite side of the row only. The set side is written once on the
+    set, not repeated on each of its members.
+    """
+
+    entity: str
+    metabolite_label: str
+    inchikey: NotRequired[str | None]
+    hmdb: NotRequired[str | None]
+    pubchem: NotRequired[str | None]
+    chebi: NotRequired[str | None]
+    kegg: NotRequired[str | None]
+    metabolite_entity_type: NotRequired[str]
+    metabolite_structure_key: NotRequired[str | None]
+    smiles: NotRequired[str | None]
+    provenance_source: NotRequired[str]
+    provenance_record: NotRequired[dict[str, Any] | None]
+    build_id: NotRequired[str]
+
+
+class SetGroup(TypedDict):
+    """One set, complete, with its members.
+
+    ``set_size`` is the set's **published population**; ``returned`` is how many
+    members this response carries for it. Under a member-level filter the two
+    differ, and reporting only one would make a filtered view read as a shrunken
+    set rather than a partial view of a whole one.
+    """
+
+    set: str
+    set_label: NotRequired[str | None]
+    set_type: NotRequired[str]
+    set_sub_type: NotRequired[str | None]
+    set_entity_id: NotRequired[str]
+    organism: NotRequired[int | None]
+    set_context: NotRequired[dict[str, Any] | None]
+    set_size: NotRequired[int]
+    returned: int
+    members: list[SetGroupMember]
+
+
+class ResourceGroup(TypedDict):
+    """The sets one resource contributed to this page."""
+
+    resource: str
+    sets: list[SetGroup]
+
+
+class MetSigDBGroupedPage(TypedDict):
+    """One page of **sets**, grouped by resource.
+
+    Every count here is in sets, not rows. ``count`` is the sets in this page,
+    ``total`` the sets the filter matched, and ``has_more`` says whether further
+    sets follow. The flat page counts rows for all three, which is why grouping
+    is a separate response type rather than a flag on the same one.
+    """
+
+    count: int
+    has_more: bool
+    groups: list[ResourceGroup]
     total: int | None

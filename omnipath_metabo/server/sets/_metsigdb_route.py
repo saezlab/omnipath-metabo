@@ -35,6 +35,7 @@ from litestar.params import Parameter
 from omnipath_metabo.server.sets._metsigdb_projection import (
     ALL_FIELDS,
     ALL_KEYWORD,
+    MetSigDBGroupedPage,
     MetSigDBPage,
     project_rows,
     resolve_fields,
@@ -44,6 +45,8 @@ from omnipath_metabo.server.sets._metsigdb_query import (
     MAX_LIMIT,
     MetSigDBQuery,
     count,
+    count_sets,
+    fetch_groups,
     fetch_page,
 )
 
@@ -79,6 +82,7 @@ QUERY_PARAMS = (
     'set_source_id',
     'metabolite_entity_id',
     'fields',
+    'group',
     'limit',
     'offset',
     'total',
@@ -150,6 +154,22 @@ def _fields(requested: list[str] | None):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _grouped(conn, spec, *, total: bool):
+    """One page of sets, grouped by resource.
+
+    Every count is in sets rather than rows, which is the whole point of the
+    shape: a page of N sets never splits one across a boundary, so a grouped
+    response is coherent on its own.
+    """
+    groups, has_more = fetch_groups(conn, spec)
+    return {
+        'count': sum(len(group['sets']) for group in groups),
+        'has_more': has_more,
+        'groups': groups,
+        'total': count_sets(conn, spec) if total else None,
+    }
+
+
 def _checked(values: list[str] | None, allowed: tuple[str, ...], name: str):
     """One multi-valued filter, rejected when it names something v1 does not."""
     if not values:
@@ -185,10 +205,11 @@ class MetSigDBController(Controller):
         set_source_id: str | None = Parameter(default=None),
         metabolite_entity_id: str | None = Parameter(default=None),
         fields: list[str] | None = Parameter(default=None),
+        group: bool = Parameter(default=False),
         limit: int = Parameter(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
         offset: int = Parameter(default=0, ge=0),
         total: bool = Parameter(default=False),
-    ) -> MetSigDBPage:
+    ) -> MetSigDBPage | MetSigDBGroupedPage:
         """Membership rows in the published default projection.
 
         Every response is paged. No filter combination returns the whole
@@ -221,6 +242,8 @@ class MetSigDBController(Controller):
         conn = _connect(request)
         try:
             try:
+                if group:
+                    return _grouped(conn, spec, total=total)
                 rows, has_more = fetch_page(conn, spec)
                 matched = count(conn, spec) if total else None
             except Exception as exc:
