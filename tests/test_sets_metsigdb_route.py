@@ -315,3 +315,78 @@ def test_a_grouped_member_does_not_repeat_the_set(client):
     for field in ('resource', 'set', 'set_label', 'set_size'):
         assert field not in member
     assert 'entity' in member
+
+
+# ------------------------------------------------- identifier filters (US3)
+
+
+def test_entity_accepts_an_external_identifier(client):
+    rows = _rows(client, entity='HMDB0011757', limit=20)
+    assert rows
+    assert {row['hmdb'] for row in rows} == {'HMDB0011757'}
+
+
+def test_entity_accepts_a_list(client):
+    rows = _rows(client, entity='HMDB0011757,C00001', limit=50)
+    assert rows
+
+
+def test_an_unrecognisable_entity_value_is_refused(client):
+    """A 400 naming the value, not an empty page that reads as 'no such thing'."""
+    response = client.get(PATH, params={'entity': 'CCO', 'limit': 1})
+    assert response.status_code == 400
+    assert 'CCO' in response.text
+    assert 'SMILES' in response.text
+
+
+def test_set_filters_without_reading_the_value_as_an_identifier(client):
+    """MACdb set ids are bare integers and collide with ChEBI ids."""
+    rows = _rows(client, set='1', limit=50)
+    assert {row['resource'] for row in rows} == {'MACdb'}
+    assert {row['set'] for row in rows} == {'1'}
+
+
+def test_the_deprecated_names_still_work(client):
+    """Cycle 010 consumers keep working while the rename beds in."""
+    old = _rows(client, set_source_id='R-HSA-1059683', limit=50)
+    new = _rows(client, set='R-HSA-1059683', limit=50)
+    assert old == new
+
+
+def test_identifier_coverage_is_documented_in_the_schema(client):
+    """An empty identifier result has to be explainable from the API document."""
+    schema = client.get('/schema/openapi.json').json()
+    description = str(schema)
+    assert 'resource-dependent' in description
+    assert 'Reactome' in description
+
+
+# ------------------------------------------------- case-insensitivity (US4)
+
+
+def test_the_vocabulary_filters_ignore_case(client):
+    """An empty result from a case mismatch is indistinguishable from absence."""
+    assert _rows(client, resource='wikipathways', limit=5) == _rows(
+        client, resource='WikiPathways', limit=5
+    )
+    assert _rows(client, set_sub_type='CANCER', limit=5) == _rows(
+        client, set_sub_type='cancer', limit=5
+    )
+    assert _rows(client, set_type='DISEASE', limit=5) == _rows(
+        client, set_type='disease', limit=5
+    )
+
+
+def test_an_invalid_value_is_refused_whatever_its_case(client):
+    """`wikipathways` is `WikiPathways`; `smpdb` is nothing."""
+    for value in ('smpdb', 'SMPDB', 'SmPdB'):
+        assert client.get(PATH, params={'resource': value}).status_code == 400
+
+
+def test_identifier_values_keep_their_case(client):
+    """InChIKeys are canonically uppercase, and the column carries no index for
+    a case-folded match."""
+    assert _rows(client, entity='HMDB0011757', limit=5)
+    assert client.get(PATH, params={'entity': 'hmdb0011757', 'limit': 5}).json()[
+        'rows'
+    ] == []

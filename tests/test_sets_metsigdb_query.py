@@ -14,6 +14,7 @@ substrate::
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -66,12 +67,25 @@ def test_every_query_is_bounded():
 
 
 def test_resource_and_set_type_accept_several_values():
+    """Exact equality, so `resource` keeps the primary key's index condition."""
     sql, params = build_query(
         MetSigDBQuery(resource=('KEGG', 'Reactome'), set_type=('pathway',))
     )
     assert 'resource = ANY(%(resource)s)' in sql
     assert 'set_type = ANY(%(set_type)s)' in sql
     assert params['resource'] == ['KEGG', 'Reactome']
+
+
+def test_a_vocabulary_value_is_canonicalised_not_lowered():
+    """Case-insensitivity is a normalisation at the edge, not a SQL expression.
+
+    Lowering the column costs the primary key, which `resource` leads. Measured
+    on this substrate, one five-row WikiPathways page went from 6 buffers to
+    91,442 because the scan discarded 3,503,370 ClassyFire rows first.
+    """
+    sql, params = build_query(MetSigDBQuery(resource=('wikipathways',)))
+    assert 'lower(' not in sql
+    assert params['resource'] == ['WikiPathways']
 
 
 def test_scalar_filters_use_equality():
@@ -103,6 +117,10 @@ def test_only_shared_columns_are_filterable():
         'set_type',
         'set_sub_type',
         'organism',
+        # Cycle 012 renamed two of them and kept the old names as aliases, so
+        # both spellings are filters until a later cycle retires the originals.
+        'set',
+        'entity',
         'set_source_id',
         'metabolite_entity_id',
     }
@@ -210,3 +228,151 @@ def test_paging_neither_repeats_nor_skips(conn):
 
     assert identity(first) + identity(second) == identity(whole)
     assert len(set(identity(whole))) == len(whole)
+
+
+# ------------------------------------------------ identifier lookup (US3)
+
+
+def test_a_value_is_recognised_by_its_shape():
+    """A caller pastes what they hold; the route works out what it is.
+
+    A type parameter would make the easy case harder and the hard case no
+    easier: the namespace is often the thing the caller is asking about.
+    """
+    from omnipath_metabo.server.sets._metsigdb_query import identifier_columns
+
+    assert identifier_columns('f0745119-5530-f7f4-a3df-77cf1d52f2fb') == (
+        'metabolite_entity_id',
+    )
+    assert identifier_columns('HMDB0011757') == ('hmdb',)
+    assert identifier_columns('CHEBI:21565') == ('chebi',)
+    assert identifier_columns('C00001') == ('kegg',)
+    assert identifier_columns('IHYJTAOFMMMOPX-LURJTMIESA-N') == ('inchikey',)
+
+
+def test_a_bare_integer_is_chebi_or_pubchem():
+    """Both namespaces are bare integers, so the value alone cannot decide.
+
+    The union is the honest answer. Guessing one would silently drop the other's
+    memberships from a result the caller believes is complete.
+    """
+    from omnipath_metabo.server.sets._metsigdb_query import identifier_columns
+
+    assert set(identifier_columns('21565')) == {'chebi', 'pubchem'}
+
+
+def test_an_unrecognisable_value_is_refused():
+    from omnipath_metabo.server.sets._metsigdb_query import identifier_columns
+
+    with pytest.raises(ValueError) as excinfo:
+        identifier_columns('CCO')  # a SMILES, which has no recognisable shape
+
+    assert 'CCO' in str(excinfo.value)
+
+
+def test_smiles_is_not_an_accepted_entity_value():
+    """Published and reachable through `fields`, never a way in.
+
+    It has no distinguishing shape — any string could be a SMILES — so a rule
+    for it would swallow every value the other rules declined. It is also the
+    one identifier column left unindexed.
+    """
+    from omnipath_metabo.server.sets._metsigdb_query import IDENTIFIER_COLUMNS
+
+    assert 'smiles' not in IDENTIFIER_COLUMNS
+
+
+def test_the_entity_filter_finds_a_metabolite_by_external_id(conn):
+    """The blocker cycle 010 left: an identifier the consumer already holds."""
+    rows = fetch(conn, MetSigDBQuery(entity=('HMDB0011757',), limit=20))
+    assert rows
+    assert {row['hmdb'] for row in rows} == {'HMDB0011757'}
+
+
+def test_the_entity_filter_still_takes_an_internal_id(conn):
+    probe = fetch(conn, MetSigDBQuery(resource=('MACdb',), limit=1))[0]
+    rows = fetch(
+        conn,
+        MetSigDBQuery(entity=(str(probe['metabolite_entity_id']),), limit=MAX_LIMIT),
+    )
+    assert {str(row['metabolite_entity_id']) for row in rows} == {
+        str(probe['metabolite_entity_id'])
+    }
+
+
+def test_a_mixed_list_returns_the_union(conn):
+    probe = fetch(conn, MetSigDBQuery(resource=('MACdb',), limit=1))[0]
+    internal = str(probe['metabolite_entity_id'])
+
+    both = fetch(
+        conn,
+        MetSigDBQuery(entity=(internal, 'HMDB0011757'), limit=MAX_LIMIT),
+    )
+    assert len(both) >= 1
+    assert {str(row['metabolite_entity_id']) for row in both} >= {internal}
+
+
+def test_a_set_value_is_never_read_as_an_identifier(conn):
+    """MACdb set ids are bare integers and collide with ChEBI ids.
+
+    Cycle 010's first set-name measurement reported 645 MACdb sets instead of
+    269 for exactly this reason.
+    """
+    rows = fetch(conn, MetSigDBQuery(set=('1',), limit=50))
+    assert rows
+    assert {row['resource'] for row in rows} == {'MACdb'}
+    assert {row['set_source_id'] for row in rows} == {'1'}
+
+
+def test_identifier_lookup_is_resource_dependent(conn):
+    """Reactome carries no HMDB identifier at all, so this is empty by design.
+
+    The contract publishes the coverage table so an empty result here reads as
+    documented sparsity rather than as a fault.
+    """
+    rows = fetch(
+        conn,
+        MetSigDBQuery(entity=('HMDB0011757',), resource=('Reactome',), limit=10),
+    )
+    assert rows == []
+
+
+def test_the_query_reads_one_table_and_no_other():
+    """The single-table rule cycle 010 rests on.
+
+    Joining `entity_identifier_lookup` would make identifier lookup
+    resource-independent and cost no index, and it was rejected: a result could
+    then no longer be reproduced from the published rows. This is the test that
+    notices if it comes back.
+    """
+    from omnipath_metabo.server.sets._metsigdb_query import (
+        build_query,
+        count_query,
+        members_query,
+        set_page_query,
+    )
+
+    specs = (
+        MetSigDBQuery(),
+        MetSigDBQuery(entity=('HMDB0011757', '21565'), limit=10),
+        MetSigDBQuery(resource=('MACdb',), set=('1',)),
+    )
+    builders = (build_query, count_query, set_page_query)
+    statements = [sql for spec in specs for sql, _ in (b(spec) for b in builders)]
+    statements.append(members_query(specs[0], [('MACdb', '1')])[0])
+
+    # Stated as the rule rather than by parsing SQL: the only schema-qualified
+    # table is the substrate, and none of the core tables an identifier join
+    # would reach for is mentioned at all.
+    forbidden = (
+        'entity_identifier_lookup',
+        'identifier_evidence',
+        'entity_evidence_resolution',
+        'entity_ontology_term',
+        'relation_evidence',
+    )
+    for sql in statements:
+        qualified = set(re.findall(r'\bpublic\.\w+', sql))
+        assert qualified <= {'public.metsigdb_membership'}, sql
+        for table in forbidden:
+            assert table not in sql, f'{table} reached from the serving layer'

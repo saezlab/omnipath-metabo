@@ -44,30 +44,17 @@ from omnipath_metabo.server.sets._metsigdb_query import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     MetSigDBQuery,
+    RESOURCES,
+    SET_SUB_TYPES,
+    SET_TYPES,
     count,
     count_sets,
     fetch_groups,
     fetch_page,
+    identifier_columns,
 )
 
-# The v1 enums, rejected at the edge rather than answered with an empty page. A
-# caller asking for SMPDB has made a mistake, and an empty result would hide it.
-RESOURCES = ('KEGG', 'Reactome', 'WikiPathways', 'MACdb', 'ClassyFire')
-SET_TYPES = ('disease', 'pathway', 'chemical_class')
-
-# The finer semantic, where a resource publishes one. MACdb's five trait types
-# come from the source; KEGG marks its whole-metabolism overview maps. The
-# other three resources leave it null, and filtering on it returns nothing for
-# them, which is the honest answer.
-SET_SUB_TYPES = (
-    'cancer',
-    'phenotype',
-    'medical intervention',
-    'gene abnormality',
-    'genotype',
-    'overview_map',
-    'metabolic_map',
-)
+# The v1 enums live with the query layer, which canonicalises against them.
 
 # Everything the route accepts. Litestar ignores a query parameter it does not
 # know, which would answer the wrong question with a 200: `?hmdb=HMDB00077`
@@ -79,6 +66,8 @@ QUERY_PARAMS = (
     'set_type',
     'set_sub_type',
     'organism',
+    'set',
+    'entity',
     'set_source_id',
     'metabolite_entity_id',
     'fields',
@@ -154,6 +143,35 @@ def _fields(requested: list[str] | None):
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+def _listed(values: list[str] | None) -> tuple[str, ...]:
+    """A repeated or comma-separated parameter as one tuple."""
+    if not values:
+        return ()
+    return tuple(
+        part.strip()
+        for value in values
+        for part in value.split(',')
+        if part.strip()
+    )
+
+
+def _entity(values: list[str] | None) -> tuple[str, ...]:
+    """The `entity` filter, with every value's namespace recognised at the edge.
+
+    Recognition happens here so an unrecognisable value is a 400 naming it,
+    rather than an empty page that reads as "no such metabolite".
+    """
+    wanted = _listed(values)
+    if not wanted:
+        return ()
+    try:
+        for value in wanted:
+            identifier_columns(value)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return wanted
+
+
 def _grouped(conn, spec, *, total: bool):
     """One page of sets, grouped by resource.
 
@@ -171,10 +189,17 @@ def _grouped(conn, spec, *, total: bool):
 
 
 def _checked(values: list[str] | None, allowed: tuple[str, ...], name: str):
-    """One multi-valued filter, rejected when it names something v1 does not."""
+    """One multi-valued filter, rejected when it names something v1 does not.
+
+    Matched without regard to case since cycle 012, and the canonical spelling
+    is what reaches the query. An invalid value is still refused whatever its
+    case: `wikipathways` is `WikiPathways`, but `smpdb` is nothing.
+    """
+    values = _listed(values)
     if not values:
         return ()
-    unknown = [value for value in values if value not in allowed]
+    canonical = {value.lower(): value for value in allowed}
+    unknown = [value for value in values if value.lower() not in canonical]
     if unknown:
         raise HTTPException(
             status_code=400,
@@ -183,7 +208,68 @@ def _checked(values: list[str] | None, allowed: tuple[str, ...], name: str):
                 f'Supported: {", ".join(allowed)}.'
             ),
         )
-    return tuple(values)
+    return tuple(canonical[value.lower()] for value in values)
+
+
+# The operation description the OpenAPI document publishes. A consumer who gets
+# an empty result from an identifier query has to be able to find out why
+# without reading the substrate, so the coverage table is part of the contract
+# rather than a note in the specification.
+MEMBERSHIPS_DESCRIPTION = """Membership rows in the published default projection.
+
+Every response is paged. No filter combination returns the whole
+substrate, and the row order is stable, so paging through a result set
+neither repeats nor skips a membership.
+
+An ``organism`` filter matches explicit values only. Null-organism rows
+stay in the dataset and out of an organism-filtered response.
+
+``has_more`` says whether another page follows, and costs one extra
+row. ``total`` is the size of the whole result set and is computed only
+when the request asks for it, because counting a filter that matches
+three million rows is work nobody should pay for by default.
+
+**Fields.** Thirteen by default. ``fields=`` adds any of the other nine
+by name, and ``fields=all`` returns all twenty-two. An unknown name is
+refused rather than ignored.
+
+**Grouping.** ``group=true`` groups by resource and then by set. Under
+grouping ``limit``, ``offset``, ``has_more`` and ``total`` count
+**sets**, not rows, so no set straddles a page. A set is never
+truncated: sets are added whole until the next would cross a 50,000-row
+ceiling, and a set larger than the ceiling is returned complete and
+alone.
+
+**Identifiers.** ``entity`` accepts an internal entity id, an InChIKey,
+or an HMDB, ChEBI, KEGG or PubChem identifier, recognised from the value
+itself. A bare integer matches ChEBI **or** PubChem and returns the
+union, because both namespaces are bare integers. SMILES is published
+and reachable through ``fields``, but is not searchable: it has no
+distinguishing shape.
+
+Nothing is translated on the request path. Values are matched against
+the identifier columns the substrate already publishes, and the
+substrate publishes only what each source supplied. **Coverage is
+therefore resource-dependent, and an empty result is often correct:**
+
+===============  ===========  ======  =======  ======  ========
+resource         metabolites  hmdb    chebi    kegg    pubchem
+===============  ===========  ======  =======  ======  ========
+ClassyFire       145,937      100%    17%      4%      73%
+MACdb            5,389        72%     83%      36%     100%
+WikiPathways     2,789        41%     74%      39%     73%
+Reactome         2,191        0%      76%      3%      1%
+KEGG             1,799        20%     77%      100%    98%
+===============  ===========  ======  =======  ======  ========
+
+A query by HMDB identifier cannot return a Reactome row, because no
+Reactome metabolite carries one. Measured against build
+``9eb5a917e9ed``; the figures move when the upstream resolution work
+lands.
+
+**Deprecated.** ``set_source_id`` and ``metabolite_entity_id`` are the
+cycle 010 names for ``set`` and ``entity``. Both still work.
+"""
 
 
 class MetSigDBController(Controller):
@@ -194,7 +280,7 @@ class MetSigDBController(Controller):
     # The handler blocks: psycopg2 is synchronous, and a full page over a
     # 3.5-million-row table is not instant. Run it off the event loop so one
     # slow query does not stall every other request.
-    @get('/', sync_to_thread=True)
+    @get('/', description=MEMBERSHIPS_DESCRIPTION, sync_to_thread=True)
     def memberships(
         self,
         request: Request,
@@ -202,6 +288,8 @@ class MetSigDBController(Controller):
         set_type: list[str] | None = Parameter(default=None),
         set_sub_type: list[str] | None = Parameter(default=None),
         organism: int | None = Parameter(default=None),
+        set: list[str] | None = Parameter(default=None),
+        entity: list[str] | None = Parameter(default=None),
         set_source_id: str | None = Parameter(default=None),
         metabolite_entity_id: str | None = Parameter(default=None),
         fields: list[str] | None = Parameter(default=None),
@@ -212,22 +300,18 @@ class MetSigDBController(Controller):
     ) -> MetSigDBPage | MetSigDBGroupedPage:
         """Membership rows in the published default projection.
 
-        Every response is paged. No filter combination returns the whole
-        substrate, and the row order is stable, so paging through a result set
-        neither repeats nor skips a membership.
-
-        An ``organism`` filter matches explicit values only. Null-organism rows
-        stay in the dataset and out of an organism-filtered response.
-
-        ``has_more`` says whether another page follows, and costs one extra
-        row. ``total`` is the size of the whole result set and is computed only
-        when the request asks for it, because counting a filter that matches
-        three million rows is work nobody should pay for by default.
+        The full contract — fields, grouping, identifier coverage and the
+        deprecated names — is `MEMBERSHIPS_DESCRIPTION`, which is also what the
+        OpenAPI document publishes. It lives outside the docstring because this
+        service does not set `use_handler_docstrings`, and turning that on would
+        publish every other route's docstring too.
         """
         _reject_unknown_parameters(request)
         projection = _fields(fields)
 
         spec = MetSigDBQuery(
+            set=_listed(set),
+            entity=_entity(entity),
             resource=_checked(resource, RESOURCES, 'resource'),
             set_type=_checked(set_type, SET_TYPES, 'set_type'),
             set_sub_type=_checked(set_sub_type, SET_SUB_TYPES, 'set_sub_type'),

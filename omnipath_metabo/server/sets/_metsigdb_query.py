@@ -31,10 +31,17 @@ __all__ = [
     'fetch_page',
     'count',
     'ROW_CEILING',
+    'IDENTIFIER_COLUMNS',
+    'RESOURCES',
+    'SET_SUB_TYPES',
+    'SET_TYPES',
+    'canonical',
     'count_sets',
     'fetch_groups',
+    'identifier_columns',
 ]
 
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,6 +68,129 @@ MAX_LIMIT = 100_000
 # how many sets share a page, never whether a published set can be returned.
 ROW_CEILING = 50_000
 
+# The v1 enums. They live here rather than in the route because the query layer
+# canonicalises against them: a filter value is matched to its published
+# spelling before it reaches SQL, which is what makes case-insensitivity free.
+RESOURCES = ('KEGG', 'Reactome', 'WikiPathways', 'MACdb', 'ClassyFire')
+SET_TYPES = ('disease', 'pathway', 'chemical_class')
+SET_SUB_TYPES = (
+    'cancer',
+    'phenotype',
+    'medical intervention',
+    'gene abnormality',
+    'genotype',
+    'overview_map',
+    'metabolic_map',
+)
+
+VOCABULARIES: dict[str, tuple[str, ...]] = {
+    'resource': RESOURCES,
+    'set_type': SET_TYPES,
+    'set_sub_type': SET_SUB_TYPES,
+}
+
+
+def canonical(field: str, value: str) -> str:
+    """A vocabulary value in its published spelling, whatever case it arrived in.
+
+    Case-insensitivity is a normalisation at the edge, **not** a `lower()` in
+    the predicate. Lowering the column costs the primary key: `resource` leads
+    it, so `resource = ANY(...)` becomes an index condition while
+    `lower(resource) = ANY(...)` becomes a filter. Measured on this substrate,
+    the difference for one five-row page of WikiPathways is 6 buffers against
+    91,442, because the scan discards 3,503,370 ClassyFire rows first.
+    """
+    for published in VOCABULARIES.get(field, ()):
+        if published.lower() == value.lower():
+            return published
+    return value
+
+# The identifier columns `entity` accepts, and the shape that names each. A
+# caller pastes the identifier they hold; the route works out the namespace. A
+# type parameter would make the easy case harder and the hard case no easier,
+# because the namespace is often what the caller is asking about.
+#
+# `smiles` is absent on purpose. It has no distinguishing shape — any string
+# could be a SMILES — so a rule for it would swallow every value the others
+# declined. It is also the one identifier column left unindexed.
+IDENTIFIER_COLUMNS: tuple[str, ...] = (
+    'metabolite_entity_id',
+    'inchikey',
+    'hmdb',
+    'chebi',
+    'kegg',
+    'pubchem',
+)
+
+_UUID = re.compile(r'^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$', re.I)
+_INCHIKEY = re.compile(r'^[A-Z]{14}-[A-Z]{10}-[A-Z]$')
+_HMDB = re.compile(r'^HMDB\d{5,11}$', re.I)
+_CHEBI_PREFIXED = re.compile(r'^CHEBI:\d+$', re.I)
+_KEGG = re.compile(r'^C\d{5}$', re.I)
+_BARE_INTEGER = re.compile(r'^\d+$')
+
+
+def identifier_columns(value: str) -> tuple[str, ...]:
+    """Which published columns a value could be an identifier in.
+
+    Usually one. A bare integer is two: ChEBI and PubChem identifiers are both
+    bare integers, and the value alone cannot decide between them. The union is
+    the honest answer — guessing one namespace would silently drop the other's
+    memberships from a result the caller believes is complete.
+
+    Raises for a value no rule claims, rather than returning nothing and
+    answering with an empty page that reads as "no such metabolite".
+    """
+    value = value.strip()
+
+    if _UUID.match(value):
+        return ('metabolite_entity_id',)
+    if _INCHIKEY.match(value):
+        return ('inchikey',)
+    if _HMDB.match(value):
+        return ('hmdb',)
+    if _CHEBI_PREFIXED.match(value):
+        return ('chebi',)
+    if _KEGG.match(value):
+        return ('kegg',)
+    if _BARE_INTEGER.match(value):
+        return ('chebi', 'pubchem')
+
+    raise ValueError(
+        f'Unrecognised entity identifier: {value}. Supported: an internal '
+        'entity id, an InChIKey, or an HMDB, ChEBI, KEGG or PubChem '
+        'identifier. SMILES is published but not searchable.'
+    )
+
+
+def _entity_clause(
+    values: tuple[str, ...],
+    params: dict[str, Any],
+) -> str:
+    """One OR-group matching any supplied identifier in any column it could be.
+
+    `CHEBI:` is stripped before binding: the substrate stores bare numbers, and
+    a caller who pastes the prefixed form means the same identifier.
+    """
+    by_column: dict[str, list[str]] = {}
+    for value in values:
+        value = value.strip()
+        for column in identifier_columns(value):
+            stored = value.split(':', 1)[1] if column == 'chebi' and ':' in value else value
+            by_column.setdefault(column, []).append(stored)
+
+    predicates = []
+    for index, (column, wanted) in enumerate(sorted(by_column.items())):
+        key = f'entity_{index}'
+        # The entity id is a uuid column; the others are text. Without the cast
+        # Postgres has no `uuid = text` operator and the query fails rather than
+        # falling back to a slower comparison.
+        cast = '::uuid[]' if column == 'metabolite_entity_id' else '::text[]'
+        predicates.append(f'{column} = ANY(%({key})s{cast})')
+        params[key] = wanted
+
+    return f'({" OR ".join(predicates)})' 
+
 # The columns a query reads come from the projection's field registry, which is
 # the single source of truth for what the substrate publishes. This module used
 # to carry its own copy of the twenty-two column names; two lists of the same
@@ -83,6 +213,10 @@ class MetSigDBQuery:
     set_type: tuple[str, ...] = ()
     set_sub_type: tuple[str, ...] = ()
     organism: int | None = None
+    # Cycle 010 named these after the columns that store them. Cycle 012 names
+    # them after what they select, and keeps the old names working.
+    set: tuple[str, ...] = ()
+    entity: tuple[str, ...] = ()
     set_source_id: str | None = None
     metabolite_entity_id: str | None = None
     # The response fields this request asked for, which decide the columns the
@@ -104,26 +238,12 @@ def build_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
     Separate from execution so the shape of a filter set can be asserted
     without a database.
     """
-    where: list[str] = []
-    params: dict[str, Any] = {'limit': spec.limit, 'offset': spec.offset}
-
-    # Multi-valued filters. ANY over an array keeps one bind parameter whatever
-    # the caller asks for, so the plan does not change with the value count.
-    for field in ('resource', 'set_type', 'set_sub_type'):
-        values = getattr(spec, field)
-        if values:
-            where.append(f'{field} = ANY(%({field})s)')
-            params[field] = list(values)
-
-    # Scalar filters. `organism` is equality, so a null-organism row never
-    # matches: it stays in the substrate and out of an organism-filtered
-    # response, which is what the contract says.
-    for field in ('organism', 'set_source_id', 'metabolite_entity_id'):
-        value = getattr(spec, field)
-        if value is not None:
-            where.append(f'{field} = %({field})s')
-            params[field] = value
-
+    # ANY over an array keeps one bind parameter whatever the caller asks for,
+    # so the plan does not change with the value count. `organism` is equality,
+    # so a null-organism row never matches: it stays in the substrate and out of
+    # an organism-filtered response, which is what the contract says.
+    where, params = _predicates(spec)
+    params |= {'limit': spec.limit, 'offset': spec.offset}
     clause = f'WHERE {" AND ".join(where)} ' if where else ''
     columns = ', '.join(spec.columns())
 
@@ -190,16 +310,33 @@ def count(conn, spec: MetSigDBQuery) -> int:
 # ------------------------------------------------------------ grouped results
 
 
-def _where(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
-    """The filter clause and its parameters, shared by every query shape."""
+def _predicates(spec: MetSigDBQuery) -> tuple[list[str], dict[str, Any]]:
+    """Every filter this request carries, as clauses and bind parameters.
+
+    One builder for all four query shapes. A member-level filter has to narrow
+    the flat page, the set page, the member fetch and both counts identically,
+    or `returned` disagrees with what a grouped response carries.
+    """
     where: list[str] = []
     params: dict[str, Any] = {}
 
+    # The three closed vocabularies match without regard to case, by canonical
+    # spelling rather than by lowering the column. See `canonical`.
     for field in ('resource', 'set_type', 'set_sub_type'):
         values = getattr(spec, field)
         if values:
             where.append(f'{field} = ANY(%({field})s)')
-            params[field] = list(values)
+            params[field] = [canonical(field, value) for value in values]
+
+    # `set` never reads as an entity identifier: MACdb set ids are bare
+    # integers and collide with ChEBI ids. Cycle 010's first set-name
+    # measurement reported 645 MACdb sets instead of 269 for that reason.
+    if spec.set:
+        where.append('set_source_id = ANY(%(set)s)')
+        params['set'] = list(spec.set)
+
+    if spec.entity:
+        where.append(_entity_clause(spec.entity, params))
 
     for field in ('organism', 'set_source_id', 'metabolite_entity_id'):
         value = getattr(spec, field)
@@ -207,6 +344,12 @@ def _where(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
             where.append(f'{field} = %({field})s')
             params[field] = value
 
+    return where, params
+
+
+def _where(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
+    """The filter clause and its parameters, shared by every query shape."""
+    where, params = _predicates(spec)
     return (f'WHERE {" AND ".join(where)} ' if where else ''), params
 
 
