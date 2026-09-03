@@ -214,11 +214,11 @@ class MetSigDBQuery:
     set_sub_type: tuple[str, ...] = ()
     organism: int | None = None
     # Cycle 010 named these after the columns that store them. Cycle 012 names
-    # them after what they select, and keeps the old names working.
+    # them after what they select, and the old names are gone rather than
+    # deprecated: the route refuses an unsupported parameter, so a caller using
+    # one is told, instead of being answered as though they had filtered.
     set: tuple[str, ...] = ()
     entity: tuple[str, ...] = ()
-    set_source_id: str | None = None
-    metabolite_entity_id: str | None = None
     # The response fields this request asked for, which decide the columns the
     # query reads. A page of thirteen fields does not pull twenty-two off the
     # disk and discard nine — `set_context` and `provenance_record` alone are
@@ -338,11 +338,9 @@ def _predicates(spec: MetSigDBQuery) -> tuple[list[str], dict[str, Any]]:
     if spec.entity:
         where.append(_entity_clause(spec.entity, params))
 
-    for field in ('organism', 'set_source_id', 'metabolite_entity_id'):
-        value = getattr(spec, field)
-        if value is not None:
-            where.append(f'{field} = %({field})s')
-            params[field] = value
+    if spec.organism is not None:
+        where.append('organism = %(organism)s')
+        params['organism'] = spec.organism
 
     return where, params
 

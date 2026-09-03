@@ -89,12 +89,14 @@ def test_a_vocabulary_value_is_canonicalised_not_lowered():
 
 
 def test_scalar_filters_use_equality():
+    """`organism` stayed scalar. `set` became a list filter with the rename."""
     sql, params = build_query(
-        MetSigDBQuery(set_source_id='R-HSA-1059683', organism=9606)
+        MetSigDBQuery(set=('R-HSA-1059683',), organism=9606)
     )
-    assert 'set_source_id = %(set_source_id)s' in sql
+    assert 'set_source_id = ANY(%(set)s)' in sql
     assert 'organism = %(organism)s' in sql
     assert params['organism'] == 9606
+    assert params['set'] == ['R-HSA-1059683']
 
 
 def test_only_shared_columns_are_filterable():
@@ -117,12 +119,11 @@ def test_only_shared_columns_are_filterable():
         'set_type',
         'set_sub_type',
         'organism',
-        # Cycle 012 renamed two of them and kept the old names as aliases, so
-        # both spellings are filters until a later cycle retires the originals.
+        # Cycle 012 renamed two of them. The cycle 010 spellings are gone
+        # rather than deprecated, so naming one is an unsupported-parameter
+        # error rather than a filter.
         'set',
         'entity',
-        'set_source_id',
-        'metabolite_entity_id',
     }
 
 
@@ -141,7 +142,7 @@ def test_a_page_knows_whether_more_follows(conn):
     assert len(rows) == 10 and has_more
 
     rows, has_more = fetch_page(
-        conn, MetSigDBQuery(set_source_id='rn00270', limit=1000)
+        conn, MetSigDBQuery(set=('rn00270',), limit=1000)
     )
     assert len(rows) == 16 and not has_more
 
@@ -189,7 +190,7 @@ def test_organism_filter_matches_explicit_values_only(conn):
 
 
 def test_set_source_id_filter_returns_one_set(conn):
-    rows = fetch(conn, MetSigDBQuery(set_source_id='R-HSA-1059683', limit=500))
+    rows = fetch(conn, MetSigDBQuery(set=('R-HSA-1059683',), limit=500))
     assert rows
     assert {row['set_source_id'] for row in rows} == {'R-HSA-1059683'}
     assert rows[0]['set_size'] == len(rows)
@@ -201,7 +202,7 @@ def test_metabolite_filter_can_span_resources(conn):
     rows = fetch(
         conn,
         MetSigDBQuery(
-            metabolite_entity_id=probe['metabolite_entity_id'], limit=MAX_LIMIT
+            entity=(probe['metabolite_entity_id'],), limit=MAX_LIMIT
         ),
     )
     assert len(rows) >= 1

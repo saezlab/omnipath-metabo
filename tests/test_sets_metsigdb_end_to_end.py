@@ -102,7 +102,7 @@ def test_every_field_of_one_row_matches(conn, client):
         COLUMN_NAMES,
     )
 
-    served = _api(client, set_source_id='R-HSA-1059683', limit=1, fields='all')[0]
+    served = _api(client, set=('R-HSA-1059683',), limit=1, fields='all')[0]
     stored = _sql(
         conn,
         f"""
@@ -136,7 +136,7 @@ def test_the_served_build_stamp_is_the_manifest_stamp(conn, client):
 
 def test_a_metabolites_memberships_agree(conn, client):
     probe = _api(client, resource='MACdb', limit=1)[0]['entity']
-    served = _api(client, metabolite_entity_id=probe, limit=100_000)
+    served = _api(client, entity=(probe,), limit=100_000)
     stored = _sql(
         conn,
         f'SELECT count(*) AS n FROM {TABLE} WHERE metabolite_entity_id = %(id)s',

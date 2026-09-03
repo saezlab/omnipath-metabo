@@ -145,7 +145,7 @@ def test_a_set_larger_than_the_ceiling_returns_complete_and_alone(conn):
     """FR-015a. The ceiling bounds how many sets share a page, never whether a
     published set can be returned at all."""
     groups, has_more = fetch_groups(
-        conn, MetSigDBQuery(set_source_id=ROOT_CLASS, limit=10)
+        conn, MetSigDBQuery(set=(ROOT_CLASS,), limit=10)
     )
     returned = _sets(groups)
 
@@ -207,7 +207,7 @@ def test_a_filtered_set_reports_its_population_and_what_it_returned(conn):
     groups, _ = fetch_groups(
         conn,
         MetSigDBQuery(
-            resource=('MACdb',), metabolite_entity_id=member['entity'], limit=50
+            resource=('MACdb',), entity=(member['entity'],), limit=50
         ),
     )
     filtered = _sets(groups)
@@ -223,7 +223,7 @@ def test_a_filtered_set_reports_its_population_and_what_it_returned(conn):
 
 def test_a_filter_matching_nothing_groups_to_nothing(conn):
     groups, has_more = fetch_groups(
-        conn, MetSigDBQuery(set_source_id='no-such-set', limit=10)
+        conn, MetSigDBQuery(set=('no-such-set',), limit=10)
     )
     assert groups == []
     assert has_more is False

@@ -68,8 +68,6 @@ QUERY_PARAMS = (
     'organism',
     'set',
     'entity',
-    'set_source_id',
-    'metabolite_entity_id',
     'fields',
     'group',
     'limit',
@@ -290,19 +288,6 @@ class MetSigDBController(Controller):
         organism: int | None = Parameter(default=None),
         set: list[str] | None = Parameter(default=None),
         entity: list[str] | None = Parameter(default=None),
-        # The cycle 010 names. Marked deprecated so a client generator and the
-        # schema page both show the rename before anything enforces it; a
-        # consumer should see it coming rather than meet a 400 one day.
-        set_source_id: str | None = Parameter(
-            default=None,
-            description='Deprecated. Use `set`.',
-            schema_extra={'deprecated': True},
-        ),
-        metabolite_entity_id: str | None = Parameter(
-            default=None,
-            description='Deprecated. Use `entity`.',
-            schema_extra={'deprecated': True},
-        ),
         fields: list[str] | None = Parameter(default=None),
         group: bool = Parameter(default=False),
         limit: int = Parameter(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
@@ -327,8 +312,6 @@ class MetSigDBController(Controller):
             set_type=_checked(set_type, SET_TYPES, 'set_type'),
             set_sub_type=_checked(set_sub_type, SET_SUB_TYPES, 'set_sub_type'),
             organism=organism,
-            set_source_id=set_source_id,
-            metabolite_entity_id=metabolite_entity_id,
             fields=projection,
             limit=limit,
             offset=offset,

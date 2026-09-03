@@ -66,7 +66,7 @@ def test_the_total_is_absent_unless_asked_for(client):
 
 
 def test_has_more_ends_a_page_walk(client):
-    body = client.get(PATH, params={'set_source_id': 'rn00270'}).json()
+    body = client.get(PATH, params={'set': 'rn00270'}).json()
     assert body['count'] == 16
     assert body['has_more'] is False
 
@@ -160,7 +160,7 @@ def test_an_unsupported_filter_name_is_rejected(client):
 
 def test_a_rejected_filter_names_what_is_supported(client):
     body = client.get(PATH, params={'hmdb': 'HMDB00077'}).text
-    for supported in ('resource', 'set_type', 'organism', 'set_source_id'):
+    for supported in ('resource', 'set_type', 'organism', 'set', 'entity'):
         assert supported in body
 
 
@@ -191,7 +191,7 @@ def test_an_empty_result_keeps_the_response_schema(client):
 
 
 def test_a_set_reports_its_own_size(client):
-    rows = _rows(client, set_source_id='R-HSA-1059683', limit=1000)
+    rows = _rows(client, set='R-HSA-1059683', limit=1000)
     assert rows
     assert rows[0]['set_size'] == len(rows)
 
@@ -346,11 +346,17 @@ def test_set_filters_without_reading_the_value_as_an_identifier(client):
     assert {row['set'] for row in rows} == {'1'}
 
 
-def test_the_deprecated_names_still_work(client):
-    """Cycle 010 consumers keep working while the rename beds in."""
-    old = _rows(client, set_source_id='R-HSA-1059683', limit=50)
-    new = _rows(client, set='R-HSA-1059683', limit=50)
-    assert old == new
+def test_the_old_filter_names_are_gone(client):
+    """Removed rather than deprecated, so naming one fails plainly.
+
+    A silently ignored parameter is the cycle 010 defect this route already
+    refuses. An old name has to land in the same place: an error saying it is
+    unsupported, not an answer that quietly ignored the filter.
+    """
+    for old in ('set_source_id', 'metabolite_entity_id'):
+        response = client.get(PATH, params={old: 'R-HSA-1059683', 'limit': 5})
+        assert response.status_code == 400, old
+        assert old in response.text
 
 
 def test_identifier_coverage_is_documented_in_the_schema(client):
@@ -392,20 +398,15 @@ def test_identifier_values_keep_their_case(client):
     ] == []
 
 
-def test_the_old_filter_names_are_marked_deprecated(client):
-    """A consumer should see the rename coming, not meet a 400 one day."""
+def test_the_schema_offers_only_the_new_names(client):
+    """No deprecated leftovers in the document a client generator reads."""
     schema = client.get('/schema/openapi.json').json()
     params = {
-        p['name']: p
+        p['name']
         for path, item in schema['paths'].items()
         if 'metsigdb' in path
         for p in item.get('get', {}).get('parameters', [])
     }
-    for old, new in (('set_source_id', 'set'), ('metabolite_entity_id', 'entity')):
-        # Litestar's `Parameter` has no `deprecated` argument in this version,
-        # so the flag reaches the schema object rather than the parameter
-        # object. Both are valid OpenAPI and a generator reads either; the
-        # description carries the replacement for a human reading the page.
-        assert params[old]['schema'].get('deprecated') is True, old
-        assert new in params[old].get('description', ''), old
-        assert params[new]['schema'].get('deprecated') is not True, new
+    assert {'set', 'entity'} <= params
+    assert 'set_source_id' not in params
+    assert 'metabolite_entity_id' not in params
