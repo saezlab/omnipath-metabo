@@ -85,15 +85,24 @@ def test_the_api_returns_the_rows_the_substrate_holds(conn, client):
     )
     assert len(served) == len(stored)
     for api_row, sql_row in zip(served, stored):
-        assert api_row['set_source_id'] == sql_row['set_source_id']
-        assert api_row['metabolite_entity_id'] == sql_row['metabolite_entity_id']
+        assert api_row['set'] == sql_row['set_source_id']
+        assert api_row['entity'] == sql_row['metabolite_entity_id']
         assert api_row['set_size'] == sql_row['set_size']
 
 
 def test_every_field_of_one_row_matches(conn, client):
-    from omnipath_metabo.server.sets._metsigdb_projection import ROW_FIELDS
+    """Served row against stored row, field by field.
 
-    served = _api(client, set_source_id='R-HSA-1059683', limit=1)[0]
+    Cycle 012 made the default a subset, so this asks for the whole row. It
+    also renamed two fields in the response, so the comparison maps a response
+    name back to the column it came from.
+    """
+    from omnipath_metabo.server.sets._metsigdb_projection import (
+        ALL_FIELDS,
+        COLUMN_NAMES,
+    )
+
+    served = _api(client, set_source_id='R-HSA-1059683', limit=1, fields='all')[0]
     stored = _sql(
         conn,
         f"""
@@ -102,9 +111,9 @@ def test_every_field_of_one_row_matches(conn, client):
         """,
         {'set_source_id': 'R-HSA-1059683'},
     )[0]
-    for field in ROW_FIELDS:
-        expected = stored[field]
-        if field == 'metabolite_entity_id':
+    for field in ALL_FIELDS:
+        expected = stored[COLUMN_NAMES.get(field, field)]
+        if field == 'entity':
             expected = str(expected)
         assert served[field] == expected, field
 
@@ -121,11 +130,12 @@ def test_counts_agree_per_resource(conn, client):
 
 def test_the_served_build_stamp_is_the_manifest_stamp(conn, client):
     manifest = _sql(conn, 'SELECT build_id FROM public.build_manifest')[0]['build_id']
-    assert {row['build_id'] for row in _api(client, limit=100)} == {manifest}
+    served = _api(client, limit=100, fields='build_id')
+    assert {row['build_id'] for row in served} == {manifest}
 
 
 def test_a_metabolites_memberships_agree(conn, client):
-    probe = _api(client, resource='MACdb', limit=1)[0]['metabolite_entity_id']
+    probe = _api(client, resource='MACdb', limit=1)[0]['entity']
     served = _api(client, metabolite_entity_id=probe, limit=100_000)
     stored = _sql(
         conn,
@@ -144,12 +154,15 @@ def test_a_query_layer_fault_stays_in_the_query_layer(conn):
     The projection still produces contract rows, which is how a caller tells a
     query fault from a projection fault.
     """
-    from omnipath_metabo.server.sets._metsigdb_projection import ROW_FIELDS, project_rows
+    from omnipath_metabo.server.sets._metsigdb_projection import (
+        DEFAULT_FIELDS,
+        project_rows,
+    )
     from omnipath_metabo.server.sets._metsigdb_query import MetSigDBQuery, fetch
 
     wrong = project_rows(fetch(conn, MetSigDBQuery(resource=('MACdb',), limit=5)))
     assert {row['resource'] for row in wrong} == {'MACdb'}
-    assert all(list(row) == list(ROW_FIELDS) for row in wrong)
+    assert all(list(row) == list(DEFAULT_FIELDS) for row in wrong)
 
 
 def test_a_projection_layer_fault_stays_in_the_projection_layer():
@@ -158,10 +171,13 @@ def test_a_projection_layer_fault_stays_in_the_projection_layer():
     The projection never reads the database, so a shape fault cannot be caused
     by the query layer or by upstream source data.
     """
-    from omnipath_metabo.server.sets._metsigdb_projection import ROW_FIELDS, project_row
+    from omnipath_metabo.server.sets._metsigdb_projection import (
+        DEFAULT_FIELDS,
+        project_row,
+    )
 
     projected = project_row({'resource': 'KEGG'})
-    assert list(projected) == list(ROW_FIELDS)
+    assert list(projected) == list(DEFAULT_FIELDS)
     assert projected['resource'] == 'KEGG'
     assert projected['set_size'] is None
 

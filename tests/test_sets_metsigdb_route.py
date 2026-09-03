@@ -77,7 +77,7 @@ def test_the_sub_type_filter_separates_real_diseases(client):
     assert {row['set_sub_type'] for row in rows} == {'cancer'}
 
     rows = _rows(client, resource='KEGG', set_sub_type='overview_map', limit=50)
-    assert {row['set_source_id'] for row in rows} <= {
+    assert {row['set'] for row in rows} <= {
         'rn01100', 'rn01110', 'rn01120', 'rn01200', 'rn01210', 'rn01212',
         'rn01220', 'rn01230', 'rn01232', 'rn01240', 'rn01250',
     }
@@ -88,10 +88,19 @@ def test_an_unsupported_sub_type_is_rejected(client):
 
 
 def test_a_row_satisfies_the_contract(client):
-    from omnipath_metabo.server.sets._metsigdb_projection import ROW_FIELDS
+    """The contract has two shapes since cycle 012, and an order they share.
 
-    row = _rows(client, limit=1)[0]
-    assert list(row) == list(ROW_FIELDS)
+    The default is thirteen fields; `fields=all` is the cycle 010 response. Both
+    follow the contract's field order, so a consumer reading positionally is not
+    at the mercy of which fields were asked for.
+    """
+    from omnipath_metabo.server.sets._metsigdb_projection import (
+        ALL_FIELDS,
+        DEFAULT_FIELDS,
+    )
+
+    assert list(_rows(client, limit=1)[0]) == list(DEFAULT_FIELDS)
+    assert list(_rows(client, limit=1, fields='all')[0]) == list(ALL_FIELDS)
 
 
 # ------------------------------------------------------------------------ paging
@@ -161,13 +170,15 @@ def test_an_unsupported_filter_value_is_rejected(client):
 
 
 def test_the_organism_filter_matches_explicit_values_only(client):
-    rows = _rows(client, organism=9606, limit=20)
+    # `organism` moved to the nine `fields` reaches in cycle 012. Filtering on a
+    # field and reading it back are two separate requests now.
+    rows = _rows(client, organism=9606, limit=20, fields='organism')
     assert all(row['organism'] == 9606 for row in rows)
     assert {row['resource'] for row in rows} == {'Reactome'}
 
 
 def test_null_organism_rows_stay_in_the_dataset(client):
-    rows = _rows(client, resource='ClassyFire', limit=10)
+    rows = _rows(client, resource='ClassyFire', limit=10, fields='organism')
     assert rows
     assert all(row['organism'] is None for row in rows)
 
@@ -201,5 +212,59 @@ def test_named_and_unnamed_resources_both_serve(client):
 
 
 def test_wikipathways_serves_many_species(client):
-    rows = _rows(client, resource='WikiPathways', limit=5000)
+    rows = _rows(client, resource='WikiPathways', limit=5000, fields='organism')
     assert len({row['organism'] for row in rows} - {None}) > 10
+
+
+# ------------------------------------------------------- the projection (012)
+
+
+def test_the_default_response_is_the_thirteen_fields(client):
+    """Cycle 012: a response a consumer does not have to trim."""
+    from omnipath_metabo.server.sets._metsigdb_projection import DEFAULT_FIELDS
+
+    row = _rows(client, limit=1)[0]
+    assert set(row) == set(DEFAULT_FIELDS)
+    assert 'entity' in row and 'set' in row
+    assert 'set_context' not in row
+    assert 'provenance_record' not in row
+
+
+def test_named_fields_are_added_over_the_wire(client):
+    row = _rows(client, limit=1, fields='smiles,set_context')[0]
+    assert 'smiles' in row
+    assert 'set_context' in row
+    assert 'entity' in row, 'fields= adds to the default, it does not replace it'
+
+
+def test_all_returns_every_published_field(client):
+    from omnipath_metabo.server.sets._metsigdb_projection import ALL_FIELDS
+
+    row = _rows(client, limit=1, fields='all')[0]
+    assert set(row) == set(ALL_FIELDS)
+    assert len(row) == 22
+
+
+def test_an_unknown_field_is_refused_by_name(client):
+    """`inchi` left the contract in cycle 010. Asking for it must not pass.
+
+    The rule cycle 010 learned the hard way: an unknown *parameter* returned a
+    200 with an unfiltered page, which reads as an answer. An unknown *field*
+    would be the same defect in a smaller place.
+    """
+    response = client.get(PATH, params={'limit': 1, 'fields': 'inchi'})
+    assert response.status_code == 400
+    assert 'inchi' in response.text
+
+
+def test_a_column_name_is_not_a_response_name(client):
+    """The two renamed fields are reachable under one name only."""
+    response = client.get(
+        PATH, params={'limit': 1, 'fields': 'metabolite_entity_id'}
+    )
+    assert response.status_code == 400
+
+
+def test_fields_is_a_known_parameter(client):
+    """It has to be in the allow-list, or the route refuses its own parameter."""
+    assert client.get(PATH, params={'limit': 1, 'fields': 'smiles'}).status_code == 200

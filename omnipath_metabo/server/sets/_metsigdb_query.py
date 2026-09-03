@@ -35,39 +35,21 @@ __all__ = [
 from dataclasses import dataclass
 from typing import Any
 
+from omnipath_metabo.server.sets._metsigdb_projection import (
+    DEFAULT_FIELDS,
+    columns_for,
+)
+
 TABLE = 'public.metsigdb_membership'
 
 # The same page bounds the network routes of this service already serve.
 DEFAULT_LIMIT = 1000
 MAX_LIMIT = 100_000
 
-# The published row, in contract order. The query selects these columns by
-# name rather than with a star, so a column added to the substrate does not
-# silently widen the public response.
-COLUMNS: tuple[str, ...] = (
-    'metabolite_entity_id',
-    'metabolite_label',
-    'metabolite_entity_type',
-    'metabolite_structure_key',
-    'inchikey',
-    'smiles',
-    'hmdb',
-    'pubchem',
-    'chebi',
-    'kegg',
-    'resource',
-    'set_source_id',
-    'set_entity_id',
-    'set_label',
-    'set_type',
-    'set_sub_type',
-    'organism',
-    'set_size',
-    'set_context',
-    'provenance_source',
-    'provenance_record',
-    'build_id',
-)
+# The columns a query reads come from the projection's field registry, which is
+# the single source of truth for what the substrate publishes. This module used
+# to carry its own copy of the twenty-two column names; two lists of the same
+# thing drift, and the registry is the one the response shape is built from.
 
 # Row identity, which is also the primary key, so the order is stable across
 # pages and the index already serves it.
@@ -88,8 +70,17 @@ class MetSigDBQuery:
     organism: int | None = None
     set_source_id: str | None = None
     metabolite_entity_id: str | None = None
+    # The response fields this request asked for, which decide the columns the
+    # query reads. A page of thirteen fields does not pull twenty-two off the
+    # disk and discard nine — `set_context` and `provenance_record` alone are
+    # the two heaviest columns in the table.
+    fields: tuple[str, ...] = DEFAULT_FIELDS
     limit: int = DEFAULT_LIMIT
     offset: int = 0
+
+    def columns(self) -> tuple[str, ...]:
+        """The substrate columns this request needs, in contract order."""
+        return columns_for(self.fields)
 
 
 def build_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
@@ -119,7 +110,7 @@ def build_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
             params[field] = value
 
     clause = f'WHERE {" AND ".join(where)} ' if where else ''
-    columns = ', '.join(COLUMNS)
+    columns = ', '.join(spec.columns())
 
     return (
         f'SELECT {columns} FROM {TABLE} {clause}'

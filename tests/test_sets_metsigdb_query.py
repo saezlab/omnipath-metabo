@@ -17,6 +17,7 @@ import os
 
 import pytest
 
+from omnipath_metabo.server.sets._metsigdb_projection import resolve_fields
 from omnipath_metabo.server.sets._metsigdb_query import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -89,10 +90,13 @@ def test_only_shared_columns_are_filterable():
     became columns. The six identifier columns are still published and still
     not filterable.
     """
+    # `fields` joined the dataclass in cycle 012 and is not a filter: it names
+    # the response projection, which decides the columns the query reads. It is
+    # excluded here for the same reason `limit` and `offset` are.
     filterable = {
         field
         for field in MetSigDBQuery.__dataclass_fields__
-        if field not in {'limit', 'offset'}
+        if field not in {'limit', 'offset', 'fields'}
     }
     assert filterable == {
         'resource',
@@ -148,8 +152,19 @@ def test_set_type_filter_narrows_rows(conn):
 
 
 def test_organism_filter_matches_explicit_values_only(conn):
-    """Null-organism rows stay in the dataset and never match the filter."""
-    rows = fetch(conn, MetSigDBQuery(organism=9606, limit=50))
+    """Null-organism rows stay in the dataset and never match the filter.
+
+    `organism` is filterable but no longer in the default projection, so the
+    assertion has to ask for the column it reads. Cycle 012 moved it to the
+    nine `fields` reaches; filtering on a field and returning it are now two
+    separate requests.
+    """
+    rows = fetch(
+        conn,
+        MetSigDBQuery(
+            organism=9606, fields=resolve_fields(['organism']), limit=50
+        ),
+    )
     assert rows
     assert all(row['organism'] == 9606 for row in rows)
     assert {row['resource'] for row in rows} == {'Reactome'}

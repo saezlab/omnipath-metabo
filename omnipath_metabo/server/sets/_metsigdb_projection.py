@@ -21,15 +21,22 @@ row and nothing about which rows come back.
 from __future__ import annotations
 
 __all__ = [
+    'ALL_FIELDS',
+    'COLUMN_NAMES',
+    'DEFAULT_FIELDS',
+    'OPTIONAL_FIELDS',
+    'RESPONSE_NAMES',
     'ROW_FIELDS',
     'MetSigDBPage',
     'MetSigDBRow',
+    'columns_for',
     'project_row',
     'project_rows',
+    'resolve_fields',
 ]
 
 from collections.abc import Iterable, Mapping
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 from uuid import UUID
 
 # The published row, in the order the row contract lists it. The metabolite
@@ -71,28 +78,129 @@ ROW_FIELDS: tuple[str, ...] = (
 )
 
 
-def project_row(row: Mapping[str, Any]) -> dict[str, Any]:
+# Two fields reach the response under the name of the filter that selects
+# them, not the name of the column that stores them. The substrate's column
+# names are unchanged; this is presentation only, so a consumer filtering on
+# `entity` reads `entity` back.
+RESPONSE_NAMES: dict[str, str] = {
+    'metabolite_entity_id': 'entity',
+    'set_source_id': 'set',
+}
+
+# The reverse, for the query layer: which column a response field comes from.
+COLUMN_NAMES: dict[str, str] = {
+    response: column for column, response in RESPONSE_NAMES.items()
+}
+
+# Every published field, in contract order, under its response name.
+ALL_FIELDS: tuple[str, ...] = tuple(
+    RESPONSE_NAMES.get(column, column) for column in ROW_FIELDS
+)
+
+# What a response carries when the request says nothing. Enough to identify the
+# metabolite, name the set, and join to a consumer's own data. The nine left
+# out are not less valid, only less often wanted, and `fields` reaches them.
+DEFAULT_FIELDS: tuple[str, ...] = (
+    'entity',
+    'metabolite_label',
+    'inchikey',
+    'hmdb',
+    'pubchem',
+    'chebi',
+    'kegg',
+    'resource',
+    'set',
+    'set_label',
+    'set_type',
+    'set_sub_type',
+    'set_size',
+)
+
+OPTIONAL_FIELDS: tuple[str, ...] = tuple(
+    field for field in ALL_FIELDS if field not in DEFAULT_FIELDS
+)
+
+# `fields=all` is the cycle 010 response, for a consumer that wants it back.
+ALL_KEYWORD = 'all'
+
+# Fields whose stored value is a uuid. They must reach the response as strings:
+# left as objects the shape depends on whatever the encoder decides, which is
+# not a contract.
+_UUID_FIELDS = frozenset({'entity', 'set_entity_id'})
+
+
+def resolve_fields(requested: Iterable[str] | None = None) -> tuple[str, ...]:
+    """The fields one response carries, in contract order.
+
+    `fields` **adds to** the default rather than replacing it, so a consumer
+    naming one extra column does not lose the twelve they did not mention.
+    Naming a default field is accepted and changes nothing.
+
+    An unknown name raises rather than being dropped. Cycle 010 shipped a route
+    that ignored an unknown *parameter* and answered the wrong question with a
+    200; the same silence about an unknown *field* would be the same defect in a
+    smaller place.
+    """
+    if requested is None:
+        return DEFAULT_FIELDS
+
+    requested = tuple(requested)
+    if not requested:
+        return DEFAULT_FIELDS
+
+    if ALL_KEYWORD in requested:
+        return ALL_FIELDS
+
+    unknown = sorted({name for name in requested if name not in ALL_FIELDS})
+    if unknown:
+        raise ValueError(
+            f'Unsupported field: {", ".join(unknown)}. '
+            f'Supported: {", ".join(ALL_FIELDS)}, or "{ALL_KEYWORD}".'
+        )
+
+    wanted = set(DEFAULT_FIELDS) | set(requested)
+    return tuple(field for field in ALL_FIELDS if field in wanted)
+
+
+def columns_for(fields: Iterable[str]) -> tuple[str, ...]:
+    """The substrate columns a set of response fields needs.
+
+    The query selects these by name, so a response that asks for thirteen
+    fields does not read twenty-two off the disk and discard nine.
+    """
+    return tuple(COLUMN_NAMES.get(field, field) for field in fields)
+
+
+def project_row(
+    row: Mapping[str, Any],
+    fields: Iterable[str] | None = None,
+) -> dict[str, Any]:
     """One substrate row as one contract row.
 
-    Every contract field appears, absent ones as null, so the response schema
+    Every requested field appears, absent ones as null, so the response schema
     does not change with the data. Anything the substrate carries beyond the
-    contract stays out: internal columns are not a public concept.
+    request stays out: internal columns are not a public concept, and neither
+    are columns nobody asked for.
     """
-    projected = {field: row.get(field) for field in ROW_FIELDS}
+    fields = DEFAULT_FIELDS if fields is None else tuple(fields)
 
-    # A uuid must reach the response as a string. Left as an object it depends
-    # on whatever the encoder decides, which is not a contract.
-    for field in ('metabolite_entity_id', 'set_entity_id'):
-        value = projected[field]
-        if isinstance(value, UUID):
-            projected[field] = str(value)
+    projected: dict[str, Any] = {}
+    for field in fields:
+        value = row.get(COLUMN_NAMES.get(field, field))
+        if field in _UUID_FIELDS and isinstance(value, UUID):
+            value = str(value)
+        projected[field] = value
 
     return projected
 
 
-def project_rows(rows: Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
+def project_rows(
+    rows: Iterable[Mapping[str, Any]],
+    fields: Iterable[str] | None = None,
+) -> list[dict[str, Any]]:
     """Project a result set, keeping the query layer's order."""
-    return [project_row(row) for row in rows]
+    fields = DEFAULT_FIELDS if fields is None else tuple(fields)
+    return [project_row(row, fields) for row in rows]
 
 
 class MetSigDBRow(TypedDict):
@@ -107,28 +215,33 @@ class MetSigDBRow(TypedDict):
     plain dict, so a page of 100,000 rows costs no object construction.
     """
 
-    metabolite_entity_id: str
+    # The thirteen a response carries when the request says nothing.
+    entity: str
     metabolite_label: str
-    metabolite_entity_type: str
-    metabolite_structure_key: str | None
     inchikey: str | None
-    smiles: str | None
     hmdb: str | None
     pubchem: str | None
     chebi: str | None
     kegg: str | None
     resource: str
-    set_source_id: str
-    set_entity_id: str
+    set: str
     set_label: str | None
     set_type: str
     set_sub_type: str | None
-    organism: int | None
     set_size: int
-    set_context: dict[str, Any] | None
-    provenance_source: str
-    provenance_record: dict[str, Any] | None
-    build_id: str
+
+    # The nine `fields` reaches. NotRequired rather than optional-valued: they
+    # are absent from the response, not present and null, so a client can tell
+    # "not asked for" from "asked for and empty".
+    metabolite_entity_type: NotRequired[str]
+    metabolite_structure_key: NotRequired[str | None]
+    smiles: NotRequired[str | None]
+    set_entity_id: NotRequired[str]
+    organism: NotRequired[int | None]
+    set_context: NotRequired[dict[str, Any] | None]
+    provenance_source: NotRequired[str]
+    provenance_record: NotRequired[dict[str, Any] | None]
+    build_id: NotRequired[str]
 
 
 class MetSigDBPage(TypedDict):

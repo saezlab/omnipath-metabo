@@ -33,8 +33,11 @@ from litestar.exceptions import HTTPException
 from litestar.params import Parameter
 
 from omnipath_metabo.server.sets._metsigdb_projection import (
+    ALL_FIELDS,
+    ALL_KEYWORD,
     MetSigDBPage,
     project_rows,
+    resolve_fields,
 )
 from omnipath_metabo.server.sets._metsigdb_query import (
     DEFAULT_LIMIT,
@@ -75,6 +78,7 @@ QUERY_PARAMS = (
     'organism',
     'set_source_id',
     'metabolite_entity_id',
+    'fields',
     'limit',
     'offset',
     'total',
@@ -121,6 +125,31 @@ def _reject_unknown_parameters(request: Request) -> None:
         )
 
 
+def _fields(requested: list[str] | None):
+    """The response projection this request asks for.
+
+    Accepts the parameter repeated and comma-separated, because both spellings
+    reach a URL and refusing one is a trap rather than a rule.
+
+    An unknown name becomes a 400 naming it. The projection layer raises the
+    error and this turns it into a response: the rule belongs with the field
+    registry, and the status code belongs at the edge.
+    """
+    if not requested:
+        return resolve_fields(None)
+
+    names = [
+        name.strip()
+        for value in requested
+        for name in value.split(',')
+        if name.strip()
+    ]
+    try:
+        return resolve_fields(names)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 def _checked(values: list[str] | None, allowed: tuple[str, ...], name: str):
     """One multi-valued filter, rejected when it names something v1 does not."""
     if not values:
@@ -155,6 +184,7 @@ class MetSigDBController(Controller):
         organism: int | None = Parameter(default=None),
         set_source_id: str | None = Parameter(default=None),
         metabolite_entity_id: str | None = Parameter(default=None),
+        fields: list[str] | None = Parameter(default=None),
         limit: int = Parameter(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
         offset: int = Parameter(default=0, ge=0),
         total: bool = Parameter(default=False),
@@ -174,6 +204,7 @@ class MetSigDBController(Controller):
         three million rows is work nobody should pay for by default.
         """
         _reject_unknown_parameters(request)
+        projection = _fields(fields)
 
         spec = MetSigDBQuery(
             resource=_checked(resource, RESOURCES, 'resource'),
@@ -182,6 +213,7 @@ class MetSigDBController(Controller):
             organism=organism,
             set_source_id=set_source_id,
             metabolite_entity_id=metabolite_entity_id,
+            fields=projection,
             limit=limit,
             offset=offset,
         )
@@ -202,7 +234,7 @@ class MetSigDBController(Controller):
         finally:
             conn.close()
 
-        projected = project_rows(rows)
+        projected = project_rows(rows, projection)
         return {
             'count': len(projected),
             'has_more': has_more,
