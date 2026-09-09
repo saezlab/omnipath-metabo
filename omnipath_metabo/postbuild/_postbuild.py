@@ -40,6 +40,7 @@ from omnipath_metabo.postbuild._chem_layer import (
     refresh_structural_specificity_facet,
 )
 from omnipath_metabo.postbuild._lipid_layer import resolve_lipid_labels
+from omnipath_metabo.postbuild._qc_layer import build_structure_consistency_findings
 from omnipath_metabo.postbuild._ramp_conflicts import populate_ramp_conflicts
 
 
@@ -53,6 +54,9 @@ class PostBuildStats:
     lipids_labelled: int = 0
     lipid_names_resolved: int = 0
     ramp_conflicts: int = 0
+    qc_internal_findings: int = 0
+    qc_cross_reference_findings: int = 0
+    qc_cross_reference_pair_findings: int = 0
 
 
 def post_build_metabo(
@@ -107,6 +111,14 @@ def post_build_metabo(
             + ' '.join(f'{k}={v}' for k, v in sorted(lipid.by_level.items()))
         )
 
+        qc = build_structure_consistency_findings(conn, schema=schema)
+        log(
+            '[post-build-metabo] structure consistency: '
+            f'internal={qc.internal} cross_reference={qc.cross_reference} '
+            f'cross_reference_pair={qc.cross_reference_pair} '
+            f'summary_rows={qc.summary_rows}'
+        )
+
         ramp_conflicts = 0
         if conflicts:
             stats = populate_ramp_conflicts(
@@ -129,6 +141,9 @@ def post_build_metabo(
             lipids_labelled=lipid.lipids_labelled,
             lipid_names_resolved=lipid.names_resolved,
             ramp_conflicts=ramp_conflicts,
+            qc_internal_findings=qc.internal,
+            qc_cross_reference_findings=qc.cross_reference,
+            qc_cross_reference_pair_findings=qc.cross_reference_pair,
         )
     finally:
         if owns_conn:

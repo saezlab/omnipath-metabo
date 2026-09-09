@@ -160,6 +160,86 @@ def ensure_metabo_schema(conn, *, schema: str = 'public') -> None:
                 """
             ).format(schema_id)
         )
+        # Structure consistency findings (spec 011 data-model.md section 6,
+        # T098): one row per comparison from all three checks (internal,
+        # cross_reference, cross_reference_pair). Only different_structure
+        # is an error -- the others are the expressiveness limits the
+        # analysis measured (research R8), reported, not raised.
+        cur.execute(
+            sql.SQL(
+                """
+                CREATE TABLE IF NOT EXISTS {}.structure_consistency_finding (
+                  finding_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                  check_kind text NOT NULL CHECK (
+                    check_kind IN (
+                      'internal', 'cross_reference', 'cross_reference_pair'
+                    )
+                  ),
+                  source_id bigint NOT NULL REFERENCES {}.data_source(source_id),
+                  identifier_type_id bigint NOT NULL
+                    REFERENCES {}.vocab_identifier_type(identifier_type_id),
+                  value_normalized text NOT NULL,
+                  authority_source_id bigint
+                    REFERENCES {}.data_source(source_id),
+                  structure_a text,
+                  structure_b text,
+                  verdict text NOT NULL CHECK (
+                    verdict IN (
+                      'agree', 'unparsable', 'layer_difference',
+                      'different_structure'
+                    )
+                  ),
+                  layer text
+                )
+                """
+            ).format(schema_id, schema_id, schema_id, schema_id)
+        )
+        cur.execute(
+            sql.SQL(
+                'CREATE INDEX IF NOT EXISTS structure_consistency_finding_scope_idx '
+                'ON {}.structure_consistency_finding '
+                '(check_kind, source_id, authority_source_id, verdict)'
+            ).format(schema_id)
+        )
+        # What the endpoints actually serve (Principle II: no request-time
+        # computation) -- counts per resource, authority, check kind and
+        # verdict.
+        cur.execute(
+            sql.SQL(
+                """
+                CREATE TABLE IF NOT EXISTS {}.structure_consistency_summary (
+                  summary_id bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                  check_kind text NOT NULL CHECK (
+                    check_kind IN (
+                      'internal', 'cross_reference', 'cross_reference_pair'
+                    )
+                  ),
+                  source_id bigint NOT NULL REFERENCES {}.data_source(source_id),
+                  authority_source_id bigint
+                    REFERENCES {}.data_source(source_id),
+                  verdict text NOT NULL CHECK (
+                    verdict IN (
+                      'agree', 'unparsable', 'layer_difference',
+                      'different_structure'
+                    )
+                  ),
+                  finding_count bigint NOT NULL
+                )
+                """
+            ).format(schema_id, schema_id, schema_id)
+        )
+        # A plain PRIMARY KEY can't use COALESCE (authority_source_id is
+        # NULL for the internal check) -- a unique index on the expression
+        # instead, so re-running the summary build is still idempotent.
+        cur.execute(
+            sql.SQL(
+                'CREATE UNIQUE INDEX IF NOT EXISTS '
+                'structure_consistency_summary_scope_idx '
+                'ON {}.structure_consistency_summary '
+                '(check_kind, source_id, COALESCE(authority_source_id, -1), verdict)'
+            ).format(schema_id)
+        )
+
         # Goslin lipid-name cache (data-model D), keyed on the verbatim source
         # name so rebuilds never re-parse. ``normalised_name`` is the Goslin
         # canonical form at the name's own (highest available) level — the lipid

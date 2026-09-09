@@ -59,6 +59,7 @@ def create_app(cache_dir: Path | str | None = None) -> 'Litestar':
 
     from ._routes_cosmos import CosmosController
     from ._routes_networks import NetworksController
+    from ._routes_qc import QualityControlController
     from .sets import MetSigDBController
 
     resolved_cache_dir = Path(
@@ -102,6 +103,7 @@ def create_app(cache_dir: Path | str | None = None) -> 'Litestar':
             static_router,
             CosmosController,
             NetworksController,
+            QualityControlController,
             MetSigDBController,
         ],
         cors_config=cors_config,
