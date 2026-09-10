@@ -265,6 +265,25 @@ def ensure_metabo_schema(conn, *, schema: str = 'public') -> None:
                 """
             ).format(schema_id)
         )
+        # chains_possible/chains_listed (spec 011 T121): from the parse
+        # object's fa_list, never from counting C:D tokens in a rendered
+        # string. ADD COLUMN, not part of the CREATE above, so an existing
+        # cache from before this fix keeps its already-computed rows (a
+        # rebuild of resolve_lipid_labels backfills them via its own
+        # NOT-EXISTS incremental-cache logic only for genuinely new names;
+        # a full backfill needs a forced re-parse, not just this migration).
+        cur.execute(
+            sql.SQL(
+                'ALTER TABLE {}.metabo_lipid_name_resolution '
+                'ADD COLUMN IF NOT EXISTS chains_possible smallint'
+            ).format(schema_id)
+        )
+        cur.execute(
+            sql.SQL(
+                'ALTER TABLE {}.metabo_lipid_name_resolution '
+                'ADD COLUMN IF NOT EXISTS chains_listed smallint'
+            ).format(schema_id)
+        )
     conn.commit()
 
 

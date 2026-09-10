@@ -34,6 +34,19 @@ those keep the human name the brevity-first chemical cascade (T064) chose.
 
 Parses are cached in ``metabo_lipid_name_resolution`` keyed on the verbatim
 source name, so rebuilds never re-parse.
+
+**Enrichment only (spec 011 T122).** Lipid *identity* -- which name+level+
+chain-count is one entity, and the generalization edges between them -- is
+decided upstream, in the main build (``duckdb_load.py``'s
+``lipid_name_evidence_resolution``, reading the same standardized-name
+corpus this module's own Goslin parses ultimately feed via
+``omnipath-utils``' independent ``mapping/_lipid.py``). This module never
+merges or creates entities; it only sets ``entity.label``/``label_rule`` for
+display (and, when the toolkit allows, could enrich with a generated
+structure -- see T123's status below). That was already true before this
+cycle (the function only ever ``UPDATE``s ``label``), so T122 needed no
+identity-related code removed here -- only T121's chain-counting fix and
+the docstring making the boundary explicit.
 """
 
 from __future__ import annotations
@@ -64,11 +77,15 @@ _CHAIN_RE = re.compile(r'\d+:\d+')
 # Goslin LipidLevel name (lowercased slug) → granularity rank (higher = finer).
 # Matches pygoslin.domain.LipidLevel; used to pick the most-resolved candidate.
 _LEVEL_RANK = {
-    'complete_structure': 8,
-    'full_structure': 7,
-    'structure_defined': 6,
-    'sn_position': 5,
-    'molecular_species': 4,
+    'complete_structure': 9,
+    'full_structure': 8,
+    'structure_defined': 7,
+    'sn_position': 6,
+    'molecular_species': 5,
+    # Synthesised, not a pygoslin level (T121/R9): strictly between species
+    # and molecular_species -- some chains individually listed, the rest
+    # given only as a sum. Ranked accordingly, never confused with either.
+    'partially_specified': 4,
     'species': 3,
     'class': 2,
     'category': 1,
@@ -125,24 +142,35 @@ def parse_lipid(name: str) -> dict | None:
     lipid_class = _try(lambda: parsed.lipid.headgroup.get_lipid_string())
     sum_formula = _try(parsed.get_sum_formula)
 
-    # Honest granularity: a partial notation like ``TG 42:3-FA18:2`` (a species
-    # total with one named FA) parses as MOLECULAR_SPECIES and Goslin renders it
-    # by subtracting the named FA — ``TG 24:1_18:2`` — which misrepresents a
-    # 3-acyl TG as two chains. Detect that the molecular+ rendering names fewer
-    # acyl chains than the class expects (``poss_fa``) and fall back to the
-    # species total, which is always correct.
-    rank = _LEVEL_RANK.get(level_slug, 0)
+    # Chain counts come from the parse object, not from counting C:D tokens
+    # in the rendered string (research R9, spec 011 T121): a one-chain class
+    # renders with empty-position-slot tokens (MG 18:1 -> MG 18:1/0:0/0:0, 3
+    # tokens for 1 real chain) and a sterol ester's backbone renders its own
+    # pseudo-chain token (CE 18:1 -> SE 27:1/18:1, 2 tokens for 1 real
+    # chain) -- both wrong under naive counting. lipid.fa_list has one entry
+    # per possible chain slot; an unresolved/empty slot has num_carbon == 0
+    # (excluded), while a genuinely named chain -- whether individually
+    # resolved or a same-slot combined sum standing in for several
+    # unresolved chains (the TG 58:12_20:0 case) -- has num_carbon > 0
+    # (counted). No species downgrade: the old guard here replaced a
+    # partial specification like TG 58:12_20:0 with its species total on the
+    # premise that the subtracted/summed rendering misrepresents the real
+    # chain count -- it does not (R9's arithmetic, verified independently in
+    # omnipath-utils' mapping/_lipid.py); the guard discarded 3,468 distinct
+    # partial specifications system-wide. "Partially specified" (chains
+    # listed strictly between 0 and the class total) is its own level here
+    # too, matching data-model.md section 7 exactly -- mirrored
+    # independently from omnipath-utils' implementation (cross-repo
+    # duplication is this codebase's established pattern for an identical
+    # fix needed in two services, e.g. T071's name normalization).
     poss_fa = getattr(info, 'poss_fa', None)
-    named_chains = len(_CHAIN_RE.findall(normalised))
-    lumped = (
-        rank >= _LEVEL_RANK['molecular_species']
-        and isinstance(poss_fa, int)
-        and poss_fa > 0
-        and named_chains < poss_fa
-    )
-    if lumped and species:
-        normalised = species
-        level_slug = 'species'
+    fa_list = getattr(parsed.lipid, 'fa_list', None) or []
+    named_chains = sum(1 for fa in fa_list if getattr(fa, 'num_carbon', 0) > 0)
+    if (
+        isinstance(poss_fa, int) and poss_fa > 0
+        and 0 < named_chains < poss_fa
+    ):
+        level_slug = 'partially_specified'
 
     total_carbon = total_db = None
     if species:
@@ -159,6 +187,8 @@ def parse_lipid(name: str) -> dict | None:
         'total_carbon': total_carbon,
         'total_db': total_db,
         'sum_formula': sum_formula,
+        'chains_possible': poss_fa,
+        'chains_listed': named_chains,
     }
 
 
@@ -257,7 +287,8 @@ def resolve_lipid_labels(
         for raw_name, parsed in zip(raw_names, parsed_results):
             if parsed is None:
                 rows.append((raw_name, None, None, None, None, None,
-                             None, None, None, 'unresolved', version))
+                             None, None, None, 'unresolved', version,
+                             None, None))
             else:
                 resolved += 1
                 rows.append((
@@ -272,6 +303,8 @@ def resolve_lipid_labels(
                     parsed['sum_formula'],
                     'goslin',
                     version,
+                    parsed['chains_possible'],
+                    parsed['chains_listed'],
                 ))
         if rows:
             execute_values(
@@ -281,7 +314,8 @@ def resolve_lipid_labels(
                     INSERT INTO {cache} (
                       raw_name, normalised_name, species_name, lipid_level,
                       lipid_category, lipid_class, total_carbon, total_db,
-                      sum_formula, resolver, goslin_version
+                      sum_formula, resolver, goslin_version,
+                      chains_possible, chains_listed
                     ) VALUES %s
                     ON CONFLICT (raw_name) DO NOTHING
                     """
