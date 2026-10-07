@@ -272,8 +272,15 @@ def _format_transporter_row(
     """
     Expand one non-pre-expanded transporter row into directed edges.
 
-    Input row is always ``small_molecule → protein`` (met → gene) for
-    TCDB, SLC, and STITCH transporter rows.
+    Input row is ``small_molecule → protein`` (met → gene) for TCDB, SLC,
+    and STITCH transporter rows. GEM-derived resources (``GEM_transporter:
+    Mouse-GEM``, ``iMM1415``) instead provide each reversible reaction as
+    a matched *pair* of rows -- one per column order -- since the reaction
+    is inherently bidirectional; the forward/reverse edge expansion below
+    already derives full reversibility from either row of such a pair
+    alone, so ``source_type``/``target_type`` (not column position)
+    decides which side is the metabolite, rather than assuming ``source``
+    is always the metabolite.
 
     Each compartment in ``locations`` and each UniProt AC in a frozenset
     gene ID is expanded separately.  For each ``(src_comp, gene_id)``
@@ -290,10 +297,16 @@ def _format_transporter_row(
     locs = row['locations'] if isinstance(row['locations'], tuple) else ()
     comps = locs if locs else ('',)
 
-    bare_met = row['source']
-    bare_gene_raw = row['target']
-    id_type_met = row['id_type_a']
-    id_type_gene = row['id_type_b']
+    if row['source_type'] == 'protein':
+        bare_met = row['target']
+        bare_gene_raw = row['source']
+        id_type_met = row['id_type_b']
+        id_type_gene = row['id_type_a']
+    else:
+        bare_met = row['source']
+        bare_gene_raw = row['target']
+        id_type_met = row['id_type_a']
+        id_type_gene = row['id_type_b']
     gene_ids = sorted(bare_gene_raw) if isinstance(bare_gene_raw, frozenset) else [bare_gene_raw]
 
     dest_comp = 'c'  # cytoplasm is always the intracellular destination
