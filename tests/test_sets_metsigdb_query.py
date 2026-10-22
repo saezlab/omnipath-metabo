@@ -124,6 +124,9 @@ def test_only_shared_columns_are_filterable():
         # error rather than a filter.
         'set',
         'entity',
+        # Cycle 013. It filters members out rather than selecting sets, and it
+        # is off by default, so a request without it is the cycle 012 request.
+        'exclude_metabolites',
     }
 
 

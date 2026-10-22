@@ -32,15 +32,19 @@ __all__ = [
     'count',
     'ROW_CEILING',
     'IDENTIFIER_COLUMNS',
+    'EXCLUSION_CLASSES',
     'RESOURCES',
     'SET_SUB_TYPES',
     'SET_TYPES',
     'canonical',
     'count_sets',
+    'exclusion_classes',
+    'exclusion_table_exists',
     'fetch_groups',
     'identifier_columns',
 ]
 
+import os
 import re
 from dataclasses import dataclass
 from typing import Any
@@ -53,7 +57,34 @@ from omnipath_metabo.server.sets._metsigdb_projection import (
     columns_for,
 )
 
-TABLE = 'public.metsigdb_membership'
+# One setting names the schema of every table this layer reads. `omnipath-build`
+# publishes the membership table and the exclusion table side by side in the
+# release schema, so the two cannot be read from different places. The default
+# is the schema the route has always read.
+SCHEMA_VARIABLE = 'OMNIPATH_PG_SCHEMA'
+_IDENTIFIER = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
+
+
+def schema() -> str:
+    """The schema the tables are read from, as a plain SQL identifier.
+
+    Read on every call, not at import, so a deployment can point the service at
+    a release schema without a code change. The value is interpolated into SQL,
+    which is why anything but a plain identifier is refused.
+    """
+    name = os.environ.get(SCHEMA_VARIABLE, 'public')
+    if not _IDENTIFIER.match(name):
+        raise ValueError(f'{SCHEMA_VARIABLE} must be a plain identifier, got {name!r}')
+    return name
+
+
+def membership_table() -> str:
+    return f'{schema()}.metsigdb_membership'
+
+
+def exclusion_table() -> str:
+    return f'{schema()}.exclusion_metabolite'
+
 
 # The same page bounds the network routes of this service already serve.
 DEFAULT_LIMIT = 1000
@@ -83,6 +114,10 @@ SET_SUB_TYPES = (
     'metabolic_map',
 )
 
+# The classes of the exclusion table. A class never changes meaning, so the list
+# only grows; see the exclusion table contract of `omnipath-build`.
+EXCLUSION_CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors')
+
 VOCABULARIES: dict[str, tuple[str, ...]] = {
     'resource': RESOURCES,
     'set_type': SET_TYPES,
@@ -104,6 +139,36 @@ def canonical(field: str, value: str) -> str:
         if published.lower() == value.lower():
             return published
     return value
+
+
+def exclusion_classes(values: tuple[str, ...]) -> tuple[str, ...]:
+    """The classes an `exclude_metabolites` request names, in published spelling.
+
+    `none` and an absent parameter exclude nothing. `all` is every class.
+    Neither may be combined with a class: a request that says both has not said
+    what it means, and answering it either way would be a guess.
+
+    Raises ValueError naming the value and the valid choices, which the route
+    turns into a 400.
+    """
+    valid = ('none', 'all', *EXCLUSION_CLASSES)
+    named = list(dict.fromkeys(value.strip().lower() for value in values if value.strip()))
+    unknown = [value for value in named if value not in valid]
+    if unknown:
+        raise ValueError(
+            f'Unsupported exclude_metabolites: {", ".join(sorted(set(unknown)))}. '
+            f'Supported: {", ".join(valid)}.'
+        )
+    if not named or named == ['none']:
+        return ()
+    if {'none', 'all'} & set(named):
+        if named == ['all']:
+            return EXCLUSION_CLASSES
+        raise ValueError(
+            'exclude_metabolites: none and all stand alone and cannot be combined '
+            'with another value.'
+        )
+    return tuple(named)
 
 # The identifier columns `entity` accepts, and the shape that names each. A
 # caller pastes the identifier they hold; the route works out the namespace. A
@@ -219,6 +284,9 @@ class MetSigDBQuery:
     # one is told, instead of being answered as though they had filtered.
     set: tuple[str, ...] = ()
     entity: tuple[str, ...] = ()
+    # Classes of the exclusion table whose metabolites are left out, already
+    # canonical (see `exclusion_classes`). Empty is the response of cycle 012.
+    exclude_metabolites: tuple[str, ...] = ()
     # The response fields this request asked for, which decide the columns the
     # query reads. A page of thirteen fields does not pull twenty-two off the
     # disk and discard nine — `set_context` and `provenance_record` alone are
@@ -248,7 +316,7 @@ def build_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
     columns = ', '.join(spec.columns())
 
     return (
-        f'SELECT {columns} FROM {TABLE} {clause}'
+        f'SELECT {columns} FROM {membership_table()} {clause}'
         f'ORDER BY {ORDER_BY} LIMIT %(limit)s OFFSET %(offset)s'
     ), params
 
@@ -274,9 +342,9 @@ def count_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
     asks: counting a filter that matches three million rows is real work.
     """
     sql, params = build_query(spec)
-    where = sql.partition(f'FROM {TABLE} ')[2].partition('ORDER BY')[0]
+    where = sql.partition(f'FROM {membership_table()} ')[2].partition('ORDER BY')[0]
     return (
-        f'SELECT count(*) FROM {TABLE} {where}',
+        f'SELECT count(*) FROM {membership_table()} {where}',
         {k: v for k, v in params.items() if k not in ('limit', 'offset')},
     )
 
@@ -310,12 +378,36 @@ def count(conn, spec: MetSigDBQuery) -> int:
 # ------------------------------------------------------------ grouped results
 
 
-def _predicates(spec: MetSigDBQuery) -> tuple[list[str], dict[str, Any]]:
+def _exclusion_clause(spec: MetSigDBQuery, params: dict[str, Any]) -> str | None:
+    """The anti-join that leaves excluded metabolites out, or None for no exclusion.
+
+    A probe per row on the exclusion table's key `(exclusion_class, entity_id)`,
+    so the page keeps reading the membership table's primary key in order and
+    the cost grows with the page, not with the substrate. The membership table
+    itself is never changed: the exclusion belongs to the request.
+    """
+    if not spec.exclude_metabolites:
+        return None
+    params['exclude_metabolites'] = list(spec.exclude_metabolites)
+    return (
+        f'NOT EXISTS (SELECT 1 FROM {exclusion_table()} x '
+        'WHERE x.entity_id = metabolite_entity_id '
+        'AND x.exclusion_class = ANY(%(exclude_metabolites)s))'
+    )
+
+
+def _predicates(
+    spec: MetSigDBQuery, *, exclusion: bool = True
+) -> tuple[list[str], dict[str, Any]]:
     """Every filter this request carries, as clauses and bind parameters.
 
     One builder for all four query shapes. A member-level filter has to narrow
     the flat page, the set page, the member fetch and both counts identically,
     or `returned` disagrees with what a grouped response carries.
+
+    The exclusion is the one filter that does not narrow the set list: a set
+    that loses every member is still a candidate. The set-level queries ask for
+    `exclusion=False` and count the survivors themselves.
     """
     where: list[str] = []
     params: dict[str, Any] = {}
@@ -342,12 +434,15 @@ def _predicates(spec: MetSigDBQuery) -> tuple[list[str], dict[str, Any]]:
         where.append('organism = %(organism)s')
         params['organism'] = spec.organism
 
+    if exclusion and (clause := _exclusion_clause(spec, params)):
+        where.append(clause)
+
     return where, params
 
 
-def _where(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
+def _where(spec: MetSigDBQuery, *, exclusion: bool = True) -> tuple[str, dict[str, Any]]:
     """The filter clause and its parameters, shared by every query shape."""
-    where, params = _predicates(spec)
+    where, params = _predicates(spec, exclusion=exclusion)
     return (f'WHERE {" AND ".join(where)} ' if where else ''), params
 
 
@@ -369,29 +464,38 @@ def set_page_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
     """The page's sets, with how many members each has under this filter.
 
     One row per set rather than per membership, so the page can be measured in
-    sets before a single member is read. `count(*)` is the filtered count; the
+    sets before a single member is read. `returned` is the filtered count; the
     set's published population is `set_size`, which the same row carries.
+
+    The exclusion thins `returned` and leaves the set list alone. A set that
+    loses every member stays on the page with `returned` zero, so a paged walk
+    sees each candidate set once and an empty set reads as emptied, not absent.
 
     One row beyond the page is asked for, which is how `has_more` costs a row
     rather than a second count.
     """
-    clause, params = _where(spec)
+    clause, params = _where(spec, exclusion=False)
+    survivor = _exclusion_clause(spec, params)
+    returned = f'count(*) FILTER (WHERE {survivor})' if survivor else 'count(*)'
     columns = _set_columns(spec)
     grouped = ', '.join(columns)
     params |= {'limit': spec.limit + 1, 'offset': spec.offset}
 
     return (
-        f'SELECT {grouped}, count(*) AS returned FROM {TABLE} {clause}'
+        f'SELECT {grouped}, {returned} AS returned FROM {membership_table()} {clause}'
         f'GROUP BY {grouped} ORDER BY resource, set_source_id '
         f'LIMIT %(limit)s OFFSET %(offset)s'
     ), params
 
 
 def count_sets_query(spec: MetSigDBQuery) -> tuple[str, dict[str, Any]]:
-    """How many sets the filter matches, for a grouped `total`."""
-    clause, params = _where(spec)
+    """How many sets the filter matches, for a grouped `total`.
+
+    Counts candidate sets, so the exclusion is not applied: it never removes a set.
+    """
+    clause, params = _where(spec, exclusion=False)
     return (
-        f'SELECT count(*) FROM (SELECT 1 FROM {TABLE} {clause}'
+        f'SELECT count(*) FROM (SELECT 1 FROM {membership_table()} {clause}'
         f'GROUP BY resource, set_source_id) AS matched_sets'
     ), params
 
@@ -421,7 +525,7 @@ def members_query(
     params['key_sets'] = [key[1] for key in keys]
 
     return (
-        f'SELECT {", ".join(columns)} FROM {TABLE} {clause}'
+        f'SELECT {", ".join(columns)} FROM {membership_table()} {clause}'
         f'{joiner} (resource, set_source_id) IN ('
         f'SELECT r, s FROM unnest(%(key_resources)s::text[], %(key_sets)s::text[]) '
         f'AS pairs(r, s)) ORDER BY {ORDER_BY}'
@@ -518,3 +622,10 @@ def count_sets(conn, spec: MetSigDBQuery) -> int:
     with conn.cursor() as cur:
         cur.execute(sql, params)
         return int(cur.fetchone()[0])
+
+
+def exclusion_table_exists(conn) -> bool:
+    """Whether the exclusion table has been built in the schema this layer reads."""
+    with conn.cursor() as cur:
+        cur.execute('SELECT to_regclass(%s) IS NOT NULL', [exclusion_table()])
+        return bool(cur.fetchone()[0])

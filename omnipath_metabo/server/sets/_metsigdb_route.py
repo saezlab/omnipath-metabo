@@ -49,6 +49,8 @@ from omnipath_metabo.server.sets._metsigdb_query import (
     SET_TYPES,
     count,
     count_sets,
+    exclusion_classes,
+    exclusion_table_exists,
     fetch_groups,
     fetch_page,
     identifier_columns,
@@ -68,6 +70,7 @@ QUERY_PARAMS = (
     'organism',
     'set',
     'entity',
+    'exclude_metabolites',
     'fields',
     'group',
     'limit',
@@ -170,6 +173,36 @@ def _entity(values: list[str] | None) -> tuple[str, ...]:
     return wanted
 
 
+def _exclusion(values: list[str] | None) -> tuple[str, ...]:
+    """The classes `exclude_metabolites` names, refused at the edge when it names none.
+
+    The query layer owns the vocabulary and the rules for `none` and `all`; the
+    status code belongs here.
+    """
+    try:
+        return exclusion_classes(_listed(values))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _require_exclusion_table(conn) -> None:
+    """A request that wants an exclusion needs the table that holds it.
+
+    Without this an absent table would surface as the generic "substrate not
+    present" message below, which names the wrong table. A request that excludes
+    nothing never reaches this and never reads the table.
+    """
+    if not exclusion_table_exists(conn):
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                'The exclusion list has not been built for this release, so '
+                'exclude_metabolites cannot be applied. Run the exclusion_metabolites '
+                'subset product, or leave the parameter out.'
+            ),
+        )
+
+
 def _grouped(conn, spec, *, total: bool):
     """One page of sets, grouped by resource.
 
@@ -238,6 +271,17 @@ truncated: sets are added whole until the next would cross a 50,000-row
 ceiling, and a set larger than the ceiling is returned complete and
 alone.
 
+**Exclusion.** ``exclude_metabolites`` leaves out metabolites that mass
+spectrometry does not measure: ``none`` (the default), ``all``, or a
+list of ``ions``, ``atoms``, ``small_molecules``, ``xenobiotics`` and
+``cofactors``. The memberships stay in the substrate; the request leaves
+them out. It applies before paging and counting, so ``total`` and
+``has_more`` describe the filtered result. Under grouping a set that
+loses every member is still returned, with an empty ``members`` list,
+``returned`` of zero and its published ``set_size``. If the exclusion
+list has not been built for the release the route answers 503, and a
+request that excludes nothing never reads it.
+
 **Identifiers.** ``entity`` accepts an internal entity id, an InChIKey,
 or an HMDB, ChEBI, KEGG or PubChem identifier, recognised from the value
 itself. A bare integer matches ChEBI **or** PubChem and returns the
@@ -288,6 +332,7 @@ class MetSigDBController(Controller):
         organism: int | None = Parameter(default=None),
         set: list[str] | None = Parameter(default=None),
         entity: list[str] | None = Parameter(default=None),
+        exclude_metabolites: list[str] | None = Parameter(default=None),
         fields: list[str] | None = Parameter(default=None),
         group: bool = Parameter(default=False),
         limit: int = Parameter(default=DEFAULT_LIMIT, ge=1, le=MAX_LIMIT),
@@ -312,6 +357,7 @@ class MetSigDBController(Controller):
             set_type=_checked(set_type, SET_TYPES, 'set_type'),
             set_sub_type=_checked(set_sub_type, SET_SUB_TYPES, 'set_sub_type'),
             organism=organism,
+            exclude_metabolites=_exclusion(exclude_metabolites),
             fields=projection,
             limit=limit,
             offset=offset,
@@ -319,6 +365,8 @@ class MetSigDBController(Controller):
 
         conn = _connect(request)
         try:
+            if spec.exclude_metabolites:
+                _require_exclusion_table(conn)
             try:
                 if group:
                     return _grouped(conn, spec, total=total)
