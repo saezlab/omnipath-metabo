@@ -220,9 +220,9 @@ def schemas():
                 SELECT DISTINCT m.metabolite_entity_id, v.cls, 'metaproviz_seed', 'curated',
                        'entity', 'fixture', 'fixture', 'fixture'
                 FROM public.metsigdb_membership m
-                JOIN (VALUES ('15378', 'ions'), ('15377', 'small_molecules'),
-                             ('16526', 'small_molecules'), ('30616', 'cofactors'),
-                             ('57540', 'cofactors')) AS v(chebi, cls) ON m.chebi = v.chebi;
+                JOIN (VALUES ('24636', 'ions'), ('5594', 'small_molecules'),
+                             ('48829', 'small_molecules'), ('57299', 'cofactors'),
+                             ('7422', 'cofactors')) AS v(chebi, cls) ON m.chebi = v.chebi;
                 INSERT INTO {full}.exclusion_metabolite
                   (entity_id, exclusion_class, assignment_source, origin, match_kind,
                    evidence, list_version, build_id)
@@ -389,8 +389,8 @@ def test_all_leaves_no_returned_member_that_is_in_the_table(
 def test_a_named_class_removes_that_class_and_keeps_the_others(
     client, full_schema, conn
 ):
-    atp = entity_ids(conn, '30616')
-    proton = entity_ids(conn, '15378')
+    atp = entity_ids(conn, '57299')
+    proton = entity_ids(conn, '24636')
     assert atp and proton
     kept = rows(client, entity=atp, exclude_metabolites='ions,atoms', limit=50)
     assert kept['count'] > 0
@@ -453,7 +453,7 @@ def test_the_total_and_has_more_describe_the_filtered_result(
 def test_asking_for_an_excluded_metabolite_returns_an_empty_result_and_no_error(
     client, full_schema, conn
 ):
-    atp = entity_ids(conn, '30616')
+    atp = entity_ids(conn, '57299')
     body = rows(client, entity=atp, exclude_metabolites='all', total=True)
     assert (body['count'], body['total'], body['rows']) == (0, 0, [])
 
