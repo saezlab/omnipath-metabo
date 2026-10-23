@@ -35,7 +35,8 @@ from omnipath_metabo.server.sets._metsigdb_query import (
 DB_URL = os.environ.get('OMNIPATH_DB_URL') or os.environ.get('DATABASE_URL')
 
 PATH = '/sets/metsigdb'
-CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors')
+CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors',
+           'cofactors_extended')
 
 # A small KEGG set. Every member goes into `xenobiotics`, a class nothing else
 # uses, so that excluding it empties the set and leaves the rest alone.

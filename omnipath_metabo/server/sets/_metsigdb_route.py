@@ -273,8 +273,10 @@ alone.
 
 **Exclusion.** ``exclude_metabolites`` leaves out metabolites that mass
 spectrometry does not measure: ``none`` (the default), ``all``, or a
-list of ``ions``, ``atoms``, ``small_molecules``, ``xenobiotics`` and
-``cofactors``. The memberships stay in the substrate; the request leaves
+list of ``ions``, ``atoms``, ``small_molecules``, ``xenobiotics``,
+``cofactors`` and ``cofactors_extended``. The last is the cofactors that
+ChEBI tags with the cofactor role, beyond the reviewed ``cofactors``; ``all``
+includes it. The memberships stay in the substrate; the request leaves
 them out. It applies before paging and counting, so ``total`` and
 ``has_more`` describe the filtered result. Under grouping a set that
 loses every member is still returned, with an empty ``members`` list,

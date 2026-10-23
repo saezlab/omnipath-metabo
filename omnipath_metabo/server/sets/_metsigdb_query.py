@@ -116,7 +116,8 @@ SET_SUB_TYPES = (
 
 # The classes of the exclusion table. A class never changes meaning, so the list
 # only grows; see the exclusion table contract of `omnipath-build`.
-EXCLUSION_CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors')
+EXCLUSION_CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors',
+                     'cofactors_extended')
 
 VOCABULARIES: dict[str, tuple[str, ...]] = {
     'resource': RESOURCES,
