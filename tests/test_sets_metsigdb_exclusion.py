@@ -6,8 +6,8 @@ query, against the ``exclusion_metabolite`` table that ``omnipath-build``
 publishes beside it.
 
 The data tests run against the real membership table through a scratch schema.
-The schema holds a view over ``public.metsigdb_membership`` and a small
-exclusion table built from real entities, so nothing in ``public`` is touched.
+The schema holds a view over the membership table (``OMNIPATH_PG_SCHEMA``, else ``public``) and a small
+exclusion table built from real entities, so nothing in the build schema is touched.
 
     DATABASE_URL=postgresql://omnipath:omnipath@localhost:55435/omnipath \
         uv run --with 'litestar[standard]' --with psycopg2-binary --with pytest \
@@ -33,6 +33,9 @@ from omnipath_metabo.server.sets._metsigdb_query import (
 )
 
 DB_URL = os.environ.get('OMNIPATH_DB_URL') or os.environ.get('DATABASE_URL')
+
+# Where the build published the tables: the schema the route reads, else `public`.
+SRC = os.environ.get('OMNIPATH_PG_SCHEMA') or 'public'
 
 PATH = '/sets/metsigdb'
 CLASSES = ('ions', 'atoms', 'small_molecules', 'xenobiotics', 'cofactors',
@@ -195,7 +198,7 @@ def schemas():
                 cur.execute(f'CREATE SCHEMA {schema}')
                 cur.execute(
                     f'CREATE VIEW {schema}.metsigdb_membership AS '
-                    'SELECT * FROM public.metsigdb_membership'
+                    f'SELECT * FROM {SRC}.metsigdb_membership'
                 )
             cur.execute(
                 f"""
@@ -219,7 +222,7 @@ def schemas():
                    evidence, list_version, build_id)
                 SELECT DISTINCT m.metabolite_entity_id, v.cls, 'metaproviz_seed', 'curated',
                        'entity', 'fixture', 'fixture', 'fixture'
-                FROM public.metsigdb_membership m
+                FROM {SRC}.metsigdb_membership m
                 JOIN (VALUES ('24636', 'ions'), ('5594', 'small_molecules'),
                              ('48829', 'small_molecules'), ('57299', 'cofactors'),
                              ('7422', 'cofactors')) AS v(chebi, cls) ON m.chebi = v.chebi;
@@ -228,7 +231,7 @@ def schemas():
                    evidence, list_version, build_id)
                 SELECT DISTINCT metabolite_entity_id, 'xenobiotics', 'metaproviz_seed',
                        'curated', 'entity', 'fixture', 'fixture', 'fixture'
-                FROM public.metsigdb_membership
+                FROM {SRC}.metsigdb_membership
                 WHERE resource = 'KEGG' AND set_source_id = '{EMPTIED_SET}';
                 ANALYZE {full}.exclusion_metabolite;
                 """
@@ -291,7 +294,7 @@ def excluded(conn, schema, *classes):
 def entity_ids(conn, chebi):
     with conn.cursor() as cur:
         cur.execute(
-            'SELECT DISTINCT metabolite_entity_id::text FROM public.metsigdb_membership '
+            f'SELECT DISTINCT metabolite_entity_id::text FROM {SRC}.metsigdb_membership '
             'WHERE chebi = %s',
             [chebi],
         )
@@ -359,7 +362,7 @@ def test_xenobiotics_is_accepted_and_removes_only_the_rows_of_its_members(
     listed = excluded(conn, full_schema, 'xenobiotics')
     with conn.cursor() as cur:
         cur.execute(
-            'SELECT count(*) FROM public.metsigdb_membership '
+            f'SELECT count(*) FROM {SRC}.metsigdb_membership '
             "WHERE resource = 'KEGG' AND metabolite_entity_id::text = ANY(%s)",
             [list(listed)],
         )
@@ -422,7 +425,7 @@ def test_the_total_and_has_more_describe_the_filtered_result(
     with conn.cursor() as cur:
         cur.execute(
             'SELECT count(*), count(*) FILTER (WHERE metabolite_entity_id::text = ANY(%s)) '
-            "FROM public.metsigdb_membership WHERE resource = 'Reactome'",
+            f"FROM {SRC}.metsigdb_membership WHERE resource = 'Reactome'",
             [list(listed)],
         )
         everything, removed = cur.fetchone()
